@@ -191,6 +191,88 @@ class NodeLineEdit(
         return True
 
 
+class DnaPathManager(object):
+    def __init__(self):
+        self.input_path = None
+        self.output_path = None
+        self.dna_viewer_data_path = None
+
+    def get_assets(self):
+        generic_assets = None
+
+        assets = ["Input Dna", "Output Dna"]
+
+        if self.dna_viewer_data_path:
+            generic_assets = []
+
+            dna_path = os.path.join(self.dna_viewer_data_path, "dna_files")
+
+            if os.path.exists(dna_path):
+                for i in os.listdir(dna_path):
+                    if any([
+                        not i.endswith(".dna"),
+                    ]):
+                        continue
+
+                    generic_assets.append(i.split(".")[0])
+
+        if generic_assets:
+            assets += generic_assets
+
+        return assets
+
+    def get_path(self, asset):
+        dna_paths = {
+            "Input Dna": self.input_dna_path,
+            "Output Dna": self.output_dna_path,
+        }
+
+        if asset in dna_paths:
+            dna_path = dna_paths[asset]
+
+        else:
+            dna_path = os.path.join(
+                self.dna_viewer_data_path,
+                "dna_files",
+                "{}.dna".format(asset)
+            )
+
+        return dna_path
+
+
+# class DnaAssetCombo(QtWidgets.QComboBox):
+#     def __init__(self, *args, **kwargs):
+#         super(DnaAssetCombo, self).__init__(*args, **kwargs)
+#
+#     def update_assets(self, dna_viewer_data_path):
+#         self.clear()
+#
+#         generic_assets = None
+#
+#         assets = ["Input Dna", "Output Dna"]
+#
+#         if dna_viewer_data_path:
+#             generic_assets = []
+#
+#             dna_path = os.path.join(dna_viewer_data_path, "dna_files")
+#
+#             if os.path.exists(dna_path):
+#                 for i in os.listdir(dna_path):
+#                     if any([
+#                         not i.endswith(".dna"),
+#                     ]):
+#                         continue
+#
+#                     generic_assets.append(i.split(".")[0])
+#
+#         if generic_assets:
+#             assets += generic_assets
+#
+#         self.addItems(assets)
+#
+#         return True
+
+
 class DnaTransferMeshWidget(QtWidgets.QWidget):
     def __init__(self, label, src, dst, *args, **kwargs):
         super(DnaTransferMeshWidget, self).__init__(*args, **kwargs)
@@ -215,13 +297,14 @@ class DnaTransferMeshWidget(QtWidgets.QWidget):
 
 class DnaTransferWidget(QtWidgets.QWidget):
 
-    def __init__(self, asset_dir, generic_assets, *args, **kwargs):
+    def __init__(self, path_manager, *args, **kwargs):
         super(DnaTransferWidget, self).__init__(*args, **kwargs)
 
-        self.input_dna_path = None
-        self.output_dna_path = None
-        self.asset_dir = asset_dir
-        self.generic_assets = generic_assets
+        # self.input_dna_path = None
+        # self.output_dna_path = None
+        # self.dna_viewer_data_path = None
+
+        self.path_manager = path_manager
 
         lyt = QtWidgets.QVBoxLayout()
         self.setLayout(lyt)
@@ -254,11 +337,7 @@ class DnaTransferWidget(QtWidgets.QWidget):
         self.transfer_face_meshes_btn = QtWidgets.QPushButton("transfer face meshes")
         self.transfer_face_meshes_btn.clicked.connect(self.transfer_face_meshes)
 
-        # self.transfer_mouth_meshes_btn = QtWidgets.QPushButton("transfer mouth meshes")
-        # self.transfer_mouth_meshes_btn.clicked.connect(self.transfer_mouth_meshes)
-
         meshes_lyt.addWidget(self.transfer_face_meshes_btn)
-        # meshes_lyt.addWidget(self.transfer_mouth_meshes_btn)
 
         # transfer joints
         self.transfer_joints_group_box = QtWidgets.QGroupBox("transfer joints")
@@ -297,10 +376,6 @@ class DnaTransferWidget(QtWidgets.QWidget):
 
         self.input_dna_combo = QtWidgets.QComboBox()
 
-        self.input_dna_combo.addItems(
-            ["Input Dna", "Output Dna", ] + self.generic_assets
-        )
-
         self.update_mesh_checkbox = QtWidgets.QCheckBox("update meshes")
         self.update_mesh_checkbox.setChecked(QtCore.Qt.Checked)
 
@@ -325,11 +400,16 @@ class DnaTransferWidget(QtWidgets.QWidget):
         lyt.addWidget(self.update_dna_group_box)
         lyt.addStretch()
 
+    def update_assets(self):
+        self.input_dna_combo.clear()
+        self.input_dna_combo.addItems(self.path_manager.get_assets())
+        return True
+
     def transfer(self):
 
         root_joint = "neck_01"
 
-        neck_offset = mhFaceJoints.get_neck_spine_offset()
+        orig_neck_pos = cmds.xform("neck_01", query=True, translation=True, worldSpace=True)
 
         cmds.undoInfo(openChunk=True)
 
@@ -355,7 +435,7 @@ class DnaTransferWidget(QtWidgets.QWidget):
                 )
 
             if self.neck_checkbox.isChecked():
-                mhFaceJoints.restore_neck_spine_offset(neck_offset)
+                mhFaceJoints.restore_neck_spine_offset(orig_neck_pos)
 
             if self.freeze_checkbox.isChecked():
                 cmds.cutKey("FACIAL_C_FacialRoot")
@@ -386,8 +466,30 @@ class DnaTransferWidget(QtWidgets.QWidget):
 
             return
 
+        # get path
+        input_dna = str(self.input_dna_combo.currentText())
+
+        # dna_paths = {
+        #     "Input Dna": self.input_dna_path,
+        #     "Output Dna": self.output_dna_path,
+        # }
+        #
+        # input_dna_path = dna_paths[input_dna]
+        input_dna_path = self.path_manager.get_path(input_dna)
+
+        # check we have an input path
+        if not input_dna_path:
+            QtWidgets.QMessageBox.critical(
+                self,
+                "Error",
+                "No input DNA path given",
+                QtWidgets.QMessageBox.Ok
+            )
+
+            return
+
         # check we have an output path
-        if not self.output_dna_path:
+        if not self.path_manager.output_dna_path:
             QtWidgets.QMessageBox.critical(
                 self,
                 "Error",
@@ -397,36 +499,12 @@ class DnaTransferWidget(QtWidgets.QWidget):
 
             return
 
-        # get path
-        input_dna = str(self.input_dna_combo.currentText())
-
-        print("test", input_dna)
-
-        dna_paths = {
-            "Input Dna": self.input_dna_path,
-            "Output Dna": self.output_dna_path,
-        }
-
-        if input_dna in dna_paths:
-            input_dna_path = dna_paths[input_dna]
-
-        elif input_dna in self.generic_assets:
-            input_dna_path = os.path.join(
-                self.asset_dir,
-                input_dna,
-                "SourceAssets",
-                "{}.dna".format(input_dna)
-            )
-        else:
-            # this should be impossible
-            raise mhCore.MHError("input dna error: {}".format(input_dna))
-
         # confirm with user
         confirm = QtWidgets.QMessageBox.warning(
             self,
             "confirm",
             "This will update input dna file:\n\n{}\n\nThen write output dna file to: \n\n{}\n\nContinue?".format(
-                input_dna_path, self.output_dna_path
+                input_dna_path, self.path_manager.output_dna_path
             ),
             QtWidgets.QMessageBox.Ok | QtWidgets.QMessageBox.Cancel
         )
@@ -447,7 +525,7 @@ class DnaTransferWidget(QtWidgets.QWidget):
         if self.calculate_lods_checkbox.isChecked():
             mhMesh.calculate_lods(dna_obj, calib_reader)
 
-        mhCore.save_dna(calib_reader, self.output_dna_path, validate=False)
+        mhCore.save_dna(calib_reader, self.path_manager.output_dna_path, validate=False)
 
         status = dna.Status.get().message
 
@@ -462,7 +540,7 @@ class DnaTransferWidget(QtWidgets.QWidget):
             QtWidgets.QMessageBox.information(
                 self,
                 "Success",
-                "Dna file exported:\n{}".format(self.output_dna_path),
+                "Dna file exported:\n{}".format(self.path_manager.output_dna_path),
                 QtWidgets.QMessageBox.Ok
             )
 
@@ -487,11 +565,6 @@ class DnaTransferWidget(QtWidgets.QWidget):
             str(err),
             QtWidgets.QMessageBox.Ok
         )
-
-    # def transfer_mouth_meshes(self):
-    #     mhFaceMeshes.transfer_inner_mouth(
-    #         cleanup=self.cleanup_checkbox.isChecked(),
-    #     )
 
 
 class RepathWidget(QtWidgets.QWidget):
@@ -535,16 +608,13 @@ class RepathWidget(QtWidgets.QWidget):
 
 class DnaBuildWidget(QtWidgets.QWidget):
 
-    def __init__(self, asset_dir, generic_assets, dna_viewer_data_path, *args, **kwargs):
+    def __init__(self, path_manager, *args, **kwargs):
         super(DnaBuildWidget, self).__init__(*args, **kwargs)
 
-        self.input_dna_path = None
-        self.output_dna_path = None
-        self.asset_dir = asset_dir
-        self.generic_assets = generic_assets
-        self.dna_viewer_data_path = dna_viewer_data_path
-
-        # self.dna_viewer_data_path = mhCore.MH_DATA_DIR
+        # self.input_dna_path = None
+        # self.output_dna_path = None
+        # self.dna_viewer_data_path = dna_viewer_data_path
+        self.path_manager = path_manager
 
         lyt = QtWidgets.QVBoxLayout()
         self.setLayout(lyt)
@@ -556,10 +626,6 @@ class DnaBuildWidget(QtWidgets.QWidget):
         self.build_group_box.setLayout(build_lyt)
 
         self.build_combo = QtWidgets.QComboBox()
-
-        # self.build_combo.addItems([
-        #                               "Input Dna", "Output Dna",
-        #                           ] + self.generic_assets)
 
         self.full_rig_checkbox = QtWidgets.QCheckBox("full rig")
 
@@ -604,20 +670,9 @@ class DnaBuildWidget(QtWidgets.QWidget):
         materials_lyt = QtWidgets.QVBoxLayout()
         self.materials_group_box.setLayout(materials_lyt)
 
-        self.asset_materials_combo = QtWidgets.QComboBox()
-        # self.asset_materials_combo.addItems(self.generic_assets)
-
         self.import_materials_btn = QtWidgets.QPushButton("Import materials")
         self.import_materials_btn.setFixedHeight(30)
         self.import_materials_btn.clicked.connect(self.import_materials)
-
-        # self.export_materials_btn = QtWidgets.QPushButton("Export asset materials")
-        # self.export_materials_btn.setFixedHeight(30)
-        # self.export_materials_btn.clicked.connect(self.export_asset_materials)
-
-        # self.apply_materials_btn = QtWidgets.QPushButton("Apply asset materials")
-        # self.apply_materials_btn.setFixedHeight(30)
-        # self.apply_materials_btn.clicked.connect(self.apply_asset_materials)
 
         self.reset_materials_btn = QtWidgets.QPushButton("Reset Materials")
         self.reset_materials_btn.setFixedHeight(30)
@@ -641,10 +696,7 @@ class DnaBuildWidget(QtWidgets.QWidget):
 
         self.repath_widget = RepathWidget()
 
-        # materials_lyt.addWidget(self.asset_materials_combo)
         materials_lyt.addWidget(self.import_materials_btn)
-        # materials_lyt.addWidget(self.export_materials_btn)
-        # materials_lyt.addWidget(self.apply_materials_btn)
         materials_lyt.addWidget(self.repath_common_btn)
         materials_lyt.addWidget(self.repath_asset_btn)
         materials_lyt.addWidget(self.reset_materials_btn)
@@ -663,46 +715,7 @@ class DnaBuildWidget(QtWidgets.QWidget):
 
     def update_assets(self):
         self.build_combo.clear()
-        self.asset_materials_combo.clear()
-
-        self.generic_assets = None
-
-        assets = ["Input Dna", "Output Dna"]
-
-        if self.dna_viewer_data_path:
-            self.generic_assets = []
-
-            dna_path = os.path.join(self.dna_viewer_data_path, "dna_files")
-
-            if os.path.exists(dna_path):
-                for i in os.listdir(dna_path):
-                    if any([
-                        not i.endswith(".dna"),
-                    ]):
-                        continue
-
-                    self.generic_assets.append(i.split(".")[0])
-
-        # if self.asset_dir:
-        #     self.generic_assets = []
-        #
-        #     for i in os.listdir(self.asset_dir):
-        #         if any([
-        #             os.path.isfile(os.path.join(self.asset_dir, i)),
-        #             i == "Common",
-        #         ]):
-        #             continue
-        #
-        #         self.generic_assets.append(i)
-
-        if self.generic_assets:
-            assets += self.generic_assets
-
-        self.build_combo.addItems(assets)
-
-        # if self.generic_assets:
-        #     self.asset_materials_combo.addItems(self.generic_assets)
-
+        self.build_combo.addItems(self.path_manager.get_assets())
         return True
 
     def set_look(self):
@@ -742,12 +755,8 @@ class DnaBuildWidget(QtWidgets.QWidget):
         mhUeUtils.create_materials()
 
     def import_materials(self):
-        # asset_dir = self.asset_dir_widget.path
-        # asset_name = str(self.asset_materials_combo.currentText())
 
         try:
-            # mhFaceMaterials.import_asset_materials(self.asset_dir, asset_name)
-
             file_path = os.path.join(mhCore.DATA_DIR, "materials.ma")
 
             print("Importing file: {}".format(file_path))
@@ -795,7 +804,6 @@ class DnaBuildWidget(QtWidgets.QWidget):
         if not paths:
             self.error("No paths found: {}".format(name))
             return False
-
 
         new_path = QtWidgets.QFileDialog.getExistingDirectory(
             self,
@@ -860,9 +868,11 @@ class DnaBuildWidget(QtWidgets.QWidget):
         cmds.undoInfo(openChunk=True)
 
         try:
-            for mesh in cmds.listRelatives("head_lod0_grp"):
+            for mesh in cmds.listRelatives("head_lod0_grp", fullPath=True):
+                mesh_name = mesh.split("|")[-1]
+
                 cmds.rename(
-                    mesh, "src_{}".format(mesh)
+                    mesh, "src_{}".format(mesh_name)
                 )
 
             cmds.undoInfo(closeChunk=True)
@@ -877,44 +887,34 @@ class DnaBuildWidget(QtWidgets.QWidget):
 
         build_mode = str(self.build_combo.currentText())
 
-        dna_paths = {
-            "Input Dna": self.input_dna_path,
-            "Output Dna": self.output_dna_path,
-        }
+        dna_path = self.path_manager.get_path(build_mode)
 
-        if build_mode in dna_paths:
-            dna_path = dna_paths[build_mode]
-
-        else:
-            dna_path = os.path.join(
-                self.dna_viewer_data_path,
-                "dna_files",
-                "{}.dna".format(build_mode)
-            )
-
-        # elif build_mode in self.generic_assets:
+        # dna_paths = {
+        #     "Input Dna": self.input_dna_path,
+        #     "Output Dna": self.output_dna_path,
+        # }
+        #
+        # if build_mode in dna_paths:
+        #     dna_path = dna_paths[build_mode]
+        #
+        # else:
         #     dna_path = os.path.join(
-        #         self.asset_dir,
-        #         build_mode,
-        #         "SourceAssets",
+        #         self.dna_viewer_data_path,
+        #         "dna_files",
         #         "{}.dna".format(build_mode)
         #     )
-
-        # else:
-        #     self.error("Build mode not recognised: {}".format(build_mode))
-        #     return False
-
-        # if not dna_path:
-        #     self.error("Dna path not provided: {}".format(dna_path))
-        #     return False
 
         if not os.path.exists(dna_path):
             self.error("Dna path not found: {}".format(dna_path))
             return False
 
-        analog_gui = os.path.join(self.dna_viewer_data_path, "analog_gui.ma")
-        gui = os.path.join(self.dna_viewer_data_path, "gui.ma")
-        additional_assemble_script = os.path.join(self.dna_viewer_data_path, "additional_assemble_script.py")
+        analog_gui = os.path.join(self.path_manager.dna_viewer_data_path, "analog_gui.ma")
+
+        gui = os.path.join(self.path_manager.dna_viewer_data_path, "gui.ma")
+
+        additional_assemble_script = os.path.join(
+            self.path_manager.dna_viewer_data_path, "additional_assemble_script.py"
+        )
 
         full_rig = self.full_rig_checkbox.isChecked()
 
@@ -941,20 +941,22 @@ class DnaBuildWidget(QtWidgets.QWidget):
         return True
 
 
-
-
 class DnaPosesWidget(QtWidgets.QWidget):
-    def __init__(self, *args, **kwargs):
+    def __init__(self, path_manager, *args, **kwargs):
         super(DnaPosesWidget, self).__init__(*args, **kwargs)
 
         self.dna_obj = None
         self.calib_reader = None
         self.poses_data = None
 
-        self.input_dna_path = None
-        self.output_dna_path = None
+        # self.input_dna_path = None
+        # self.output_dna_path = None
+        # self.dna_viewer_data_path = None
+        self.path_manager = path_manager
 
-        self.load_btn = QtWidgets.QPushButton("load input dna")
+        self.input_combo = QtWidgets.QComboBox()
+
+        self.load_btn = QtWidgets.QPushButton("load poses")
         self.save_btn = QtWidgets.QPushButton("save output dna")
 
         self.load_btn.clicked.connect(self.load)
@@ -982,6 +984,10 @@ class DnaPosesWidget(QtWidgets.QWidget):
         self.mirror_pose_btn.clicked.connect(self.mirror_pose)
         self.reset_pose_btn.clicked.connect(self.reset_pose)
 
+        self.input_lyt = QtWidgets.QHBoxLayout()
+        self.input_lyt.addWidget(self.input_combo)
+        self.input_lyt.addWidget(self.load_btn)
+
         self.view_btn_lyt = QtWidgets.QVBoxLayout()
 
         self.view_btn_lyt.addWidget(self.get_pose_btn)
@@ -1001,7 +1007,7 @@ class DnaPosesWidget(QtWidgets.QWidget):
 
         lyt = QtWidgets.QVBoxLayout()
 
-        lyt.addWidget(self.load_btn)
+        lyt.addLayout(self.input_lyt)
         lyt.addWidget(self.filter_line_edit)
         lyt.addLayout(self.view_lyt)
         lyt.addWidget(self.save_btn)
@@ -1020,13 +1026,21 @@ class DnaPosesWidget(QtWidgets.QWidget):
             self.selection_changed
         )
 
+    def update_assets(self):
+        self.input_combo.clear()
+        self.input_combo.addItems(self.path_manager.get_assets())
+        return True
+
     def load(self):
+        input_dna = self.input_combo.currentText()
+        input_dna_path = self.path_manager.get_path(input_dna)
+
         # check we have an input path
-        if not self.input_dna_path:
+        if not input_dna_path:
             QtWidgets.QMessageBox.critical(
                 self,
                 "Error",
-                "No input DNA path given",
+                "No DNA path given",
                 QtWidgets.QMessageBox.Ok
             )
 
@@ -1036,7 +1050,7 @@ class DnaPosesWidget(QtWidgets.QWidget):
         confirm = QtWidgets.QMessageBox.warning(
             self,
             "confirm",
-            "Load all poses?\n{}".format(self.input_dna_path),
+            "Load all poses?\n{}".format(input_dna_path),
             QtWidgets.QMessageBox.Ok | QtWidgets.QMessageBox.Cancel
         )
 
@@ -1044,7 +1058,7 @@ class DnaPosesWidget(QtWidgets.QWidget):
             return None
 
         # load dna and get poses
-        self.dna_obj = dna_viewer.DNA(self.input_dna_path)
+        self.dna_obj = dna_viewer.DNA(input_dna_path)
         self.calib_reader = dnacalib.DNACalibDNAReader(self.dna_obj.reader)
 
         self.poses_data = mhBehaviour.get_all_poses(self.calib_reader)
@@ -1055,7 +1069,7 @@ class DnaPosesWidget(QtWidgets.QWidget):
 
     def save(self):
         # check we have an output path
-        if not self.output_dna_path:
+        if not self.path_manager.output_dna_path:
             QtWidgets.QMessageBox.critical(
                 self,
                 "Error",
@@ -1080,7 +1094,7 @@ class DnaPosesWidget(QtWidgets.QWidget):
         confirm = QtWidgets.QMessageBox.warning(
             self,
             "confirm",
-            "Save all poses?\n{}".format(self.output_dna_path),
+            "Save all poses?\n{}".format(self.path_manager.output_dna_path),
             QtWidgets.QMessageBox.Ok | QtWidgets.QMessageBox.Cancel
         )
 
@@ -1089,7 +1103,7 @@ class DnaPosesWidget(QtWidgets.QWidget):
 
         # write data
         stream = dna.FileStream(
-            self.output_dna_path, dna.FileStream.AccessMode_Write, dna.FileStream.OpenMode_Binary
+            self.path_manager.output_dna_path, dna.FileStream.AccessMode_Write, dna.FileStream.OpenMode_Binary
         )
 
         writer = dna.BinaryStreamWriter(stream)
@@ -1111,7 +1125,7 @@ class DnaPosesWidget(QtWidgets.QWidget):
             QtWidgets.QMessageBox.information(
                 self,
                 "Success",
-                "Dna file exported:\n{}".format(self.output_dna_path),
+                "Dna file exported:\n{}".format(self.path_manager.output_dna_path),
                 QtWidgets.QMessageBox.Ok
             )
 
@@ -1207,17 +1221,11 @@ class DnaPosesWidget(QtWidgets.QWidget):
 class DnaSandboxWidget(
     QtWidgets.QMainWindow
 ):
-    # DEFAULT_ASSET_DIR = None
-    #
-    # GENERIC_ASSETS = [
-    #     "Omar",
-    #     "Ada",
-    #     "Taro",
-    #     "Payton",
-    # ]
 
     def __init__(self, *args, **kwargs):
         super(DnaSandboxWidget, self).__init__(*args, **kwargs)
+
+        self.path_manager = DnaPathManager()
 
         self.setWindowTitle("Bren's MetaHuman DNA sandbox")
 
@@ -1236,10 +1244,6 @@ class DnaSandboxWidget(
         self.dna_viewer_dir_widget.path = mhCore.DNA_DATA_DIR
         self.dna_viewer_dir_widget.setFixedHeight(30)
 
-        # self.asset_dir_widget = DnaDirWidget("Asset Dir")
-        # self.asset_dir_widget.path = self.DEFAULT_ASSET_DIR
-        # self.asset_dir_widget.setFixedHeight(30)
-
         self.input_file_widget = DnaPathOpenWidget("Input DNA")
         self.output_file_widget = DnaPathSaveWidget("Output DNA")
 
@@ -1247,12 +1251,10 @@ class DnaSandboxWidget(
         self.output_file_widget.setFixedHeight(30)
 
         self.dna_viewer_dir_widget.PATH_CHANGED.connect(self.paths_changed)
-        # self.asset_dir_widget.PATH_CHANGED.connect(self.paths_changed)
         self.input_file_widget.PATH_CHANGED.connect(self.paths_changed)
         self.output_file_widget.PATH_CHANGED.connect(self.paths_changed)
 
         config_lyt.addWidget(self.dna_viewer_dir_widget)
-        # config_lyt.addWidget(self.asset_dir_widget)
         config_lyt.addWidget(self.input_file_widget)
         config_lyt.addWidget(self.output_file_widget)
 
@@ -1260,38 +1262,39 @@ class DnaSandboxWidget(
 
         self.tabs = QtWidgets.QTabWidget()
 
-        self.build_widget = DnaBuildWidget(
-            self.DEFAULT_ASSET_DIR, self.GENERIC_ASSETS, self.dna_viewer_dir_widget.path
-        )
-
-        self.transfer_widget = DnaTransferWidget(self.DEFAULT_ASSET_DIR, self.GENERIC_ASSETS)
-
-        # self.update_widget = DnaUpdateWidget()
-        self.poses_widget = DnaPosesWidget()
+        self.build_widget = DnaBuildWidget(self.path_manager)
+        self.transfer_widget = DnaTransferWidget(self.path_manager)
+        self.poses_widget = DnaPosesWidget(self.path_manager)
 
         self.tabs.addTab(self.build_widget, "build")
         self.tabs.addTab(self.transfer_widget, "transfer")
-        # self.tabs.addTab(self.update_widget, "update")
         self.tabs.addTab(self.poses_widget, "edit poses")
 
         lyt.addWidget(self.tabs)
 
+        self.paths_changed()
+
     def paths_changed(self):
-        self.build_widget.dna_viewer_data_path = self.dna_viewer_dir_widget.path
-        self.build_widget.asset_dir = self.asset_dir_widget.path
-        self.build_widget.input_dna_path = self.input_file_widget.path
-        self.build_widget.output_dna_path = self.output_file_widget.path
+        self.path_manager.dna_viewer_data_path = self.dna_viewer_dir_widget.path
+        self.path_manager.input_dna_path = self.input_file_widget.path
+        self.path_manager.output_dna_path = self.output_file_widget.path
 
+        # self.build_widget.dna_viewer_data_path = self.dna_viewer_dir_widget.path
+        # self.build_widget.input_dna_path = self.input_file_widget.path
+        # self.build_widget.output_dna_path = self.output_file_widget.path
+        #
         # self.transfer_widget.dna_viewer_data_path = self.dna_viewer_dir_widget.path
-        self.transfer_widget.asset_dir = self.asset_dir_widget.path
-        self.transfer_widget.input_dna_path = self.input_file_widget.path
-        self.transfer_widget.output_dna_path = self.output_file_widget.path
-
-        self.poses_widget.input_dna_path = self.input_file_widget.path
-        self.poses_widget.output_dna_path = self.output_file_widget.path
+        # self.transfer_widget.input_dna_path = self.input_file_widget.path
+        # self.transfer_widget.output_dna_path = self.output_file_widget.path
+        #
+        # self.poses_widget.dna_viewer_data_path = self.dna_viewer_dir_widget.path
+        # self.poses_widget.input_dna_path = self.input_file_widget.path
+        # self.poses_widget.output_dna_path = self.output_file_widget.path
 
         # update widgets
         self.build_widget.update_assets()
+        self.transfer_widget.update_assets()
+        self.poses_widget.update_assets()
 
         return True
 

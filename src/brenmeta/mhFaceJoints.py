@@ -146,8 +146,11 @@ def get_neck_spine_offset():
 
     return offset
 
-def restore_neck_spine_offset(offset, root="spine_04"):
+def restore_neck_spine_offset(orig_neck_pos, root="spine_04"):
     neck_pos = cmds.xform("neck_01", query=True, translation=True, worldSpace=True)
+
+    offset = [a - b for a, b in zip(neck_pos, orig_neck_pos)]
+
     root_pos = cmds.xform(root, query=True, translation=True, worldSpace=True)
     offset_pos = [a+b for a, b in zip(root_pos, offset)]
     cmds.xform(root, translation=offset_pos, worldSpace=True)
