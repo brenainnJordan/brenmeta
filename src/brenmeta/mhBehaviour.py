@@ -167,7 +167,7 @@ def set_all_poses(reader, writer, pose_data, from_absolute=True):
     return True
 
 
-def pose_joints_from_data(reader, data, expression, ignore_namespace=True):
+def pose_joints_from_data(reader, data, expression, ignore_namespace=True, defaults=None):
     mhJoints.reset_scene_joint_xforms(reader)
 
     pose_index = find_expression_index(reader, expression, ignore_namespace=ignore_namespace)
@@ -175,12 +175,16 @@ def pose_joints_from_data(reader, data, expression, ignore_namespace=True):
     pose_data = data[pose_index]
 
     for attr, value in pose_data.items():
+        if defaults:
+            if attr in defaults:
+                value += defaults[attr]
+
         cmds.setAttr(attr, value)
 
     return True
 
 
-def update_pose_data_from_scene(reader, data, expression, ignore_namespace=True):
+def update_pose_data_from_scene(reader, data, expression, ignore_namespace=True, defaults=None):
     pose_index = find_expression_index(reader, expression, ignore_namespace=ignore_namespace)
 
     pose_data = data[pose_index]
@@ -188,4 +192,45 @@ def update_pose_data_from_scene(reader, data, expression, ignore_namespace=True)
     for attr in pose_data.keys():
         pose_data[attr] = cmds.getAttr(attr)
 
+        if defaults:
+            if attr in defaults:
+                pose_data[attr] -= defaults[attr]
+
     return True
+
+
+def scale_pose(reader, data, expression, scale, attrs=None, ignore_namespace=True):
+    # default to just scaling translation
+    if attrs is None:
+        attrs = ["tx", "ty", "tz"]
+
+    pose_index = find_expression_index(reader, expression, ignore_namespace=ignore_namespace)
+
+    pose_data = data[pose_index]
+
+    for pose_attr in pose_data.keys():
+        attr = pose_attr.split(".")[-1]
+
+        if attr not in attrs:
+            continue
+
+        pose_data[pose_attr] *= scale
+
+    return True
+
+
+def scale_all_poses(data, scale, attrs=None):
+    # default to just scaling translation
+    if attrs is None:
+        attrs = ["tx", "ty", "tz"]
+
+    for pose_data in data:
+        for pose_attr in pose_data.keys():
+            attr = pose_attr.split(".")[-1]
+
+            if attr not in attrs:
+                continue
+
+            pose_data[pose_attr] *= scale
+
+    return data

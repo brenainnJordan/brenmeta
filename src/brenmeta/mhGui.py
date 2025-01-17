@@ -885,6 +885,9 @@ class DnaPosesWidget(QtWidgets.QWidget):
 
         self.path_manager = path_manager
 
+        self.create_widgets()
+
+    def create_widgets(self):
         self.input_combo = QtWidgets.QComboBox()
 
         self.load_btn = QtWidgets.QPushButton("load poses")
@@ -905,26 +908,66 @@ class DnaPosesWidget(QtWidgets.QWidget):
         self.view.setModel(self.proxy_model)
         self.view.setSelectionMode(self.view.SelectionMode.ExtendedSelection)
 
-        self.get_pose_btn = QtWidgets.QPushButton("get")
-        self.set_pose_btn = QtWidgets.QPushButton("set")
-        self.mirror_pose_btn = QtWidgets.QPushButton("mirror")
-        self.reset_pose_btn = QtWidgets.QPushButton("reset")
+        # selected
+        self.selected_group_box = QtWidgets.QGroupBox("Selected")
+        self.selected_lyt = QtWidgets.QVBoxLayout()
+        self.selected_group_box.setLayout(self.selected_lyt)
 
-        self.get_pose_btn.clicked.connect(self.get_pose)
-        self.set_pose_btn.clicked.connect(self.set_pose)
-        self.mirror_pose_btn.clicked.connect(self.mirror_pose)
-        self.reset_pose_btn.clicked.connect(self.reset_pose)
+        # scene
+        self.selected_scene_group_box = QtWidgets.QGroupBox("Scene")
+        self.selected_scene_lyt = QtWidgets.QVBoxLayout()
+        self.selected_scene_group_box.setLayout(self.selected_scene_lyt)
 
+        self.update_scene_btn = QtWidgets.QPushButton("pose joints")
+        self.reset_pose_btn = QtWidgets.QPushButton("reset joints")
+
+        self.update_scene_btn.clicked.connect(self.update_scene)
+        self.reset_pose_btn.clicked.connect(self.reset_scene)
+
+        self.selected_scene_lyt.addWidget(self.update_scene_btn)
+        self.selected_scene_lyt.addWidget(self.reset_pose_btn)
+
+        # data
+        self.selected_data_group_box = QtWidgets.QGroupBox("Data")
+        self.selected_data_lyt = QtWidgets.QVBoxLayout()
+        self.selected_data_group_box.setLayout(self.selected_data_lyt)
+
+        self.update_sl_btn = QtWidgets.QPushButton("update pose")
+        self.mirror_sl_btn = QtWidgets.QPushButton("mirror")
+        self.scale_sl_btn = QtWidgets.QPushButton("scale")
+
+        self.update_sl_btn.clicked.connect(self.update_data)
+        self.mirror_sl_btn.clicked.connect(self.mirror_pose)
+        self.scale_sl_btn.clicked.connect(self.scale_pose)
+
+        self.selected_data_lyt.addWidget(self.update_sl_btn)
+        self.selected_data_lyt.addWidget(self.mirror_sl_btn)
+        self.selected_data_lyt.addWidget(self.scale_sl_btn)
+
+        # selected lyt
+        self.selected_lyt.addWidget(self.selected_scene_group_box)
+        self.selected_lyt.addWidget(self.selected_data_group_box)
+
+        # all
+        self.all_group_box = QtWidgets.QGroupBox("All")
+        self.all_lyt = QtWidgets.QVBoxLayout()
+        self.all_group_box.setLayout(self.all_lyt)
+
+        self.scale_all_poses_btn = QtWidgets.QPushButton("scale")
+
+        self.scale_all_poses_btn.clicked.connect(self.scale_all_poses)
+
+        self.all_lyt.addWidget(self.scale_all_poses_btn)
+
+        # general layout
         self.input_lyt = QtWidgets.QHBoxLayout()
         self.input_lyt.addWidget(self.input_combo)
         self.input_lyt.addWidget(self.load_btn)
 
         self.view_btn_lyt = QtWidgets.QVBoxLayout()
 
-        self.view_btn_lyt.addWidget(self.get_pose_btn)
-        self.view_btn_lyt.addWidget(self.set_pose_btn)
-        self.view_btn_lyt.addWidget(self.mirror_pose_btn)
-        self.view_btn_lyt.addWidget(self.reset_pose_btn)
+        self.view_btn_lyt.addWidget(self.selected_group_box)
+        self.view_btn_lyt.addWidget(self.all_group_box)
         self.view_btn_lyt.addStretch()
 
         self.view_lyt = QtWidgets.QHBoxLayout()
@@ -992,9 +1035,11 @@ class DnaPosesWidget(QtWidgets.QWidget):
         self.dna_obj = dna_viewer.DNA(input_dna_path)
         self.calib_reader = dnacalib.DNACalibDNAReader(self.dna_obj.reader)
 
-        self.poses_data = mhBehaviour.get_all_poses(self.calib_reader)
+        self.attrs = mhBehaviour.get_joint_attrs(self.calib_reader)
+        self.attr_defaults = mhBehaviour.get_joint_defaults(self.calib_reader)
+        self.poses_data = mhBehaviour.get_all_poses(self.calib_reader, absolute=False)
 
-        self.set_poses(self.calib_reader, self.poses_data)
+        self.set_pose_names(self.calib_reader, self.poses_data)
 
         return True
 
@@ -1040,7 +1085,7 @@ class DnaPosesWidget(QtWidgets.QWidget):
         writer = dna.BinaryStreamWriter(stream)
         writer.setFrom(self.calib_reader)
 
-        mhBehaviour.set_all_poses(self.calib_reader, writer, self.poses_data, from_absolute=True)
+        mhBehaviour.set_all_poses(self.calib_reader, writer, self.poses_data, from_absolute=False)
 
         writer.write()
 
@@ -1068,7 +1113,7 @@ class DnaPosesWidget(QtWidgets.QWidget):
     def filter_changed(self):
         self.proxy_model.setFilterWildcard(self.filter_line_edit.text())
 
-    def set_poses(self, reader, data):
+    def set_pose_names(self, reader, data):
         pose_names = []
 
         for i, pose_data in enumerate(data):
@@ -1083,7 +1128,7 @@ class DnaPosesWidget(QtWidgets.QWidget):
 
         return True
 
-    def get_selected_poses(self):
+    def get_selected_poses(self, warn=False):
         poses = []
 
         selection = self.view.selectionModel().selection()
@@ -1093,15 +1138,7 @@ class DnaPosesWidget(QtWidgets.QWidget):
             pose = str(index.data())
             poses.append(pose)
 
-        return poses
-
-    def reset_pose(self):
-        mhJoints.reset_scene_joint_xforms(self.calib_reader)
-
-    def get_pose(self):
-        poses = self.get_selected_poses()
-
-        if not poses:
+        if not poses and warn:
             QtWidgets.QMessageBox.warning(
                 self,
                 "Warning",
@@ -1109,33 +1146,37 @@ class DnaPosesWidget(QtWidgets.QWidget):
                 QtWidgets.QMessageBox.Ok
             )
 
+        return poses
+
+    def reset_scene(self):
+        mhJoints.reset_scene_joint_xforms(self.calib_reader)
+
+    def update_scene(self):
+        poses = self.get_selected_poses(warn=True)
+
+        if not poses:
             return False
         else:
             pose = poses[0]
 
         mhBehaviour.pose_joints_from_data(
-            self.calib_reader, self.poses_data, pose, ignore_namespace=False
+            self.calib_reader, self.poses_data, pose,
+            ignore_namespace=False, defaults=self.attr_defaults
         )
 
         return True
 
-    def set_pose(self):
-        poses = self.get_selected_poses()
+    def update_data(self):
+        poses = self.get_selected_poses(warn=True)
 
         if not poses:
-            QtWidgets.QMessageBox.warning(
-                self,
-                "Warning",
-                "No pose selected",
-                QtWidgets.QMessageBox.Ok
-            )
-
             return False
         else:
             pose = poses[0]
 
         mhBehaviour.update_pose_data_from_scene(
-            self.calib_reader, self.poses_data, pose, ignore_namespace=False
+            self.calib_reader, self.poses_data, pose,
+            ignore_namespace=False, defaults=self.attr_defaults
         )
 
         return True
@@ -1147,6 +1188,46 @@ class DnaPosesWidget(QtWidgets.QWidget):
             "Mirror pose not yet implemented",
             QtWidgets.QMessageBox.Ok
         )
+
+    def scale_pose(self):
+        poses = self.get_selected_poses(warn=True)
+
+        if not poses:
+            return False
+
+        scale_value, ok = QtWidgets.QInputDialog.getDouble(
+            self, "Scale pose(s)", "Value to scale translate values of selected poses:",
+            value=1.0, min=0.0, max=10000, decimals=3
+        )
+
+        if not ok:
+            return False
+
+        scale_value = float(scale_value)
+
+        for pose in poses:
+            mhBehaviour.scale_pose(
+                self.calib_reader, self.poses_data, pose, scale_value, ignore_namespace=False
+            )
+
+        return True
+
+    def scale_all_poses(self):
+        scale_value, ok = QtWidgets.QInputDialog.getDouble(
+            self, "Scale poses", "Value to scale translate values of all poses:",
+            value=1.0, min=0.0, max=10000, decimals=3
+        )
+
+        if not ok:
+            return False
+
+        scale_value = float(scale_value)
+
+        mhBehaviour.scale_all_poses(
+            self.poses_data, scale_value
+        )
+
+        return True
 
 
 class DnaSandboxWidget(
