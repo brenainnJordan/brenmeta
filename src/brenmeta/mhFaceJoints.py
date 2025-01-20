@@ -1,3 +1,5 @@
+import random
+
 from maya import cmds
 
 from . import mhMayaUtils
@@ -121,30 +123,179 @@ PROJECT_AXES = [
 ]
 
 
-def set_joint_look():
-    for joint in [
-        "FACIAL_C_FacialRoot",
-        "FACIAL_C_LowerLipRotation",
-        "FACIAL_C_Jaw",
-        "FACIAL_C_MouthUpper",
-        "FACIAL_C_MouthLower",
-        "FACIAL_C_Neck2Root",
-        "FACIAL_C_Neck1Root",
+def set_joint_look(default_visibility=False):
+    # set draw styles
+    bone = 0
+    box = 1  # multi-child as box
+    none = 2
+
+    for joint, draw_style in [
+        ("FACIAL_C_FacialRoot", none),
+        ("FACIAL_C_LowerLipRotation", box),
+        ("FACIAL_C_Jaw", box),
+        ("FACIAL_C_MouthUpper", box),
+        ("FACIAL_C_MouthLower", box),
+        ("FACIAL_C_Neck2Root", bone),
+        ("FACIAL_C_Neck1Root", bone),
     ]:
         cmds.setAttr(
-            "{}.drawStyle".format(joint),
-            1  # multi-child as box
+            "{}.drawStyle".format(joint), draw_style
         )
 
+    # create vis layers
+    random.seed(13)
+
+    for name in [
+        ("Sideburn", ["*Masseter", "*JawBulge", "*JawRecess"]),
+        "Ear",
+        "Hair",
+        "Neck",
+        "Cheek",
+        "Forehead",
+        "Chin",
+        "MouthUpper",
+        "MouthLower",
+        "Teeth",
+        "Jawline",
+        "Nasolabial",
+        "Nose",
+        "Eye",
+        "Skin",
+        "MouthInterior",
+        "Temple",
+        "clavicle",
+    ]:
+        if isinstance(name, tuple):
+            name, ls = name
+        else:
+            ls = []
+
+        ls.append("*{}*".format(name))
+
+        joints = cmds.ls(ls, type="joint")
+
+        layer_name = "{}_layer".format(name)
+
+        if cmds.objExists(layer_name):
+            cmds.delete(layer_name)
+
+        cmds.createDisplayLayer(joints, name=layer_name)
+
+        cmds.setAttr("{}.overrideRGBColors".format(layer_name), True)
+
+        cmds.setAttr(
+            "{}.overrideColorRGB".format(layer_name),
+            random.uniform(0, 1.0), random.uniform(0, 1.0), random.uniform(0, 1.0)
+        )
+
+        cmds.setAttr("{}.visibility".format(layer_name), default_visibility)
+
+
+    # set colours
+    red = (1, 0, 0)
+    green = (0, 1, 0)
+    blue = (0, 0, 1)
+
+    dark_red = (0.5, 0, 0)
+    dark_green = (0, 0.5, 0)
+    dark_blue = (0, 0, 0.5)
+
+    yellow = (1, 1, 0)
+    light_blue = (0, 1, 1)
+    violet = (1, 0, 1)
+
+    pastel_green = (0.2, 1.0, 0.0)
+    pastel_orange = (1.0, 0.2, 0.0)
+    pastel_yellow = (1.0, 0.7, 0.0)
+    pastel_blue = (0, 0.2, 1.0)
+    sky_blue = (0, 0.7, 1.0)
+    pink = (1.0, 0.2, 1.0)
+
+    for joint, colour in [
+        # forehead
+        ("FACIAL_C_Forehead", pastel_green),
+        ("FACIAL_L_ForeheadIn", red),
+        ("FACIAL_L_ForeheadMid", pastel_orange),
+        ("FACIAL_L_ForeheadOut", pastel_yellow),
+        ("FACIAL_R_ForeheadIn", blue),
+        ("FACIAL_R_ForeheadMid", pastel_blue),
+        ("FACIAL_R_ForeheadOut", sky_blue),
+        # nose
+        ("FACIAL_C_NoseTip", pastel_green),
+        ("FACIAL_C_NoseLower", green),
+        ("FACIAL_L_Nostril", red),
+        ("FACIAL_R_Nostril", blue),
+        # eyes
+        ("FACIAL_L_EyelidUpperFurrow", red),
+        ("FACIAL_L_EyeParallel", red),
+        ("FACIAL_L_EyelidUpperA", pastel_orange),
+        ("FACIAL_L_EyelidUpperB", pastel_yellow),
+        ("FACIAL_L_EyelidLowerA", pastel_orange),
+        ("FACIAL_L_EyelidLowerB", pastel_yellow),
+        ("FACIAL_R_EyelidUpperFurrow", blue),
+        ("FACIAL_R_EyeParallel", blue),
+        ("FACIAL_R_EyelidUpperA", pastel_blue),
+        ("FACIAL_R_EyelidUpperB", sky_blue),
+        ("FACIAL_R_EyelidLowerA", pastel_blue),
+        ("FACIAL_R_EyelidLowerB", sky_blue),
+        # lip upper
+        ("FACIAL_C_LipUpper", green),
+        ("FACIAL_L_LipUpper", red),
+        ("FACIAL_L_LipUpperOuter", pastel_orange),
+        ("FACIAL_L_LipCorner", yellow),
+        ("FACIAL_R_LipUpper", blue),
+        ("FACIAL_R_LipUpperOuter", pastel_blue),
+        ("FACIAL_R_LipCorner", light_blue),
+        ("FACIAL_C_LipLower", pastel_green),
+        ("FACIAL_L_LipLower", violet),
+        ("FACIAL_L_LipLowerOuter", pink),
+        ("FACIAL_R_LipLower", violet),
+        ("FACIAL_R_LipLowerOuter", pink),
+        # cheeks
+        ("FACIAL_L_EyesackLower", dark_red),
+        ("FACIAL_L_EyesackUpper", dark_red),
+        ("FACIAL_L_CheekInner", dark_red),
+        ("FACIAL_L_CheekOuter", dark_red),
+        ("FACIAL_L_NasolabialBulge", dark_red),
+        ("FACIAL_L_CheekLower", dark_red),
+        ("FACIAL_L_Jawline", dark_red),
+        ("FACIAL_R_EyesackLower", dark_blue),
+        ("FACIAL_R_EyesackUpper", dark_blue),
+        ("FACIAL_R_CheekInner", dark_blue),
+        ("FACIAL_R_CheekOuter", dark_blue),
+        ("FACIAL_R_NasolabialBulge", dark_blue),
+        ("FACIAL_R_CheekLower", dark_blue),
+        ("FACIAL_R_Jawline", dark_blue),
+        # inner mouth
+        ("FACIAL_C_TeethLower", dark_green),
+        # neck
+        ("FACIAL_C_Neck2Root", dark_green),
+        ("FACIAL_C_Neck1Root", pastel_green),
+    ]:
+        # re-connect layer
+        cons = cmds.listConnections("{}.drawOverride".format(joint), plugs=True)
+
+        if cons:
+            layer = cons[0].split(".")[0]
+            cmds.disconnectAttr(cons[0], "{}.drawOverride".format(joint))
+            cmds.connectAttr("{}.visibility".format(layer), "{}.overrideVisibility".format(joint))
+
+        # set overrides
+        cmds.setAttr("{}.overrideEnabled".format(joint), True)
+        cmds.setAttr("{}.overrideRGBColors".format(joint), True)
+        cmds.setAttr("{}.overrideColorRGB".format(joint), *colour)
+
     return True
+
 
 def get_neck_spine_offset():
     neck_pos = cmds.xform("neck_01", query=True, translation=True, worldSpace=True)
     spine_pos = cmds.xform("spine_05", query=True, translation=True, worldSpace=True)
 
-    offset = [a-b for a, b in zip(neck_pos, spine_pos)]
+    offset = [a - b for a, b in zip(neck_pos, spine_pos)]
 
     return offset
+
 
 def restore_neck_spine_offset(orig_neck_pos, root="spine_04"):
     neck_pos = cmds.xform("neck_01", query=True, translation=True, worldSpace=True)
@@ -152,14 +303,14 @@ def restore_neck_spine_offset(orig_neck_pos, root="spine_04"):
     offset = [a - b for a, b in zip(neck_pos, orig_neck_pos)]
 
     root_pos = cmds.xform(root, query=True, translation=True, worldSpace=True)
-    offset_pos = [a+b for a, b in zip(root_pos, offset)]
+    offset_pos = [a + b for a, b in zip(root_pos, offset)]
     cmds.xform(root, translation=offset_pos, worldSpace=True)
     cmds.xform("neck_01", translation=neck_pos, worldSpace=True)
 
     return True
 
-def transfer_joint_placement(root, src_head, dst_head, threshold=0.5):
 
+def transfer_joint_placement(root, src_head, dst_head, threshold=0.5):
     leaf_joints = mhMayaUtils.get_leaf_transforms(root, allDescendents=True)
 
     snap_joints = leaf_joints + SNAP
@@ -243,6 +394,7 @@ def transfer_joint_placement(root, src_head, dst_head, threshold=0.5):
 
     return True
 
+
 def transfer_teeth(src_mesh, dst_mesh):
     """
     """
@@ -253,8 +405,8 @@ def transfer_teeth(src_mesh, dst_mesh):
         data = mhJoints.map_joint_axes_to_mesh(
             joint,
             src_mesh,
-            (0,0,1),
-            (1,0,0),
+            (0, 0, 1),
+            (1, 0, 0),
         )
 
         mhJoints.snap_joint_to_axes_data(
@@ -291,8 +443,8 @@ def transfer_teeth(src_mesh, dst_mesh):
 
     return True
 
-def transfer_eye(src_mesh, dst_mesh, side):
 
+def transfer_eye(src_mesh, dst_mesh, side):
     # joints
     eye_joint = "FACIAL_{}_Eye".format(side)
 
@@ -345,7 +497,7 @@ def transfer_eye(src_mesh, dst_mesh, side):
         aim_position[0] += 1.0
 
         matrix = mhMayaUtils.create_aim_matrix_from_positions(
-            joint_position, aim_position, mean_child_position, (1,0,0), (0,0,1)
+            joint_position, aim_position, mean_child_position, (1, 0, 0), (0, 0, 1)
         )
 
         mhMayaUtils.xform_preserve_children(
