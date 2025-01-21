@@ -100,3 +100,32 @@ def calculate_lods(dna_obj, calib_reader, from_lod=0):
         raise RuntimeError(status.message)
 
     return True
+
+def get_blendshape_deltas(dna_obj, reader, lod=0):
+    # TODO finish this
+    if lod is None:
+        mesh_indices = list(range(reader.getMeshCount()))
+    else:
+        mesh_indices = dna_obj.get_mesh_indices_for_lod(lod)
+
+    if not mesh_indices:
+        print("No meshes found in DNA.")
+        return None
+
+    for mesh_index in mesh_indices:
+        target_count = reader.getBlendShapeTargetCount(mesh_index)
+
+        for target_index in range(target_count):
+            delta_count = reader.getBlendShapeTargetDeltaCount(mesh_index, target_index)
+
+            for delta_index in range(delta_count):
+                delta = reader.getBlendShapeTargetDelta(mesh_index, target_index, delta_index)
+
+    return True
+
+def set_blendshape_deltas():
+    # TODO
+    dnacalib.SetBlendShapeTargetDeltasCommand
+
+def scale_all_blendshape_deltas():
+    pass

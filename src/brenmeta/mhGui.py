@@ -31,13 +31,47 @@ from . import mhFaceMeshes
 # GROUP_BOX_STYLE.lineWidth = 2
 # GROUP_BOX_STYLE.features = QtWidgets.QStyleOptionFrame.Rounded
 
-class DnaPathWidgetBase(
+
+class LabelledSpinBox(QtWidgets.QWidget):
+    SPIN_BOX_CLS = QtWidgets.QSpinBox
+
+    def __init__(self, name, label_width=80, spin_box_width=80, height=30, default=0, **kwargs):
+        super(LabelledSpinBox, self).__init__(**kwargs)
+
+        self.setFixedHeight(height)
+
+        lyt = QtWidgets.QHBoxLayout()
+        lyt.setContentsMargins(0, 0, 0, 0)
+        self.setLayout(lyt)
+
+        self.label = QtWidgets.QLabel(name)
+        self.spin_box = self.SPIN_BOX_CLS()
+        self.spin_box.setValue(default)
+
+        self.label.setFixedWidth(label_width)
+        self.spin_box.setFixedWidth(spin_box_width)
+
+        lyt.addWidget(self.label)
+        lyt.addWidget(self.spin_box)
+        lyt.addStretch()
+
+
+class LabelledDoubleSpinBox(LabelledSpinBox):
+    SPIN_BOX_CLS = QtWidgets.QDoubleSpinBox
+
+    def __init__(self, name, label_width=80, spin_box_width=80, height=30, default=0, **kwargs):
+        super(LabelledDoubleSpinBox, self).__init__(
+            name, label_width=label_width, spin_box_width=spin_box_width, height=height, default=default, **kwargs
+        )
+
+
+class PathWidgetBase(
     QtWidgets.QWidget
 ):
     PATH_CHANGED = QtCore.Signal()
 
     def __init__(self, label, *args, **kwargs):
-        super(DnaPathWidgetBase, self).__init__(*args, **kwargs)
+        super(PathWidgetBase, self).__init__(*args, **kwargs)
 
         self.lyt = QtWidgets.QHBoxLayout()
         self.setLayout(self.lyt)
@@ -81,10 +115,10 @@ class DnaPathWidgetBase(
         self.PATH_CHANGED.emit()
 
 
-class DnaDirWidget(DnaPathWidgetBase):
+class DirWidget(PathWidgetBase):
 
     def __init__(self, *args, **kwargs):
-        super(DnaDirWidget, self).__init__(*args, **kwargs)
+        super(DirWidget, self).__init__(*args, **kwargs)
 
     def browse_clicked(self):
         path = QtWidgets.QFileDialog.getExistingDirectory(
@@ -102,10 +136,10 @@ class DnaDirWidget(DnaPathWidgetBase):
         return path
 
 
-class DnaPathOpenWidget(DnaPathWidgetBase):
+class PathOpenWidget(PathWidgetBase):
 
     def __init__(self, *args, **kwargs):
-        super(DnaPathOpenWidget, self).__init__(*args, **kwargs)
+        super(PathOpenWidget, self).__init__(*args, **kwargs)
 
     def browse_clicked(self):
         file_path, file_type = QtWidgets.QFileDialog.getOpenFileName(
@@ -123,10 +157,10 @@ class DnaPathOpenWidget(DnaPathWidgetBase):
         return file_path
 
 
-class DnaPathSaveWidget(DnaPathWidgetBase):
+class PathSaveWidget(PathWidgetBase):
 
     def __init__(self, *args, **kwargs):
-        super(DnaPathSaveWidget, self).__init__(*args, **kwargs)
+        super(PathSaveWidget, self).__init__(*args, **kwargs)
 
     def browse_clicked(self):
         file_path, file_type = QtWidgets.QFileDialog.getSaveFileName(
@@ -333,6 +367,10 @@ class DnaTransferWidget(QtWidgets.QWidget):
 
         self.input_dna_combo = QtWidgets.QComboBox()
 
+        self.scale_spin = LabelledDoubleSpinBox("scale", label_width=80, spin_box_width=80, height=30, default=1.0)
+        self.scale_spin.spin_box.setMinimum(0.0)
+        self.scale_spin.spin_box.setMaximum(100000.0)
+
         self.update_mesh_checkbox = QtWidgets.QCheckBox("update meshes")
         self.update_mesh_checkbox.setChecked(QtCore.Qt.Checked)
 
@@ -346,6 +384,7 @@ class DnaTransferWidget(QtWidgets.QWidget):
         self.update_btn.clicked.connect(self.update_dna)
 
         update_dna_lyt.addWidget(self.input_dna_combo)
+        update_dna_lyt.addWidget(self.scale_spin)
         update_dna_lyt.addWidget(self.update_mesh_checkbox)
         update_dna_lyt.addWidget(self.update_joints_checkbox)
         update_dna_lyt.addWidget(self.calculate_lods_checkbox)
@@ -409,7 +448,10 @@ class DnaTransferWidget(QtWidgets.QWidget):
     def update_dna(self):
 
         # check that at least one box is checked
+        scale_value = float(self.scale_spin.spin_box.value())
+
         if not any([
+            scale_value != 1.0,
             self.update_mesh_checkbox.isChecked(),
             self.update_joints_checkbox.isChecked(),
             self.calculate_lods_checkbox.isChecked(),
@@ -466,6 +508,9 @@ class DnaTransferWidget(QtWidgets.QWidget):
         dna_obj = dna_viewer.DNA(input_dna_path)
 
         calib_reader = dnacalib.DNACalibDNAReader(dna_obj.reader)
+
+        if scale_value != 1.0:
+             mhCore.scale_dna(calib_reader, scale_value)
 
         if self.update_joints_checkbox.isChecked():
             mhJoints.update_joint_neutral_xforms(calib_reader)
@@ -852,6 +897,17 @@ class DnaBuildWidget(QtWidgets.QWidget):
 
         full_rig = self.full_rig_checkbox.isChecked()
 
+        # confirm
+        confirm = QtWidgets.QMessageBox.warning(
+            self,
+            "confirm",
+            "Build rig?\n{}".format(dna_path),
+            QtWidgets.QMessageBox.Ok | QtWidgets.QMessageBox.Cancel
+        )
+
+        if confirm is QtWidgets.QMessageBox.Cancel:
+            return None
+
         dna = dna_viewer.DNA(dna_path)
 
         if full_rig:
@@ -1040,6 +1096,13 @@ class DnaPosesWidget(QtWidgets.QWidget):
         self.poses_data = mhBehaviour.get_all_poses(self.calib_reader, absolute=False)
 
         self.set_pose_names(self.calib_reader, self.poses_data)
+
+        QtWidgets.QMessageBox.information(
+            self,
+            "Complete",
+            "All poses loaded: {}".format(input_dna_path),
+            QtWidgets.QMessageBox.Ok
+        )
 
         return True
 
@@ -1252,12 +1315,12 @@ class DnaSandboxWidget(
         config_lyt = QtWidgets.QVBoxLayout()
         self.config_group_box.setLayout(config_lyt)
 
-        self.dna_viewer_dir_widget = DnaDirWidget("Dna Viewer Dir")
+        self.dna_viewer_dir_widget = DirWidget("Dna Viewer Dir")
         self.dna_viewer_dir_widget.path = mhCore.DNA_DATA_DIR
         self.dna_viewer_dir_widget.setFixedHeight(30)
 
-        self.input_file_widget = DnaPathOpenWidget("Input DNA")
-        self.output_file_widget = DnaPathSaveWidget("Output DNA")
+        self.input_file_widget = PathOpenWidget("Input DNA")
+        self.output_file_widget = PathSaveWidget("Output DNA")
 
         self.input_file_widget.setFixedHeight(30)
         self.output_file_widget.setFixedHeight(30)

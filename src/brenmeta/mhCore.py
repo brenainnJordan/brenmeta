@@ -41,3 +41,7 @@ def save_dna(reader, path, validate=True):
 
     return True
 
+def scale_dna(reader, scale):
+    scale_cmd = dnacalib.ScaleCommand(scale, [0,0,0])
+    scale_cmd.run(reader)
+    return True
