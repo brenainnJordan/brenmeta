@@ -5,12 +5,17 @@ from maya import cmds
 
 from . import mhMayaUtils
 
-def get_vertex_positions_from_dna(dna_obj, reader, lod=0):
-
+def get_mesh_indices(dna_obj, reader, lod=None):
     if lod is None:
         mesh_indices = list(range(reader.getMeshCount()))
     else:
         mesh_indices = dna_obj.get_mesh_indices_for_lod(lod)
+
+    return mesh_indices
+
+def get_vertex_positions_from_dna(dna_obj, reader, lod=0):
+
+    mesh_indices = get_mesh_indices(dna_obj, reader, lod=lod)
 
     if not mesh_indices:
         print("No meshes found in DNA.")

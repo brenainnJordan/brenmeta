@@ -374,8 +374,11 @@ class DnaTransferWidget(QtWidgets.QWidget):
         self.update_mesh_checkbox = QtWidgets.QCheckBox("update meshes")
         self.update_mesh_checkbox.setChecked(QtCore.Qt.Checked)
 
-        self.update_joints_checkbox = QtWidgets.QCheckBox("update joints")
-        self.update_joints_checkbox.setChecked(QtCore.Qt.Checked)
+        self.update_joint_xforms_checkbox = QtWidgets.QCheckBox("update joint xforms")
+        self.update_joint_xforms_checkbox.setChecked(QtCore.Qt.Checked)
+
+        self.update_joint_list_checkbox = QtWidgets.QCheckBox("update joint list")
+        self.update_joint_list_checkbox.setChecked(QtCore.Qt.Checked)
 
         self.calculate_lods_checkbox = QtWidgets.QCheckBox("calculate lods")
         self.calculate_lods_checkbox.setChecked(QtCore.Qt.Checked)
@@ -386,7 +389,8 @@ class DnaTransferWidget(QtWidgets.QWidget):
         update_dna_lyt.addWidget(self.input_dna_combo)
         update_dna_lyt.addWidget(self.scale_spin)
         update_dna_lyt.addWidget(self.update_mesh_checkbox)
-        update_dna_lyt.addWidget(self.update_joints_checkbox)
+        update_dna_lyt.addWidget(self.update_joint_xforms_checkbox)
+        update_dna_lyt.addWidget(self.update_joint_list_checkbox)
         update_dna_lyt.addWidget(self.calculate_lods_checkbox)
         update_dna_lyt.addWidget(self.update_btn)
 
@@ -453,7 +457,8 @@ class DnaTransferWidget(QtWidgets.QWidget):
         if not any([
             scale_value != 1.0,
             self.update_mesh_checkbox.isChecked(),
-            self.update_joints_checkbox.isChecked(),
+            self.update_joint_xforms_checkbox.isChecked(),
+            self.update_joint_list_checkbox.isChecked(),
             self.calculate_lods_checkbox.isChecked(),
         ]):
             QtWidgets.QMessageBox.critical(
@@ -512,8 +517,11 @@ class DnaTransferWidget(QtWidgets.QWidget):
         if scale_value != 1.0:
              mhCore.scale_dna(calib_reader, scale_value)
 
-        if self.update_joints_checkbox.isChecked():
-            mhJoints.update_joint_neutral_xforms(calib_reader)
+        if self.update_joint_xforms_checkbox.isChecked():
+            mhJoints.update_joint_neutral_xforms(calib_reader, err=False)
+
+        if self.update_joint_list_checkbox.isChecked():
+            mhJoints.update_joint_list(calib_reader, verbose=True)
 
         if self.update_mesh_checkbox.isChecked():
             mhMesh.update_meshes_from_scene(dna_obj, calib_reader)
@@ -601,6 +609,58 @@ class RepathWidget(QtWidgets.QWidget):
 
         return True
 
+class DnaInspectWidget(QtWidgets.QMainWindow):
+
+    def __init__(self, dna_path, lod, *args, **kwargs):
+        super(DnaInspectWidget, self).__init__(*args, **kwargs)
+
+        filename = os.path.basename(dna_path)
+
+        self.setWindowTitle(filename)
+
+        dna_obj = dna_viewer.DNA(dna_path)
+        calib_reader = dnacalib.DNACalibDNAReader(dna_obj.reader)
+
+        mesh_fmt = "    {mesh_name}: {point_count} points, {blendshape_count} blendshape targets\n"
+
+        mesh_txt = ""
+
+        mesh_indices = mhMesh.get_mesh_indices(dna_obj, calib_reader, lod=lod)
+
+        for mesh_index in mesh_indices:
+            mesh_txt += mesh_fmt.format(
+                mesh_name=dna_obj.meshes.names[mesh_index],
+                point_count=calib_reader.getVertexPositionCount(mesh_index),
+                blendshape_count=calib_reader.getBlendShapeTargetCount(mesh_index)
+            )
+
+        text = """
+Path: {path}
+Joint count: {joint_count}
+Mesh count: {mesh_count}
+Meshes: [
+{meshes}
+]
+        """.format(
+            path=dna_path,
+            joint_count=calib_reader.getJointCount(),
+            mesh_count=calib_reader.getMeshCount(),
+            meshes = mesh_txt,
+
+        )
+
+        print(text)
+
+        self.label = QtWidgets.QLabel(text)
+        self.label.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse)
+
+        self.setCentralWidget(self.label)
+
+        # self.lyt = QtWidgets.QVBoxLayout()
+        # self.lyt.addWidget(self.label)
+        # self.setLayout(self.lyt)
+
+
 
 class DnaBuildWidget(QtWidgets.QWidget):
 
@@ -623,11 +683,16 @@ class DnaBuildWidget(QtWidgets.QWidget):
         # TODO more options
         self.full_rig_checkbox = QtWidgets.QCheckBox("full rig")
 
+        self.inspect_btn = QtWidgets.QPushButton("Inspect")
+        self.inspect_btn.setFixedHeight(30)
+        self.inspect_btn.clicked.connect(self.inspect_dna)
+
         self.build_btn = QtWidgets.QPushButton("Build")
         self.build_btn.setFixedHeight(30)
         self.build_btn.clicked.connect(self.build_rig)
 
         build_lyt.addWidget(self.build_combo)
+        build_lyt.addWidget(self.inspect_btn)
         build_lyt.addWidget(self.full_rig_checkbox)
         build_lyt.addWidget(self.build_btn)
 
@@ -874,6 +939,20 @@ class DnaBuildWidget(QtWidgets.QWidget):
         except Exception as err:
             cmds.undoInfo(closeChunk=True)
             self.error(err)
+
+        return True
+
+    def inspect_dna(self, lod=0):
+        build_mode = str(self.build_combo.currentText())
+
+        dna_path = self.path_manager.get_path(build_mode)
+
+        if not os.path.exists(dna_path):
+            self.error("Dna path not found: {}".format(dna_path))
+            return False
+
+        self.inspect_widget = DnaInspectWidget(dna_path, lod, parent=self)
+        self.inspect_widget.show()
 
         return True
 

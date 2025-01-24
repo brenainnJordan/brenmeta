@@ -33,8 +33,7 @@ def reset_scene_joint_xforms(reader, err=False):
     return True
 
 
-def update_joint_neutral_xforms(calib_reader, verbose=False, err=True):
-
+def update_joint_neutral_xforms(calib_reader, verbose=False, err=False):
     joint_translations = []
     joint_rotations = []
 
@@ -42,8 +41,12 @@ def update_joint_neutral_xforms(calib_reader, verbose=False, err=True):
         joint_name = calib_reader.getJointName(i)
 
         if not cmds.objExists(joint_name):
+            msg = "Joint not found: {}".format(joint_name)
+
             if err:
-                raise Exception("Joint not found: {}".format(joint_name))
+                raise Exception(msg)
+            else:
+                cmds.warning(msg)
 
             translation = calib_reader.getNeutralJointTranslation(i)
             rotation = calib_reader.getNeutralJointRotation(i)
@@ -63,6 +66,31 @@ def update_joint_neutral_xforms(calib_reader, verbose=False, err=True):
     commands = dnacalib.CommandSequence()
     commands.add(translations_cmd)
     commands.add(rotations_cmd)
+    commands.run(calib_reader)
+
+    return True
+
+
+def update_joint_list(calib_reader, verbose=False):
+    """Remove any joints in the reader that don't exist in the scene
+    """
+    indices_to_remove = []
+
+    for i in range(calib_reader.getJointCount()):
+        joint_name = calib_reader.getJointName(i)
+
+        if not cmds.objExists(joint_name):
+            if verbose:
+                print("Removing joint from dna: {}".format(joint_name))
+
+            indices_to_remove.append(i)
+
+    commands = dnacalib.CommandSequence()
+
+    for i in reversed(indices_to_remove):
+        command = dnacalib.RemoveJointCommand(i)
+        commands.add(command)
+
     commands.run(calib_reader)
 
     return True
