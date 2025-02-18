@@ -41,6 +41,20 @@ R_EYELID_EDGES = [
     10351, 10367, 10369, 11770, 11773,
 ]
 
+L_EYELID_EDGE_VERTS = [
+    3974, 7723, 3994, 8701, 3995, 7729, 3998, 7731, 4000, 7737, 4002, 7745, 4007, 7771, 4021, 7876, 4075, 7856, 4073,
+    7858, 4068, 7844, 4058, 7829, 4057, 7833, 4061, 8695, 4027, 7781, 4028, 9123, 3983, 7704, 3982, 7710, 3986, 8750,
+    3918, 7610, 3911, 7597, 3910, 8766, 3893, 7577, 3894, 8762, 3901, 7586, 3898, 7643, 3931, 7630, 3932, 8759, 3938,
+    7638, 3939, 7694
+]
+
+R_EYELID_EDGE_VERTS = [
+    13701, 903, 13671, 868, 13617, 867, 14738, 861, 13610, 860, 13622, 827, 13562, 830, 14741, 823, 13557, 822, 14744,
+    839, 13578, 840, 13588, 847, 14728, 915, 13688, 911, 13683, 912, 15103, 957, 13758, 956, 14674, 990, 13809, 986,
+    13806, 987, 13823, 997, 13837, 1002, 13832, 1004, 13855, 950, 13749, 936, 13723, 931, 13714, 929, 13710, 927, 13705,
+    924, 14680, 923
+]
+
 L_EDGE_INNER_VERTS = [
     53, 54, 55, 108, 109, 110, 111, 112, 113, 114, 115, 116, 118, 119, 120, 121, 231, 234, 237, 240, 243, 246, 249, 252,
     255, 258, 261, 264
@@ -112,12 +126,10 @@ R_EYE_SHELL_CORNER_VERTS = [
 ]
 
 
-def create_cone_from_edges(name, mesh, edge_ids, origin, scale=1.0):
+def create_cone_from_edges(name, mesh, vertex_ids, origin, scale=1.0):
     """stuff
     """
     mesh_dag = mhMayaUtils.parse_dag_path(mesh)
-
-    edge_vert_ids = mhMayaUtils.edges_to_vertex_ids(mesh_dag, edge_ids)
 
     # get mesh points
     # get point positions
@@ -126,51 +138,12 @@ def create_cone_from_edges(name, mesh, edge_ids, origin, scale=1.0):
 
     origin = OpenMaya.MVector(origin)
 
-    # re-order points in sequence
-    sorted_src_point_ids = [edge_vert_ids[0]]
-
-    src_vert_it = OpenMaya.MItMeshVertex(mesh_dag)
-    src_vert_it.setIndex(edge_vert_ids[0])
-
-    connected_vert_ids = src_vert_it.getConnectedVertices()
-
-    # pick either to start
-    connected_edge_vert_ids = [i for i in connected_vert_ids if i in edge_vert_ids]
-    sorted_src_point_ids.append(connected_edge_vert_ids[0])
-
-    for i in range(len(edge_vert_ids) - 2):
-        # TODO check there is exactly two connected points
-        src_vert_it.setIndex(sorted_src_point_ids[-1])
-        connected_vert_ids = src_vert_it.getConnectedVertices()
-        # connected_edge_ids = [i for i in connected_vert_ids if i in edge_vert_ids]
-
-        # get point that is not already in the list
-        connected_vert_found = False
-        for connected_vert_id in connected_vert_ids:
-            if connected_vert_id not in edge_vert_ids:
-                continue
-            if connected_vert_id not in sorted_src_point_ids:
-                sorted_src_point_ids.append(connected_vert_id)
-                connected_vert_found = True
-                break
-
-        if not connected_vert_found:
-            raise Exception("Failed to sort points: {} {} {}".format(
-                sorted_src_point_ids[-1], connected_vert_ids, sorted_src_point_ids)
-            )
-
-    # print("Sorted edge vertex ids: ({}) {}".format(len(sorted_src_point_ids), sorted_src_point_ids))
-
-    sorted_src_points = [src_mesh_points[i] for i in sorted_src_point_ids]
+    sorted_src_points = [src_mesh_points[i] for i in vertex_ids]
 
     # scale
     if scale != 1.0:
-        # print(origin)
-        # print(sorted_src_points[0])
         deltas = [OpenMaya.MPoint(i - origin) for i in sorted_src_points]
-        # print(deltas[0])
         deltas = [i * scale for i in deltas]
-        # print(deltas[0])
         sorted_src_points = [i + origin for i in deltas]
 
     # construct new list of points
@@ -237,8 +210,8 @@ def create_eyelid_wrapper_meshes(head_mesh, l_eye_mesh, r_eye_mesh, prefix=None,
         l_mesh = "{}{}".format(prefix, l_mesh)
         r_mesh = "{}{}".format(prefix, r_mesh)
 
-    create_cone_from_edges(l_mesh, head_mesh, L_EYELID_EDGES, l_position, scale=scale)
-    create_cone_from_edges(r_mesh, head_mesh, R_EYELID_EDGES, r_position, scale=scale)
+    create_cone_from_edges(l_mesh, head_mesh, L_EYELID_EDGE_VERTS, l_position, scale=scale)
+    create_cone_from_edges(r_mesh, head_mesh, R_EYELID_EDGE_VERTS, r_position, scale=scale)
 
     return l_mesh, r_mesh
 
@@ -358,8 +331,6 @@ def blend_points(src_mesh, dst_mesh, vert_ids, blend=1.0):
     return True
 
 
-
-
 def transfer_eyeball_mesh(
         mesh, src_pivot, dst_pivot, dst_scale, src_prefix="src_",
 ):
@@ -387,98 +358,16 @@ def transfer_eyeball_mesh(
     return True
 
 
-
-def transfer_eyeball_meshes(
-        l_eyeball_mesh, r_eyeball_mesh, l_wrapper_mesh, r_wrapper_mesh, l_orig_wrapper, r_orig_wrapper,
-        src_prefix="src_", recalculate_pivots=True,
-):
-    """stuff
-    """
-
-    pivots = []
-
-    for eyeball_mesh, wrapper_mesh, orig_wrapper in [
-        (l_eyeball_mesh, l_wrapper_mesh, l_orig_wrapper),
-        (r_eyeball_mesh, r_wrapper_mesh, r_orig_wrapper),
-    ]:
-        # create mesh
-        src_eyeball_mesh = "{}{}".format(src_prefix, eyeball_mesh)
-        cmds.duplicate(src_eyeball_mesh, name=eyeball_mesh)
-        cmds.parent(eyeball_mesh, world=True)
-
-        # get points and pivots from wrapper mesh
-        dst_wrapper_points = [OpenMaya.MVector(i) for i in mhMayaUtils.get_points(wrapper_mesh)]
-        dst_eye_pivot = dst_wrapper_points.pop(0)
-
-        src_wrapper_points = [OpenMaya.MVector(i) for i in mhMayaUtils.get_points(orig_wrapper)]
-        src_eye_pivot = src_wrapper_points.pop(0)
-
-        # approximate eyeball scale difference
-        # TODO option to average L/R
-        if recalculate_pivots:
-            # ignore pivots and use width of wrapper points to estimate scale
-            src_x = [i.x for i in src_wrapper_points]
-            dst_x = [i.x for i in dst_wrapper_points]
-            src_width = max(src_x) - min(src_x)
-            dst_width = max(dst_x) - min(dst_x)
-
-            eyeball_scale = dst_width/src_width
-
-        else:
-            # use distance between pivot and points to estimate scale
-
-            dst_wrapper_vectors = [i - dst_eye_pivot for i in dst_wrapper_points]
-            src_wrapper_vectors = [i - src_eye_pivot for i in src_wrapper_points]
-
-            eyeball_scale = mean([a.length() / b.length() for a, b in zip(dst_wrapper_vectors, src_wrapper_vectors)])
-
-        print("eyeball scale: {} ({})".format(eyeball_scale, eyeball_mesh))
-
-        if recalculate_pivots:
-            src_avg_point = mhMayaUtils.get_average_position(src_wrapper_points)
-            src_eye_pivot_delta = [a - b for a, b in zip(src_eye_pivot, src_avg_point)]
-
-            dst_avg_point = mhMayaUtils.get_average_position(dst_wrapper_points)
-
-            dst_eye_pivot = OpenMaya.MVector([
-                (a * eyeball_scale) + b for a, b in zip(src_eye_pivot_delta, dst_avg_point)
-            ])
-
-        # transform eyeball
-        src_eyeball_points = mhMayaUtils.get_points(src_eyeball_mesh)
-        src_eyeball_vectors = [i - src_eye_pivot for i in src_eyeball_points]
-
-        dst_eyeball_points = [OpenMaya.MPoint((i * eyeball_scale) + dst_eye_pivot) for i in src_eyeball_vectors]
-
-        dst_eyeball_dag = mhMayaUtils.parse_dag_path(eyeball_mesh)
-        dst_eyeball_fn = OpenMaya.MFnMesh(dst_eyeball_dag)
-        dst_eyeball_fn.setPoints(dst_eyeball_points)
-
-        # store for later
-        pivots.append(dst_eye_pivot)
-
-    return pivots
-
-
 def create_inner_mouth_meshes(
         blend_head,
         src_prefix="src_",
-        # head_mesh="head_lod0_mesh",
         teeth_mesh="teeth_lod0_mesh",
         saliva_mesh="saliva_lod0_mesh",
-        # cleanup=True,
 ):
-    # src_head_mesh = "{}{}".format(src_prefix, head_mesh)
-
     src_teeth_mesh = "{}{}".format(src_prefix, teeth_mesh)
     src_saliva_mesh = "{}{}".format(src_prefix, saliva_mesh)
 
     meshes = [teeth_mesh, saliva_mesh]
-
-    # transfer_grp = cmds.createNode("transform", name="transfer_GRP")
-
-    # blend_head = cmds.duplicate(src_head_mesh, name="head_mouth_blend_mesh")[0]
-    # cmds.parent(blend_head, transfer_grp)
 
     cmds.duplicate(src_teeth_mesh, name=teeth_mesh)
     cmds.duplicate(src_saliva_mesh, name=saliva_mesh)
@@ -509,21 +398,6 @@ def create_inner_mouth_meshes(
             # falloffMode=0
         }
     )
-
-    # bs_node = cmds.blendShape(head_mesh, blend_head)[0]
-    # cmds.setAttr("{}.w[0]".format(bs_node), 1.0)
-    #
-    # # cleanup
-    # if cleanup:
-    #     meshes = [
-    #         i for i in all_meshes
-    #         if cmds.objExists(i)
-    #     ]
-    #
-    #     cmds.select(meshes)
-    #     cmds.DeleteHistory()
-    #
-    #     cmds.delete(transfer_grp)
 
     return meshes
 
@@ -600,21 +474,6 @@ def create_eyewet_meshes(
 
     return meshes, edge_blend_mesh, shell_blend_mesh
 
-# def snap_eye_shell_border():
-#     shell_mesh = "eyeshell_lod0_mesh"
-#     shell_blend_mesh = "eye_shell_blend_mesh"
-#
-#     blend_points(
-#         shell_blend_mesh, shell_mesh, EYE_SHELL_BORDER_VERTS + EYE_SHELL_BLEND_VERTS
-#     )
-#
-#     blend_vertices = [
-#         "{}.vtx[{}]".format(shell_mesh, i) for i in EYE_SHELL_BLEND_VERTS
-#     ]
-#
-#     cmds.polyAverageVertex(blend_vertices, i=10, ch=False)
-#
-#     return True
 
 def eyewet_post(edge_mesh, edge_blend_mesh, shell_mesh, shell_blend_mesh, l_eyeball_mesh, r_eyeball_mesh):
     # clean up shell
@@ -628,7 +487,6 @@ def eyewet_post(edge_mesh, edge_blend_mesh, shell_mesh, shell_blend_mesh, l_eyeb
         project_mesh_onto_eye(shell_mesh, eyeball_mesh, verts, eye_mid_verts, 0.05)
 
     # snap shell border
-    # snap_eye_shell_border()
     blend_points(
         shell_blend_mesh, shell_mesh, EYE_SHELL_BORDER_VERTS + EYE_SHELL_BLEND_VERTS
     )
@@ -672,6 +530,7 @@ def eyewet_post(edge_mesh, edge_blend_mesh, shell_mesh, shell_blend_mesh, l_eyeb
 
     return True
 
+
 def transfer_face_meshes(
         src_prefix="src_",
         dst_head_mesh="head_lod0_mesh",
@@ -685,7 +544,6 @@ def transfer_face_meshes(
         transfer_eyelashes=True,
         transfer_eyewet=True,
         transfer_inner_mouth=True,
-        # recalculate_pivots=True,
         cleanup=True,
 ):
     """
@@ -717,20 +575,13 @@ def transfer_face_meshes(
         delta mush without displacement to relax whole mesh slightly (minus border edges)
 
 
-    TODO check how corner of edge is getting messed up
-
-    TODO test with shaders and motion
-
-    TODO test on another asset
-
-
 from . import mhFaceMeshes
 
 mhFaceMeshes.transfer_eye_meshes(
     "l_eyelid_wrapper_mesh", "r_eyelid_wrapper_mesh", ["eyeshell_lod0_mesh", "eyelashes_lod0_mesh"]
 )
 
-    TODO test new methodology!!!
+    TODO tidy this up
 
     """
 
@@ -766,13 +617,10 @@ mhFaceMeshes.transfer_eye_meshes(
     dst_points = mhMayaUtils.get_points(dst_head_mesh, as_vector=True)
 
     # get eyelid edge points
-    l_eyelid_vert_ids = mhMayaUtils.edges_to_vertex_ids(src_head_mesh, L_EYELID_EDGES)
-    r_eyelid_vert_ids = mhMayaUtils.edges_to_vertex_ids(src_head_mesh, R_EYELID_EDGES)
-
-    l_src_eyelid_points = [src_points[i] for i in l_eyelid_vert_ids]
-    r_src_eyelid_points = [src_points[i] for i in r_eyelid_vert_ids]
-    l_dst_eyelid_points = [dst_points[i] for i in l_eyelid_vert_ids]
-    r_dst_eyelid_points = [dst_points[i] for i in r_eyelid_vert_ids]
+    l_src_eyelid_points = [src_points[i] for i in L_EYELID_EDGE_VERTS]
+    r_src_eyelid_points = [src_points[i] for i in R_EYELID_EDGE_VERTS]
+    l_dst_eyelid_points = [dst_points[i] for i in L_EYELID_EDGE_VERTS]
+    r_dst_eyelid_points = [dst_points[i] for i in R_EYELID_EDGE_VERTS]
 
     # approximate dst eyeball scale based on width
     l_src_x = [i.x for i in l_src_eyelid_points]
@@ -788,7 +636,7 @@ mhFaceMeshes.transfer_eye_meshes(
     l_eyeball_scale = l_dst_width / l_src_width
     r_eyeball_scale = r_dst_width / r_src_width
 
-    dst_eyeball_scale = (l_eyeball_scale + r_eyeball_scale)/2.0
+    dst_eyeball_scale = (l_eyeball_scale + r_eyeball_scale) / 2.0
 
     # determine l dst pivot
     l_src_wrapper_points = mhMayaUtils.get_points(l_src_wrapper_mesh, as_vector=True)
@@ -830,9 +678,6 @@ mhFaceMeshes.transfer_eye_meshes(
     dst_wrapper_mesh = cmds.polyUnite(temp, name="dst_eyelid_wrapper_mesh", constructionHistory=False)[0]
 
     cmds.parent(src_wrapper_mesh, dst_wrapper_mesh, transfer_grp)
-
-    # l_orig_wrapper = cmds.duplicate(l_src_wrapper_mesh, name="{}_orig".format(l_src_wrapper_mesh))[0]
-    # r_orig_wrapper = cmds.duplicate(r_src_wrapper_mesh, name="{}_orig".format(r_src_wrapper_mesh))[0]
 
     # wrap l/r wrapper meshes to combined wrapper mesh
     mhMayaUtils.create_wrap(
@@ -879,7 +724,6 @@ mhFaceMeshes.transfer_eye_meshes(
     else:
         edge_blend_mesh = shell_blend_mesh = None
 
-
     # eyelashes
     if transfer_eyelashes:
         src_lash_mesh = "{}{}".format(src_prefix, lash_mesh)
@@ -909,17 +753,8 @@ mhFaceMeshes.transfer_eye_meshes(
     wrapper_bs_node = cmds.blendShape(dst_wrapper_mesh, src_wrapper_mesh)[0]
     cmds.setAttr("{}.w[0]".format(wrapper_bs_node), 1.0)
 
-    # delete history on wrap meshes
-    # cmds.select(l_src_wrapper_mesh, r_src_wrapper_mesh)
-    # cmds.DeleteHistory()
-
     # transfer eyes
     if transfer_eyeballs:
-        # transfer_eyeball_meshes(
-        #     l_eyeball_mesh, r_eyeball_mesh, l_src_wrapper_mesh, r_src_wrapper_mesh, l_orig_wrapper, r_orig_wrapper,
-        #     src_prefix=src_prefix, recalculate_pivots=recalculate_pivots,
-        # )
-
         transfer_eyeball_mesh(
             l_eyeball_mesh, l_src_eye_pivot, l_dst_eye_pivot, dst_eyeball_scale, src_prefix="src_",
         )
