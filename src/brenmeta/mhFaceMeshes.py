@@ -117,17 +117,7 @@ def create_cone_from_edges(name, mesh, edge_ids, origin, scale=1.0):
     """
     mesh_dag = mhMayaUtils.parse_dag_path(mesh)
 
-    # convert to vertex ids
-    edge_it = OpenMaya.MItMeshEdge(mesh_dag)
-
-    edge_vert_ids = set([])
-
-    for i in edge_ids:
-        edge_it.setIndex(i)
-        edge_vert_ids.add(edge_it.vertexId(0))
-        edge_vert_ids.add(edge_it.vertexId(1))
-
-    edge_vert_ids = list(edge_vert_ids)
+    edge_vert_ids = mhMayaUtils.edges_to_vertex_ids(mesh_dag, edge_ids)
 
     # get mesh points
     # get point positions
@@ -228,14 +218,26 @@ def get_average_vertex_position(vertices):
     return [mean(values[i::3]) for i in range(3)]
 
 
-def create_eyelid_wrapper_meshes(head_mesh, l_eye_mesh, r_eye_mesh, scale=1.0):
-    l_position = get_average_vertex_position("{}.vtx{}".format(l_eye_mesh, L_EYE_MID_VERTS))
-    r_position = get_average_vertex_position("{}.vtx{}".format(r_eye_mesh, R_EYE_MID_VERTS))
+def create_eyelid_wrapper_meshes(head_mesh, l_eye_mesh, r_eye_mesh, prefix=None, scale=1.0):
+    # allow pivots to be passed in
+    if isinstance(l_eye_mesh, (list, tuple)):
+        l_position = l_eye_mesh
+    else:
+        l_position = get_average_vertex_position("{}.vtx{}".format(l_eye_mesh, L_EYE_MID_VERTS))
+
+    if isinstance(r_eye_mesh, (list, tuple)):
+        r_position = r_eye_mesh
+    else:
+        r_position = get_average_vertex_position("{}.vtx{}".format(r_eye_mesh, R_EYE_MID_VERTS))
 
     l_mesh = "l_eyelid_wrapper_mesh"
-    create_cone_from_edges(l_mesh, head_mesh, L_EYELID_EDGES, l_position, scale=scale)
-
     r_mesh = "r_eyelid_wrapper_mesh"
+
+    if prefix:
+        l_mesh = "{}{}".format(prefix, l_mesh)
+        r_mesh = "{}{}".format(prefix, r_mesh)
+
+    create_cone_from_edges(l_mesh, head_mesh, L_EYELID_EDGES, l_position, scale=scale)
     create_cone_from_edges(r_mesh, head_mesh, R_EYELID_EDGES, r_position, scale=scale)
 
     return l_mesh, r_mesh
@@ -358,6 +360,33 @@ def blend_points(src_mesh, dst_mesh, vert_ids, blend=1.0):
 
 
 
+def transfer_eyeball_mesh(
+        mesh, src_pivot, dst_pivot, dst_scale, src_prefix="src_",
+):
+    """stuff
+    """
+
+    src_pivot = OpenMaya.MVector(src_pivot)
+    dst_pivot = OpenMaya.MVector(dst_pivot)
+
+    # create mesh
+    src_mesh = "{}{}".format(src_prefix, mesh)
+    cmds.duplicate(src_mesh, name=mesh)
+    cmds.parent(mesh, world=True)
+
+    # transform eyeball
+    src_points = mhMayaUtils.get_points(src_mesh)
+    src_vectors = [i - src_pivot for i in src_points]
+
+    dst_points = [OpenMaya.MPoint((i * dst_scale) + dst_pivot) for i in src_vectors]
+
+    dst_dag = mhMayaUtils.parse_dag_path(mesh)
+    dst_fn = OpenMaya.MFnMesh(dst_dag)
+    dst_fn.setPoints(dst_points)
+
+    return True
+
+
 
 def transfer_eyeball_meshes(
         l_eyeball_mesh, r_eyeball_mesh, l_wrapper_mesh, r_wrapper_mesh, l_orig_wrapper, r_orig_wrapper,
@@ -385,10 +414,24 @@ def transfer_eyeball_meshes(
         src_eye_pivot = src_wrapper_points.pop(0)
 
         # approximate eyeball scale difference
-        wrapper_vectors = [i - dst_eye_pivot for i in dst_wrapper_points]
-        wrapper_orig_vectors = [i - src_eye_pivot for i in src_wrapper_points]
+        # TODO option to average L/R
+        if recalculate_pivots:
+            # ignore pivots and use width of wrapper points to estimate scale
+            src_x = [i.x for i in src_wrapper_points]
+            dst_x = [i.x for i in dst_wrapper_points]
+            src_width = max(src_x) - min(src_x)
+            dst_width = max(dst_x) - min(dst_x)
 
-        eyeball_scale = mean([a.length() / b.length() for a, b in zip(wrapper_vectors, wrapper_orig_vectors)])
+            eyeball_scale = dst_width/src_width
+
+        else:
+            # use distance between pivot and points to estimate scale
+
+            dst_wrapper_vectors = [i - dst_eye_pivot for i in dst_wrapper_points]
+            src_wrapper_vectors = [i - src_eye_pivot for i in src_wrapper_points]
+
+            eyeball_scale = mean([a.length() / b.length() for a, b in zip(dst_wrapper_vectors, src_wrapper_vectors)])
+
         print("eyeball scale: {} ({})".format(eyeball_scale, eyeball_mesh))
 
         if recalculate_pivots:
@@ -631,7 +674,7 @@ def eyewet_post(edge_mesh, edge_blend_mesh, shell_mesh, shell_blend_mesh, l_eyeb
 
 def transfer_face_meshes(
         src_prefix="src_",
-        head_mesh="head_lod0_mesh",
+        dst_head_mesh="head_lod0_mesh",
         l_eyeball_mesh="eyeLeft_lod0_mesh",
         r_eyeball_mesh="eyeRight_lod0_mesh",
         cartilage_mesh="cartilage_lod0_mesh",
@@ -642,7 +685,7 @@ def transfer_face_meshes(
         transfer_eyelashes=True,
         transfer_eyewet=True,
         transfer_inner_mouth=True,
-        recalculate_pivots=True,
+        # recalculate_pivots=True,
         cleanup=True,
 ):
     """
@@ -687,17 +730,19 @@ mhFaceMeshes.transfer_eye_meshes(
     "l_eyelid_wrapper_mesh", "r_eyelid_wrapper_mesh", ["eyeshell_lod0_mesh", "eyelashes_lod0_mesh"]
 )
 
+    TODO test new methodology!!!
+
     """
 
-    src_head_mesh = "{}{}".format(src_prefix, head_mesh)
+    src_head_mesh = "{}{}".format(src_prefix, dst_head_mesh)
     l_src_eyeball_mesh = "{}{}".format(src_prefix, l_eyeball_mesh)
     r_src_eyeball_mesh = "{}{}".format(src_prefix, r_eyeball_mesh)
 
     all_meshes = []
 
     # validate options
-    if not cmds.objExists(head_mesh):
-        raise mhCore.MHError("destination head not found: {}".format(head_mesh))
+    if not cmds.objExists(dst_head_mesh):
+        raise mhCore.MHError("destination head not found: {}".format(dst_head_mesh))
 
     if all([
         transfer_eyewet,
@@ -709,17 +754,97 @@ mhFaceMeshes.transfer_eye_meshes(
     # create group
     transfer_grp = cmds.createNode("transform", name="transfer_GRP")
 
-    # create wrapper meshes
-    l_wrapper_mesh, r_wrapper_mesh = create_eyelid_wrapper_meshes(
-        src_head_mesh, l_src_eyeball_mesh, r_src_eyeball_mesh, scale=1.0
+    # create src wrapper meshes
+    l_src_wrapper_mesh, r_src_wrapper_mesh = create_eyelid_wrapper_meshes(
+        src_head_mesh, l_src_eyeball_mesh, r_src_eyeball_mesh, scale=1.0, prefix="src_"
     )
 
-    cmds.parent(l_wrapper_mesh, r_wrapper_mesh, transfer_grp)
+    cmds.parent(l_src_wrapper_mesh, r_src_wrapper_mesh, transfer_grp)
+
+    # get head points
+    src_points = mhMayaUtils.get_points(src_head_mesh, as_vector=True)
+    dst_points = mhMayaUtils.get_points(dst_head_mesh, as_vector=True)
+
+    # get eyelid edge points
+    l_eyelid_vert_ids = mhMayaUtils.edges_to_vertex_ids(src_head_mesh, L_EYELID_EDGES)
+    r_eyelid_vert_ids = mhMayaUtils.edges_to_vertex_ids(src_head_mesh, R_EYELID_EDGES)
+
+    l_src_eyelid_points = [src_points[i] for i in l_eyelid_vert_ids]
+    r_src_eyelid_points = [src_points[i] for i in r_eyelid_vert_ids]
+    l_dst_eyelid_points = [dst_points[i] for i in l_eyelid_vert_ids]
+    r_dst_eyelid_points = [dst_points[i] for i in r_eyelid_vert_ids]
+
+    # approximate dst eyeball scale based on width
+    l_src_x = [i.x for i in l_src_eyelid_points]
+    l_dst_x = [i.x for i in l_dst_eyelid_points]
+    r_src_x = [i.x for i in r_src_eyelid_points]
+    r_dst_x = [i.x for i in r_dst_eyelid_points]
+
+    l_src_width = max(l_src_x) - min(l_src_x)
+    l_dst_width = max(l_dst_x) - min(l_dst_x)
+    r_src_width = max(r_src_x) - min(r_src_x)
+    r_dst_width = max(r_dst_x) - min(r_dst_x)
+
+    l_eyeball_scale = l_dst_width / l_src_width
+    r_eyeball_scale = r_dst_width / r_src_width
+
+    dst_eyeball_scale = (l_eyeball_scale + r_eyeball_scale)/2.0
+
+    # determine l dst pivot
+    l_src_wrapper_points = mhMayaUtils.get_points(l_src_wrapper_mesh, as_vector=True)
+    l_src_eye_pivot = l_src_wrapper_points[0]
+    l_src_eyelid_avg_point = mhMayaUtils.get_average_position(l_src_eyelid_points)
+    l_dst_eyelid_avg_point = mhMayaUtils.get_average_position(l_dst_eyelid_points)
+    l_src_eye_pivot_delta = [a - b for a, b in zip(l_src_eye_pivot, l_src_eyelid_avg_point)]
+
+    l_dst_eye_pivot = [
+        (a * dst_eyeball_scale) + b for a, b in zip(l_src_eye_pivot_delta, l_dst_eyelid_avg_point)
+    ]
+
+    # determine r dst pivot
+    r_src_wrapper_points = mhMayaUtils.get_points(r_src_wrapper_mesh, as_vector=True)
+    r_src_eye_pivot = r_src_wrapper_points[0]
+    r_src_eyelid_avg_point = mhMayaUtils.get_average_position(r_src_eyelid_points)
+    r_dst_eyelid_avg_point = mhMayaUtils.get_average_position(r_dst_eyelid_points)
+    r_src_eye_pivot_delta = [a - b for a, b in zip(r_src_eye_pivot, r_src_eyelid_avg_point)]
+
+    r_dst_eye_pivot = [
+        (a * dst_eyeball_scale) + b for a, b in zip(r_src_eye_pivot_delta, r_dst_eyelid_avg_point)
+    ]
+
+    # create dst wrapper meshes
+    l_dst_wrapper_mesh, r_dst_wrapper_mesh = create_eyelid_wrapper_meshes(
+        dst_head_mesh, l_dst_eye_pivot, r_dst_eye_pivot, scale=1.0, prefix="dst_"
+    )
+
+    cmds.parent(l_dst_wrapper_mesh, r_dst_wrapper_mesh, transfer_grp)
+
+    # create driver meshes
+    blend_head = cmds.duplicate(src_head_mesh, name="head_blend_mesh")[0]
+    cmds.parent(blend_head, transfer_grp)
+
+    temp = cmds.duplicate(l_src_wrapper_mesh, r_src_wrapper_mesh)
+    src_wrapper_mesh = cmds.polyUnite(temp, name="src_eyelid_wrapper_mesh", constructionHistory=False)[0]
+
+    temp = cmds.duplicate(l_dst_wrapper_mesh, r_dst_wrapper_mesh)
+    dst_wrapper_mesh = cmds.polyUnite(temp, name="dst_eyelid_wrapper_mesh", constructionHistory=False)[0]
+
+    cmds.parent(src_wrapper_mesh, dst_wrapper_mesh, transfer_grp)
+
+    # l_orig_wrapper = cmds.duplicate(l_src_wrapper_mesh, name="{}_orig".format(l_src_wrapper_mesh))[0]
+    # r_orig_wrapper = cmds.duplicate(r_src_wrapper_mesh, name="{}_orig".format(r_src_wrapper_mesh))[0]
+
+    # wrap l/r wrapper meshes to combined wrapper mesh
+    mhMayaUtils.create_wrap(
+        [l_src_wrapper_mesh, ],
+        src_wrapper_mesh,
+        attrs={"exclusiveBind": True}
+    )
 
     # create closed wrapper mesh
     closed_wrapper_meshes = []
 
-    for node in l_wrapper_mesh, r_wrapper_mesh:
+    for node in l_src_wrapper_mesh, r_src_wrapper_mesh:
         closed_mesh = cmds.duplicate(node)[0]
         cmds.polyCloseBorder(closed_mesh, ch=False)
         cmds.polyTriangulate(closed_mesh, ch=False)
@@ -732,30 +857,11 @@ mhFaceMeshes.transfer_eye_meshes(
 
     cmds.parent(closed_wrapper_mesh, transfer_grp)
 
-    # create driver meshes
-    blend_head = cmds.duplicate(src_head_mesh, name="head_blend_mesh")[0]
-    cmds.parent(blend_head, transfer_grp)
-
-    wrapper_meshes = cmds.duplicate(l_wrapper_mesh, r_wrapper_mesh)
-    combined_wrapper_mesh = cmds.polyUnite(wrapper_meshes, name="eyelid_wrapper_mesh", constructionHistory=False)[0]
-    cmds.parent(combined_wrapper_mesh, transfer_grp)
-
-    l_orig_wrapper = cmds.duplicate(l_wrapper_mesh, name="{}_orig".format(l_wrapper_mesh))[0]
-    r_orig_wrapper = cmds.duplicate(r_wrapper_mesh, name="{}_orig".format(r_wrapper_mesh))[0]
-
+    # wrap closed wrapper to src wrapper mesh
     mhMayaUtils.create_wrap(
-        [
-            combined_wrapper_mesh, closed_wrapper_mesh,
-            l_wrapper_mesh, r_wrapper_mesh,
-        ],
-        blend_head,
-        attrs={
-            "exclusiveBind": True,
-            # weightThreshold=0,
-            # maxDistance=0.0,
-            # autoWeightThreshold=False,
-            # falloffMode=0
-        }
+        closed_wrapper_mesh,
+        src_wrapper_mesh,
+        attrs={"exclusiveBind": True}
     )
 
     # inner mouth
@@ -782,7 +888,7 @@ mhFaceMeshes.transfer_eye_meshes(
 
         mhMayaUtils.create_wrap(
             lash_mesh,
-            combined_wrapper_mesh,
+            src_wrapper_mesh,
             attrs={
                 "exclusiveBind": False,
                 # weightThreshold=0,
@@ -796,19 +902,30 @@ mhFaceMeshes.transfer_eye_meshes(
 
         all_meshes += [lash_mesh]
 
-    # turn on blendshape
-    bs_node = cmds.blendShape(head_mesh, blend_head)[0]
-    cmds.setAttr("{}.w[0]".format(bs_node), 1.0)
+    # turn on blendshapes
+    head_bs_node = cmds.blendShape(dst_head_mesh, blend_head)[0]
+    cmds.setAttr("{}.w[0]".format(head_bs_node), 1.0)
+
+    wrapper_bs_node = cmds.blendShape(dst_wrapper_mesh, src_wrapper_mesh)[0]
+    cmds.setAttr("{}.w[0]".format(wrapper_bs_node), 1.0)
 
     # delete history on wrap meshes
-    cmds.select(l_wrapper_mesh, r_wrapper_mesh)
-    cmds.DeleteHistory()
+    # cmds.select(l_src_wrapper_mesh, r_src_wrapper_mesh)
+    # cmds.DeleteHistory()
 
     # transfer eyes
     if transfer_eyeballs:
-        transfer_eyeball_meshes(
-            l_eyeball_mesh, r_eyeball_mesh, l_wrapper_mesh, r_wrapper_mesh, l_orig_wrapper, r_orig_wrapper,
-            src_prefix=src_prefix, recalculate_pivots=recalculate_pivots,
+        # transfer_eyeball_meshes(
+        #     l_eyeball_mesh, r_eyeball_mesh, l_src_wrapper_mesh, r_src_wrapper_mesh, l_orig_wrapper, r_orig_wrapper,
+        #     src_prefix=src_prefix, recalculate_pivots=recalculate_pivots,
+        # )
+
+        transfer_eyeball_mesh(
+            l_eyeball_mesh, l_src_eye_pivot, l_dst_eye_pivot, dst_eyeball_scale, src_prefix="src_",
+        )
+
+        transfer_eyeball_mesh(
+            r_eyeball_mesh, r_src_eye_pivot, r_dst_eye_pivot, dst_eyeball_scale, src_prefix="src_",
         )
 
         all_meshes += [l_eyeball_mesh, r_eyeball_mesh]

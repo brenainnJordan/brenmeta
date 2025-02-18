@@ -22,7 +22,7 @@ def parse_dag_path(dag_path):
         raise mhCore.MHError("dag path not recognised: {}".format(dag_path))
 
 
-def get_points(mesh, space=OpenMaya.MSpace.kWorld, as_positions=False):
+def get_points(mesh, space=OpenMaya.MSpace.kWorld, as_positions=False, as_vector=False):
     # get dag
     dag = parse_dag_path(mesh)
 
@@ -31,10 +31,11 @@ def get_points(mesh, space=OpenMaya.MSpace.kWorld, as_positions=False):
     m_points = m_mesh.getPoints(space=space)
 
     if as_positions:
-        return [
-            list(i)[:3]
-            for i in m_points
-        ]
+        return [list(i)[:3] for i in m_points]
+
+    elif as_vector:
+        return [OpenMaya.MVector(i) for i in m_points]
+
     else:
         return m_points
 
@@ -232,3 +233,20 @@ def create_wrap(
             _wrap_nodes.append(wrap)
 
     return _wrap_nodes
+
+def edges_to_vertex_ids(mesh, edge_ids):
+    mesh_dag = parse_dag_path(mesh)
+
+    # convert to vertex ids
+    edge_it = OpenMaya.MItMeshEdge(mesh_dag)
+
+    vert_ids = set([])
+
+    for i in edge_ids:
+        edge_it.setIndex(i)
+        vert_ids.add(edge_it.vertexId(0))
+        vert_ids.add(edge_it.vertexId(1))
+
+    vert_ids = list(vert_ids)
+
+    return vert_ids

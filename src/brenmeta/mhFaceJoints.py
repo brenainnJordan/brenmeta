@@ -123,23 +123,26 @@ PROJECT_AXES = [
 ]
 
 
-def set_joint_look(default_visibility=False):
+def set_joint_look(default_visibility=True):
     # set draw styles
     bone = 0
     box = 1  # multi-child as box
     none = 2
+    joint = 3
 
-    for joint, draw_style in [
-        ("FACIAL_C_FacialRoot", none),
-        ("FACIAL_C_LowerLipRotation", box),
-        ("FACIAL_C_Jaw", box),
-        ("FACIAL_C_MouthUpper", box),
-        ("FACIAL_C_MouthLower", box),
-        ("FACIAL_C_Neck2Root", bone),
-        ("FACIAL_C_Neck1Root", bone),
+    for joint_name, draw_style in [
+        ("FACIAL_C_FacialRoot", joint),
+        ("FACIAL_C_LowerLipRotation", joint),
+        ("FACIAL_C_Jaw", joint),
+        ("FACIAL_C_MouthUpper", joint),
+        ("FACIAL_C_MouthLower", joint),
+        ("FACIAL_C_Neck2Root", joint),
+        ("FACIAL_C_Neck1Root", joint),
+        ("FACIAL_L_Ear", joint),
+        ("FACIAL_R_Ear", joint),
     ]:
         cmds.setAttr(
-            "{}.drawStyle".format(joint), draw_style
+            "{}.drawStyle".format(joint_name), draw_style
         )
 
     # create vis layers

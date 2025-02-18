@@ -170,7 +170,10 @@ def set_all_poses(reader, writer, pose_data, from_absolute=True):
 def pose_joints_from_data(reader, data, expression, ignore_namespace=True, defaults=None):
     mhJoints.reset_scene_joint_xforms(reader)
 
-    pose_index = find_expression_index(reader, expression, ignore_namespace=ignore_namespace)
+    if isinstance(expression, int):
+        pose_index = expression
+    else:
+        pose_index = find_expression_index(reader, expression, ignore_namespace=ignore_namespace)
 
     pose_data = data[pose_index]
 
@@ -185,7 +188,10 @@ def pose_joints_from_data(reader, data, expression, ignore_namespace=True, defau
 
 
 def update_pose_data_from_scene(reader, data, expression, ignore_namespace=True, defaults=None):
-    pose_index = find_expression_index(reader, expression, ignore_namespace=ignore_namespace)
+    if isinstance(expression, int):
+        pose_index = expression
+    else:
+        pose_index = find_expression_index(reader, expression, ignore_namespace=ignore_namespace)
 
     pose_data = data[pose_index]
 
@@ -234,3 +240,39 @@ def scale_all_poses(data, scale, attrs=None):
             pose_data[pose_attr] *= scale
 
     return data
+
+
+def get_columns_to_blendshape_channels(reader):
+    """Get list of blendshape channels associated with each joint column
+    """
+    blendshape_channel_names = [
+        reader.getBlendShapeChannelName(i)
+        for i in range(reader.getBlendShapeChannelCount())
+    ]
+
+    blendshape_channel_inputs = reader.getBlendShapeChannelInputIndices()
+
+    columns_to_blendshapes = [None] * reader.getJointColumnCount()
+
+    for blendshape_channel_name, joint_column in zip(blendshape_channel_names, blendshape_channel_inputs):
+        columns_to_blendshapes[joint_column] = blendshape_channel_name
+
+    return columns_to_blendshapes
+
+
+def get_pose_names(reader):
+    """Get appropriate names for all poses (aka joint columns)
+    """
+
+    pose_names = []
+
+    for i in range(reader.getRawControlCount()):
+        pose_name = reader.getRawControlName(i)
+        pose_name = pose_name.split(".")[-1]
+        pose_names.append(pose_name)
+
+    columns_to_blendshapes = get_columns_to_blendshape_channels(reader)
+
+    pose_names.extend(columns_to_blendshapes[reader.getRawControlCount():])
+
+    return pose_names

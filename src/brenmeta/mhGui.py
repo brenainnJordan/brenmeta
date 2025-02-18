@@ -311,6 +311,7 @@ class DnaTransferWidget(QtWidgets.QWidget):
         self.eyeballs_checkbox = QtWidgets.QCheckBox("eyeballs")
         self.eyelashes_checkbox = QtWidgets.QCheckBox("eyelashes")
         self.eyewet_checkbox = QtWidgets.QCheckBox("eyewet")
+        # self.eye_pivots_checkbox = QtWidgets.QCheckBox("Recalculate eye pivots")
         self.inner_mouth_checkbox = QtWidgets.QCheckBox("inner mouth")
         self.cleanup_checkbox = QtWidgets.QCheckBox("cleanup")
 
@@ -318,11 +319,12 @@ class DnaTransferWidget(QtWidgets.QWidget):
             self.eyeballs_checkbox,
             self.eyelashes_checkbox,
             self.eyewet_checkbox,
+            # self.eye_pivots_checkbox,
             self.inner_mouth_checkbox,
             self.cleanup_checkbox,
         ]:
             checkbox.setCheckState(QtCore.Qt.Checked)
-            checkbox.setFixedWidth(80)
+            # checkbox.setFixedWidth(80)
             meshes_lyt.addWidget(checkbox)
 
         self.transfer_face_meshes_btn = QtWidgets.QPushButton("transfer face meshes")
@@ -383,6 +385,8 @@ class DnaTransferWidget(QtWidgets.QWidget):
         self.calculate_lods_checkbox = QtWidgets.QCheckBox("calculate lods")
         self.calculate_lods_checkbox.setChecked(QtCore.Qt.Checked)
 
+        self.json_checkbox = QtWidgets.QCheckBox("json")
+
         self.update_btn = QtWidgets.QPushButton("Update")
         self.update_btn.clicked.connect(self.update_dna)
 
@@ -392,6 +396,7 @@ class DnaTransferWidget(QtWidgets.QWidget):
         update_dna_lyt.addWidget(self.update_joint_xforms_checkbox)
         update_dna_lyt.addWidget(self.update_joint_list_checkbox)
         update_dna_lyt.addWidget(self.calculate_lods_checkbox)
+        update_dna_lyt.addWidget(self.json_checkbox)
         update_dna_lyt.addWidget(self.update_btn)
 
         # main lyt
@@ -460,6 +465,7 @@ class DnaTransferWidget(QtWidgets.QWidget):
             self.update_joint_xforms_checkbox.isChecked(),
             self.update_joint_list_checkbox.isChecked(),
             self.calculate_lods_checkbox.isChecked(),
+            self.json_checkbox.isChecked(),
         ]):
             QtWidgets.QMessageBox.critical(
                 self,
@@ -515,7 +521,7 @@ class DnaTransferWidget(QtWidgets.QWidget):
         calib_reader = dnacalib.DNACalibDNAReader(dna_obj.reader)
 
         if scale_value != 1.0:
-             mhCore.scale_dna(calib_reader, scale_value)
+            mhCore.scale_dna(calib_reader, scale_value)
 
         if self.update_joint_xforms_checkbox.isChecked():
             mhJoints.update_joint_neutral_xforms(calib_reader, err=False)
@@ -529,7 +535,12 @@ class DnaTransferWidget(QtWidgets.QWidget):
         if self.calculate_lods_checkbox.isChecked():
             mhMesh.calculate_lods(dna_obj, calib_reader)
 
-        mhCore.save_dna(calib_reader, self.path_manager.output_dna_path, validate=False)
+        mhCore.save_dna(
+            calib_reader,
+            self.path_manager.output_dna_path,
+            validate=False,
+            as_json=self.json_checkbox.isChecked()
+        )
 
         status = dna.Status.get().message
 
@@ -557,6 +568,7 @@ class DnaTransferWidget(QtWidgets.QWidget):
                 transfer_eyelashes=self.eyelashes_checkbox.isChecked(),
                 transfer_eyewet=self.eyewet_checkbox.isChecked(),
                 transfer_inner_mouth=self.inner_mouth_checkbox.isChecked(),
+                # recalculate_pivots=self.eye_pivots_checkbox.isChecked(),
                 cleanup=self.cleanup_checkbox.isChecked(),
             )
         except mhCore.MHError as err:
@@ -609,8 +621,15 @@ class RepathWidget(QtWidgets.QWidget):
 
         return True
 
-class DnaInspectWidget(QtWidgets.QMainWindow):
 
+class DnaInspectWidget(QtWidgets.QMainWindow):
+    """
+    inspect PSDs
+    row = input expression
+    column = output combos
+    maybe???
+
+    """
     def __init__(self, dna_path, lod, *args, **kwargs):
         super(DnaInspectWidget, self).__init__(*args, **kwargs)
 
@@ -621,6 +640,7 @@ class DnaInspectWidget(QtWidgets.QMainWindow):
         dna_obj = dna_viewer.DNA(dna_path)
         calib_reader = dnacalib.DNACalibDNAReader(dna_obj.reader)
 
+        # mesh text
         mesh_fmt = "    {mesh_name}: {point_count} points, {blendshape_count} blendshape targets\n"
 
         mesh_txt = ""
@@ -634,32 +654,140 @@ class DnaInspectWidget(QtWidgets.QMainWindow):
                 blendshape_count=calib_reader.getBlendShapeTargetCount(mesh_index)
             )
 
-        text = """
+        mesh_txt = "Meshes:\n\n{}".format(mesh_txt)
+
+        # summary
+        summary_text = """
+Summary:
+
 Path: {path}
 Joint count: {joint_count}
 Mesh count: {mesh_count}
-Meshes: [
-{meshes}
-]
         """.format(
             path=dna_path,
             joint_count=calib_reader.getJointCount(),
             mesh_count=calib_reader.getMeshCount(),
-            meshes = mesh_txt,
-
         )
 
-        print(text)
+        # blendshape text
+        blendshape_channel_names = [
+            calib_reader.getBlendShapeChannelName(i)
+            for i in range(calib_reader.getBlendShapeChannelCount())
+        ]
 
-        self.label = QtWidgets.QLabel(text)
-        self.label.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse)
+        blendshape_channel_text = [
+            "{}: {}".format(i, name) for i, name in enumerate(blendshape_channel_names)
+        ]
 
-        self.setCentralWidget(self.label)
+        blendshape_channel_text = "\n".join(blendshape_channel_text)
+        blendshape_channel_text = "blendshape Channels:\n\n{}".format(blendshape_channel_text)
 
-        # self.lyt = QtWidgets.QVBoxLayout()
-        # self.lyt.addWidget(self.label)
-        # self.setLayout(self.lyt)
+        # raw controls text
+        raw_controls_names = [
+            "{}: {}".format(i, calib_reader.getRawControlName(i))
+            for i in range(calib_reader.getRawControlCount())
+        ]
 
+        raw_controls_text = "\n".join(raw_controls_names)
+        raw_controls_text = "Raw Controls:\n\n{}".format(raw_controls_text)
+
+        # joint column to blendshape channels
+        blendshape_channel_inputs = calib_reader.getBlendShapeChannelInputIndices()
+
+        columns_to_blendshapes = [""] * calib_reader.getJointColumnCount()
+
+        for blendshape_channel_name, joint_column in zip(blendshape_channel_names, blendshape_channel_inputs):
+            columns_to_blendshapes[joint_column] = blendshape_channel_name
+
+        columns_to_blendshapes_text = ["{}: {}".format(i, name) for i, name in enumerate(columns_to_blendshapes)]
+        columns_to_blendshapes_text = "\n".join(columns_to_blendshapes_text)
+        columns_to_blendshapes_text = "Joint columns to blendshape channels:\n\n{}".format(columns_to_blendshapes_text)
+
+        # gui
+        gui_control_names = [
+            "{}: {}".format(i, calib_reader.getGUIControlName(i))
+            for i in range(calib_reader.getGUIControlCount())
+        ]
+
+        gui_controls_text = "\n".join(gui_control_names)
+        gui_controls_text = "GUI Controls:\n\n{}".format(gui_controls_text)
+
+        # psd
+        psd_inputs = calib_reader.getPSDColumnIndices()
+        psd_outputs = calib_reader.getPSDRowIndices()
+
+        psd_mapping = {}
+
+        for psd_input, psd_output in zip(psd_inputs, psd_outputs):
+            if psd_output in psd_mapping:
+                psd_mapping[psd_output].append(psd_input)
+            else:
+                psd_mapping[psd_output] = [psd_input]
+
+        psd_text = "PSDs:\n"
+
+        for psd_output in sorted(psd_mapping.keys()):
+            psd_name = columns_to_blendshapes[psd_output]
+            input_names = [columns_to_blendshapes[i] for i in psd_mapping[psd_output]]
+            psd_text += "{}: {}\n".format(psd_name, input_names)
+
+        # print to output
+        print(summary_text)
+        print(mesh_txt)
+
+        # widgets
+        self.summary_label = QtWidgets.QLabel(summary_text)
+        self.summary_label.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse)
+
+        self.meshes_label = QtWidgets.QLabel(mesh_txt)
+        self.meshes_label.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse)
+
+        self.meshes_scroll_area = QtWidgets.QScrollArea()
+        self.meshes_scroll_area.setWidget(self.meshes_label)
+
+        self.raw_controls_label = QtWidgets.QLabel(raw_controls_text)
+        self.raw_controls_label.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse)
+
+        self.raw_controls_scroll_area = QtWidgets.QScrollArea()
+        self.raw_controls_scroll_area.setWidget(self.raw_controls_label)
+
+        self.gui_controls_label = QtWidgets.QLabel(gui_controls_text)
+        self.gui_controls_label.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse)
+
+        self.gui_controls_scroll_area = QtWidgets.QScrollArea()
+        self.gui_controls_scroll_area.setWidget(self.gui_controls_label)
+
+        self.blendshape_channel_label = QtWidgets.QLabel(blendshape_channel_text)
+        self.blendshape_channel_label.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse)
+
+        self.blendshape_channel_scroll_area = QtWidgets.QScrollArea()
+        self.blendshape_channel_scroll_area.setWidget(self.blendshape_channel_label)
+
+        self.columns_to_blendshapes_label = QtWidgets.QLabel(columns_to_blendshapes_text)
+        self.columns_to_blendshapes_label.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse)
+
+        self.columns_to_blendshapes_scroll_area = QtWidgets.QScrollArea()
+        self.columns_to_blendshapes_scroll_area.setWidget(self.columns_to_blendshapes_label)
+
+        self.psds_label = QtWidgets.QLabel(psd_text)
+        self.psds_label.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse)
+
+        self.psds_scroll_area = QtWidgets.QScrollArea()
+        self.psds_scroll_area.setWidget(self.psds_label)
+
+        self.setCentralWidget(QtWidgets.QWidget())
+
+        self.lyt = QtWidgets.QVBoxLayout()
+
+        self.lyt.addWidget(self.summary_label)
+        self.lyt.addWidget(self.meshes_scroll_area)
+        self.lyt.addWidget(self.raw_controls_scroll_area)
+        self.lyt.addWidget(self.gui_controls_scroll_area)
+        self.lyt.addWidget(self.blendshape_channel_scroll_area)
+        self.lyt.addWidget(self.columns_to_blendshapes_scroll_area)
+        self.lyt.addWidget(self.psds_scroll_area)
+
+        self.centralWidget().setLayout(self.lyt)
 
 
 class DnaBuildWidget(QtWidgets.QWidget):
@@ -681,7 +809,23 @@ class DnaBuildWidget(QtWidgets.QWidget):
         self.build_combo = QtWidgets.QComboBox()
 
         # TODO more options
-        self.full_rig_checkbox = QtWidgets.QCheckBox("full rig")
+        # self.full_rig_checkbox = QtWidgets.QCheckBox("full rig")
+
+        self.partial_rig_group_box = QtWidgets.QGroupBox("Partial Rig")
+        self.partial_rig_group_box.setCheckable(True)
+        self.partial_rig_group_box.setChecked(False)
+
+        self.joints_checkbox = QtWidgets.QCheckBox("joints")
+        self.skin_cluster_checkbox = QtWidgets.QCheckBox("skin cluster")
+        self.blendshapes_checkbox = QtWidgets.QCheckBox("blendshapes")
+
+        self.partial_rig_lyt = QtWidgets.QVBoxLayout()
+
+        self.partial_rig_lyt.addWidget(self.joints_checkbox)
+        self.partial_rig_lyt.addWidget(self.skin_cluster_checkbox)
+        self.partial_rig_lyt.addWidget(self.blendshapes_checkbox)
+
+        self.partial_rig_group_box.setLayout(self.partial_rig_lyt)
 
         self.inspect_btn = QtWidgets.QPushButton("Inspect")
         self.inspect_btn.setFixedHeight(30)
@@ -693,7 +837,7 @@ class DnaBuildWidget(QtWidgets.QWidget):
 
         build_lyt.addWidget(self.build_combo)
         build_lyt.addWidget(self.inspect_btn)
-        build_lyt.addWidget(self.full_rig_checkbox)
+        build_lyt.addWidget(self.partial_rig_group_box)
         build_lyt.addWidget(self.build_btn)
 
         # utils
@@ -974,7 +1118,7 @@ class DnaBuildWidget(QtWidgets.QWidget):
             self.path_manager.dna_viewer_data_path, "additional_assemble_script.py"
         )
 
-        full_rig = self.full_rig_checkbox.isChecked()
+        # full_rig = self.full_rig_checkbox.isChecked()
 
         # confirm
         confirm = QtWidgets.QMessageBox.warning(
@@ -989,7 +1133,19 @@ class DnaBuildWidget(QtWidgets.QWidget):
 
         dna = dna_viewer.DNA(dna_path)
 
-        if full_rig:
+        if self.partial_rig_group_box.isChecked():
+
+            config = dna_viewer.Config(
+                add_joints=self.joints_checkbox.isChecked(),
+                add_blend_shapes=self.blendshapes_checkbox.isChecked(),
+                add_skin_cluster=self.skin_cluster_checkbox.isChecked(),
+                lod_filter=[0],
+            )
+
+            dna_viewer.build_meshes(dna=dna, config=config)
+
+        else:
+
             config = dna_viewer.RigConfig(
                 gui_path=gui,
                 analog_gui_path=analog_gui,
@@ -997,15 +1153,6 @@ class DnaBuildWidget(QtWidgets.QWidget):
             )
 
             dna_viewer.build_rig(dna=dna, config=config)
-        else:
-            config = dna_viewer.Config(
-                add_joints=True,
-                add_blend_shapes=False,
-                add_skin_cluster=False,
-                lod_filter=[0],
-            )
-
-            dna_viewer.build_meshes(dna=dna, config=config)
 
         return True
 
@@ -1173,8 +1320,9 @@ class DnaPosesWidget(QtWidgets.QWidget):
         self.attrs = mhBehaviour.get_joint_attrs(self.calib_reader)
         self.attr_defaults = mhBehaviour.get_joint_defaults(self.calib_reader)
         self.poses_data = mhBehaviour.get_all_poses(self.calib_reader, absolute=False)
+        self.pose_names = mhBehaviour.get_pose_names(self.calib_reader)
 
-        self.set_pose_names(self.calib_reader, self.poses_data)
+        self.set_pose_names(self.pose_names)
 
         QtWidgets.QMessageBox.information(
             self,
@@ -1255,29 +1403,23 @@ class DnaPosesWidget(QtWidgets.QWidget):
     def filter_changed(self):
         self.proxy_model.setFilterWildcard(self.filter_line_edit.text())
 
-    def set_pose_names(self, reader, data):
-        pose_names = []
-
-        for i, pose_data in enumerate(data):
-            raw_control = reader.getRawControlName(i)
-
-            if raw_control:
-                pose_names.append(raw_control)
-            else:
-                pose_names.append(str(i))
-
+    def set_pose_names(self, pose_names):
         self.model.setStringList(pose_names)
-
         return True
 
-    def get_selected_poses(self, warn=False):
+    def get_selected_poses(self, warn=False, as_index=False):
         poses = []
 
         selection = self.view.selectionModel().selection()
 
         for proxy_index in selection.indexes():
             index = self.proxy_model.mapToSource(proxy_index)
-            pose = str(index.data())
+
+            if as_index:
+                pose = int(index.row())
+            else:
+                pose = str(index.data())
+
             poses.append(pose)
 
         if not poses and warn:
@@ -1294,7 +1436,7 @@ class DnaPosesWidget(QtWidgets.QWidget):
         mhJoints.reset_scene_joint_xforms(self.calib_reader)
 
     def update_scene(self):
-        poses = self.get_selected_poses(warn=True)
+        poses = self.get_selected_poses(warn=True, as_index=True)
 
         if not poses:
             return False
@@ -1309,7 +1451,7 @@ class DnaPosesWidget(QtWidgets.QWidget):
         return True
 
     def update_data(self):
-        poses = self.get_selected_poses(warn=True)
+        poses = self.get_selected_poses(warn=True, as_index=True)
 
         if not poses:
             return False

@@ -28,9 +28,14 @@ def load_dna(path):
     return reader
 
 
-def save_dna(reader, path, validate=True):
+def save_dna(reader, path, validate=True, as_json=False):
     stream = dna.FileStream(path, dna.FileStream.AccessMode_Write, dna.FileStream.OpenMode_Binary)
-    writer = dna.BinaryStreamWriter(stream)
+
+    if as_json:
+        writer = dna.JSONStreamWriter(stream)
+    else:
+        writer = dna.BinaryStreamWriter(stream)
+
     writer.setFrom(reader)
     writer.write()
 
