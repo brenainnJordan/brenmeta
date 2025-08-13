@@ -307,12 +307,6 @@ def map_joint_axes_to_mesh(
         up_hit = get_furthest_intersection(mesh_fn, joint_position, up_vector)
         up_inverse_hit = get_furthest_intersection(mesh_fn, joint_position, up_inverse_vector)
 
-        if any([aim_hit is None, up_hit is None, up_inverse_hit is None]):
-            raise mhCore.MHError("No intersections found: {}".format(joint))
-
-        # check up hits face ids
-        if up_hit[2] == up_inverse_hit[2]:
-            raise mhCore.MHError("up intersections returned same face: {}".format(joint))
 
     else:
         aim_hit = mesh_fn.closestIntersection(
@@ -332,6 +326,13 @@ def map_joint_axes_to_mesh(
             up_inverse_vector,
             OpenMaya.MSpace.kWorld, max_distance, False
         )
+
+    if any([aim_hit is None, up_hit is None, up_inverse_hit is None]):
+        raise mhCore.MHError("No intersections found: {}".format(joint))
+
+    # check up hits face ids
+    if up_hit[2] == up_inverse_hit[2]:
+        raise mhCore.MHError("up intersections returned same face: {}".format(joint))
 
     if closest_vertices:
         hit_positions = [list(i)[:3] for i in [aim_hit[0], up_hit[0], up_inverse_hit[0]]]

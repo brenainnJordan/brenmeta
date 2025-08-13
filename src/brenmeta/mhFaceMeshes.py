@@ -475,7 +475,11 @@ def create_eyewet_meshes(
     return meshes, edge_blend_mesh, shell_blend_mesh
 
 
-def eyewet_post(edge_mesh, edge_blend_mesh, shell_mesh, shell_blend_mesh, l_eyeball_mesh, r_eyeball_mesh):
+def eyewet_post(
+        edge_mesh, edge_blend_mesh, shell_mesh, shell_blend_mesh, l_eyeball_mesh, r_eyeball_mesh,
+        # TODO either expose this to the user or figure out a way to determine an offset from src
+        shell_offset=0.05,
+):
     # clean up shell
     cmds.select(shell_mesh)
     cmds.DeleteHistory()
@@ -484,7 +488,7 @@ def eyewet_post(edge_mesh, edge_blend_mesh, shell_mesh, shell_blend_mesh, l_eyeb
         (l_eyeball_mesh, L_EYE_SHELL_PROJECTION_VERTS, L_EYE_MID_VERTS),
         (r_eyeball_mesh, R_EYE_SHELL_PROJECTION_VERTS, R_EYE_MID_VERTS),
     ]:
-        project_mesh_onto_eye(shell_mesh, eyeball_mesh, verts, eye_mid_verts, 0.05)
+        project_mesh_onto_eye(shell_mesh, eyeball_mesh, verts, eye_mid_verts, shell_offset)
 
     # snap shell border
     blend_points(

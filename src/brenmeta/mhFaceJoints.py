@@ -350,17 +350,33 @@ def transfer_joint_placement(root, src_head, dst_head, threshold=0.5):
 
     # project joint axes
     joint_projections = {}
+    failed_joints = []
 
     for joint, aim_vector, up_vector, furthest in PROJECT_AXES:
-        data = mhJoints.map_joint_axes_to_mesh(
-            joint,
-            src_head,
-            aim_vector,
-            up_vector,
-            furthest=furthest
-        )
+        try:
+            data = mhJoints.map_joint_axes_to_mesh(
+                joint,
+                src_head,
+                aim_vector,
+                up_vector,
+                furthest=furthest
+            )
 
-        joint_projections[joint] = data
+            joint_projections[joint] = data
+        except mhCore.MHError:
+            failed_joints.append(joint)
+
+    # fallback to nearest for any joints that fail to project
+    print("Failed to project some joints, falling back to nearest vertex:")
+
+    for joint in failed_joints:
+        print("    {}".format(joint))
+
+    snap_mapping.update(
+        mhJoints.map_joints_to_vertex_ids(
+            failed_joints, src_head, threshold=threshold
+        )
+    )
 
     # ** transfer joints placements **
 
@@ -387,6 +403,9 @@ def transfer_joint_placement(root, src_head, dst_head, threshold=0.5):
 
     # project joints to axes
     for joint, aim_vector, up_vector, furthest in PROJECT_AXES:
+        if joint not in joint_projections:
+            continue
+
         mhJoints.snap_joint_to_axes_data(
             joint,
             dst_head,

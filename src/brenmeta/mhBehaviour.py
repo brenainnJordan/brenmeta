@@ -8,6 +8,102 @@ from . import mhCore
 from . import mhMayaUtils
 
 
+class Pose(object):
+    def __init__(self, name=None, index=None):
+        self.index = index
+        self.name = name
+        self.deltas = {}
+        self.defaults = {}
+        self.opposite = None # TODO
+
+    def get_values(self, absolute=True):
+        if absolute:
+            values = {}
+
+            for attr, delta in self.deltas.items():
+                values[attr] = self.defaults[attr] + delta
+
+            return values
+        else:
+            return self.deltas
+
+    def pose_joints(self):
+        for attr, value in self.get_values(absolute=True).items():
+            cmds.setAttr(attr, value)
+
+        return True
+
+    def reset_joints(self):
+        for attr, value in self.defaults.items():
+            cmds.setAttr(attr, value)
+
+        return True
+
+    def update_from_scene(self):
+        for attr, default in self.defaults.items():
+            value = cmds.getAttr(attr)
+            self.deltas[attr] = value - default
+
+        return True
+
+    def scale_deltas(self, value, attrs=None):
+        # default to just scaling translation
+        if attrs is None:
+            attrs = ["tx", "ty", "tz"]
+
+        for pose_attr in self.deltas.keys():
+            attr = pose_attr.split(".")[-1]
+
+            if attr not in attrs:
+                continue
+
+            self.deltas[pose_attr] *= value
+
+        return True
+
+class PSDPose(object):
+    def __init__(self):
+        super(PSDPose, self).__init__()
+        self.pose = None
+        self.input_poses = []
+        self.input_weights = []
+        self.opposite = None  # TODO
+
+    def get_values(self, summed=True, absolute=True):
+        if not summed:
+            return self.pose.get_values(absolute=absolute)
+
+        summed_deltas = dict(self.pose.deltas)
+
+        for input_pose, input_weight in zip(self.input_poses, self.input_weights):
+            for attr, delta in input_pose.deltas.items():
+                delta *= input_weight
+
+                if attr in summed_deltas:
+                    summed_deltas[attr] += delta
+
+        if absolute:
+            values = {}
+
+            for attr, default in self.pose.defaults.items():
+                if attr not in summed_deltas:
+                    # TODO error?
+                    continue
+
+                values[attr] = default + summed_deltas[attr]
+
+            return values
+
+        else:
+            return summed_deltas
+
+    def pose_joints(self, summed=True):
+        for attr, value in self.get_values(summed=summed, absolute=True).items():
+            cmds.setAttr(attr, value)
+
+        return True
+
+
 def find_expression_index(reader, expression, ignore_namespace=True):
     """Find matching raw control for given expression name and return index
     """
@@ -72,6 +168,10 @@ def get_joint_defaults(reader):
         for axis, value in zip("xyz", translation):
             joints_attr_defaults["{}.t{}".format(joint, axis)] = value
 
+            # add default rotation and scale for redundancy
+            joints_attr_defaults["{}.r{}".format(joint, axis)] = 0.0
+            joints_attr_defaults["{}.s{}".format(joint, axis)] = 1.0
+
     return joints_attr_defaults
 
 
@@ -83,11 +183,12 @@ def get_all_poses(reader, absolute=True):
     # get data
     joint_attrs = get_joint_attrs(reader)
     joints_attr_defaults = get_joint_defaults(reader)
+    pose_names = get_pose_names(reader)
 
     # get pose values for each joint group
-    pose_data = [
-        {}
-        for _ in range(reader.getJointColumnCount())
+    poses = [
+        Pose(name=name, index=i)
+        for i, name in enumerate(pose_names)
     ]
 
     for group_index in range(reader.getJointGroupCount()):
@@ -104,17 +205,22 @@ def get_all_poses(reader, absolute=True):
         values = reader.getJointGroupValues(group_index)
 
         for column_index, input_index in enumerate(input_indices):
+            pose = poses[input_index]
+
             for row_index, attr in enumerate(group_attrs):
                 value_index = (row_index * input_count) + column_index
 
                 value = values[value_index]
 
-                if absolute and attr in joints_attr_defaults:
-                    value += joints_attr_defaults[attr]
+                pose.deltas[attr] = value
+                pose.defaults[attr] = joints_attr_defaults[attr]
 
-                pose_data[input_index][attr] = value
+                # if absolute and attr in joints_attr_defaults:
+                #     value += joints_attr_defaults[attr]
+                #
+                # poses[input_index].values[attr] = value
 
-    return pose_data
+    return poses
 
 
 def set_all_poses(reader, writer, pose_data, from_absolute=True):
@@ -143,15 +249,15 @@ def set_all_poses(reader, writer, pose_data, from_absolute=True):
         group_values = []
 
         for input_index in input_indices:
-            pose_values = pose_data[input_index]
+            pose = pose_data[input_index]
 
             output_values = []
 
             for attr in group_attrs:
-                value = pose_values[attr]
+                value = pose.deltas[attr]
 
-                if from_absolute and attr in joints_attr_defaults:
-                    value -= joints_attr_defaults[attr]
+                # if from_absolute and attr in joints_attr_defaults:
+                #     value -= joints_attr_defaults[attr]
 
                 output_values.append(value)
 
@@ -167,79 +273,83 @@ def set_all_poses(reader, writer, pose_data, from_absolute=True):
     return True
 
 
-def pose_joints_from_data(reader, data, expression, ignore_namespace=True, defaults=None):
-    mhJoints.reset_scene_joint_xforms(reader)
-
-    if isinstance(expression, int):
-        pose_index = expression
-    else:
-        pose_index = find_expression_index(reader, expression, ignore_namespace=ignore_namespace)
-
-    pose_data = data[pose_index]
-
-    for attr, value in pose_data.items():
-        if defaults:
-            if attr in defaults:
-                value += defaults[attr]
-
-        cmds.setAttr(attr, value)
-
-    return True
-
-
-def update_pose_data_from_scene(reader, data, expression, ignore_namespace=True, defaults=None):
-    if isinstance(expression, int):
-        pose_index = expression
-    else:
-        pose_index = find_expression_index(reader, expression, ignore_namespace=ignore_namespace)
-
-    pose_data = data[pose_index]
-
-    for attr in pose_data.keys():
-        pose_data[attr] = cmds.getAttr(attr)
-
-        if defaults:
-            if attr in defaults:
-                pose_data[attr] -= defaults[attr]
-
-    return True
+# def pose_joints_from_data(reader, data, expression, ignore_namespace=True, defaults=None):
+#     mhJoints.reset_scene_joint_xforms(reader)
+#
+#     if isinstance(expression, int):
+#         pose_index = expression
+#     else:
+#         pose_index = find_expression_index(reader, expression, ignore_namespace=ignore_namespace)
+#
+#     pose = data[pose_index]
+#
+#     pose.pose_joints()
+#
+#     # for attr, value in pose.values.items():
+#     #     if defaults:
+#     #         if attr in defaults:
+#     #             value += defaults[attr]
+#     #
+#     #     cmds.setAttr(attr, value)
+#
+#     return True
 
 
-def scale_pose(reader, data, expression, scale, attrs=None, ignore_namespace=True):
-    # default to just scaling translation
-    if attrs is None:
-        attrs = ["tx", "ty", "tz"]
+# def update_pose_data_from_scene(reader, data, expression, ignore_namespace=True, defaults=None):
+#     if isinstance(expression, int):
+#         pose_index = expression
+#     else:
+#         pose_index = find_expression_index(reader, expression, ignore_namespace=ignore_namespace)
+#
+#     pose = data[pose_index]
+#
+#     pose.update_from_scene()
+#
+#     # for attr in pose.values.keys():
+#     #     pose.values[attr] = cmds.getAttr(attr)
+#     #
+#     #     if defaults:
+#     #         if attr in defaults:
+#     #             pose.values[attr] -= defaults[attr]
+#
+#     return True
 
-    pose_index = find_expression_index(reader, expression, ignore_namespace=ignore_namespace)
 
-    pose_data = data[pose_index]
+# def scale_pose(reader, data, expression, scale, attrs=None, ignore_namespace=True):
+#     # default to just scaling translation
+#     if attrs is None:
+#         attrs = ["tx", "ty", "tz"]
+#
+#     pose_index = find_expression_index(reader, expression, ignore_namespace=ignore_namespace)
+#
+#     pose = data[pose_index]
+#
+#     for pose_attr in pose.values.keys():
+#         attr = pose_attr.split(".")[-1]
+#
+#         if attr not in attrs:
+#             continue
+#
+#         pose.values[pose_attr] *= scale
+#
+#     return True
 
-    for pose_attr in pose_data.keys():
-        attr = pose_attr.split(".")[-1]
 
-        if attr not in attrs:
-            continue
-
-        pose_data[pose_attr] *= scale
-
-    return True
-
-
-def scale_all_poses(data, scale, attrs=None):
-    # default to just scaling translation
-    if attrs is None:
-        attrs = ["tx", "ty", "tz"]
-
-    for pose_data in data:
-        for pose_attr in pose_data.keys():
-            attr = pose_attr.split(".")[-1]
-
-            if attr not in attrs:
-                continue
-
-            pose_data[pose_attr] *= scale
-
-    return data
+# def scale_all_poses(poses, scale, attrs=None):
+#     # default to just scaling translation
+#     if attrs is None:
+#         attrs = ["tx", "ty", "tz"]
+#
+#     for pose in poses:
+#         for pose_attr in pose.values.keys():
+#             attr = pose_attr.split(".")[-1]
+#
+#             if attr not in attrs:
+#                 continue
+#
+#             pose.values[pose_attr] *= scale
+#
+#     return poses
 
 
 def get_columns_to_blendshape_channels(reader):
@@ -276,3 +386,47 @@ def get_pose_names(reader):
     pose_names.extend(columns_to_blendshapes[reader.getRawControlCount():])
 
     return pose_names
+
+
+def get_psd_indices(reader, as_names=False):
+    """Get a dict of psd indices with corresponding input pose indices and weights
+    """
+    psd_count = reader.getPSDCount()
+    columns = reader.getPSDColumnIndices()
+    rows = reader.getPSDRowIndices()
+    values = reader.getPSDValues()
+
+    psd_indices = {}
+
+    names = get_pose_names(reader)
+
+    for psd, pose, weight in zip(rows, columns, values):
+        if as_names:
+            pose = names[pose]
+            psd = names[psd]
+
+        if psd in psd_indices:
+            psd_indices[psd].append((pose, weight))
+        else:
+            psd_indices[psd] = [(pose, weight)]
+
+    return psd_indices
+
+def get_psd_poses(reader, poses):
+    """Get a list of PSDPose objects referencing given Pose objects
+    """
+    psd_indices = get_psd_indices(reader)
+
+    psd_poses = []
+
+    for psd_index, psd_data in psd_indices.items():
+        psd_pose = PSDPose()
+        psd_pose.pose = poses[psd_index]
+
+        for pose_index, weight in psd_data:
+            psd_pose.input_poses.append(poses[pose_index])
+            psd_pose.input_weights.append(weight)
+
+        psd_poses.append(psd_pose)
+
+    return psd_poses

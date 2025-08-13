@@ -1118,7 +1118,10 @@ class DnaBuildWidget(QtWidgets.QWidget):
             self.path_manager.dna_viewer_data_path, "additional_assemble_script.py"
         )
 
-        # full_rig = self.full_rig_checkbox.isChecked()
+        # check dependencies exist
+        for file_path in [analog_gui, gui, additional_assemble_script]:
+            if not os.path.exists(file_path):
+                self.error("Dependency file not found: {}".format(file_path))
 
         # confirm
         confirm = QtWidgets.QMessageBox.warning(
@@ -1163,7 +1166,7 @@ class DnaPosesWidget(QtWidgets.QWidget):
 
         self.dna_obj = None
         self.calib_reader = None
-        self.poses_data = None
+        self.poses = None
 
         self.path_manager = path_manager
 
@@ -1319,7 +1322,7 @@ class DnaPosesWidget(QtWidgets.QWidget):
 
         self.attrs = mhBehaviour.get_joint_attrs(self.calib_reader)
         self.attr_defaults = mhBehaviour.get_joint_defaults(self.calib_reader)
-        self.poses_data = mhBehaviour.get_all_poses(self.calib_reader, absolute=False)
+        self.poses = mhBehaviour.get_all_poses(self.calib_reader, absolute=False)
         self.pose_names = mhBehaviour.get_pose_names(self.calib_reader)
 
         self.set_pose_names(self.pose_names)
@@ -1346,7 +1349,7 @@ class DnaPosesWidget(QtWidgets.QWidget):
             return
 
         # check we have data loaded
-        if not self.poses_data:
+        if not self.poses:
             QtWidgets.QMessageBox.critical(
                 self,
                 "Error",
@@ -1375,7 +1378,7 @@ class DnaPosesWidget(QtWidgets.QWidget):
         writer = dna.BinaryStreamWriter(stream)
         writer.setFrom(self.calib_reader)
 
-        mhBehaviour.set_all_poses(self.calib_reader, writer, self.poses_data, from_absolute=False)
+        mhBehaviour.set_all_poses(self.calib_reader, writer, self.poses, from_absolute=False)
 
         writer.write()
 
@@ -1407,7 +1410,7 @@ class DnaPosesWidget(QtWidgets.QWidget):
         self.model.setStringList(pose_names)
         return True
 
-    def get_selected_poses(self, warn=False, as_index=False):
+    def get_selected_poses(self, warn=False):
         poses = []
 
         selection = self.view.selectionModel().selection()
@@ -1415,10 +1418,12 @@ class DnaPosesWidget(QtWidgets.QWidget):
         for proxy_index in selection.indexes():
             index = self.proxy_model.mapToSource(proxy_index)
 
-            if as_index:
-                pose = int(index.row())
-            else:
-                pose = str(index.data())
+            # if as_index:
+            #     pose = int(index.row())
+            # else:
+            #     pose = str(index.data())
+
+            pose = self.poses[int(index.row())]
 
             poses.append(pose)
 
@@ -1436,32 +1441,36 @@ class DnaPosesWidget(QtWidgets.QWidget):
         mhJoints.reset_scene_joint_xforms(self.calib_reader)
 
     def update_scene(self):
-        poses = self.get_selected_poses(warn=True, as_index=True)
+        poses = self.get_selected_poses(warn=True)
 
         if not poses:
             return False
         else:
             pose = poses[0]
 
-        mhBehaviour.pose_joints_from_data(
-            self.calib_reader, self.poses_data, pose,
-            ignore_namespace=False, defaults=self.attr_defaults
-        )
+        pose.pose_joints()
+
+        # mhBehaviour.pose_joints_from_data(
+        #     self.calib_reader, self.poses, pose_index,
+        #     ignore_namespace=False, defaults=self.attr_defaults
+        # )
 
         return True
 
     def update_data(self):
-        poses = self.get_selected_poses(warn=True, as_index=True)
+        poses = self.get_selected_poses(warn=True)
 
         if not poses:
             return False
         else:
             pose = poses[0]
 
-        mhBehaviour.update_pose_data_from_scene(
-            self.calib_reader, self.poses_data, pose,
-            ignore_namespace=False, defaults=self.attr_defaults
-        )
+        pose.update_from_scene()
+
+        # mhBehaviour.update_pose_data_from_scene(
+        #     self.calib_reader, self.poses, pose,
+        #     ignore_namespace=False, defaults=self.attr_defaults
+        # )
 
         return True
 
@@ -1490,9 +1499,11 @@ class DnaPosesWidget(QtWidgets.QWidget):
         scale_value = float(scale_value)
 
         for pose in poses:
-            mhBehaviour.scale_pose(
-                self.calib_reader, self.poses_data, pose, scale_value, ignore_namespace=False
-            )
+            pose.scale_deltas(scale_value)
+
+            # mhBehaviour.scale_pose(
+            #     self.calib_reader, self.poses, pose_index, scale_value, ignore_namespace=False
+            # )
 
         return True
 
@@ -1507,9 +1518,12 @@ class DnaPosesWidget(QtWidgets.QWidget):
 
         scale_value = float(scale_value)
 
-        mhBehaviour.scale_all_poses(
-            self.poses_data, scale_value
-        )
+        for pose in self.poses:
+            pose.scale_deltas(scale_value)
+
+        # mhBehaviour.scale_all_poses(
+        #     self.poses, scale_value
+        # )
 
         return True
 
@@ -1517,6 +1531,8 @@ class DnaPosesWidget(QtWidgets.QWidget):
 class DnaSandboxWidget(
     QtWidgets.QMainWindow
 ):
+    """TODO warning for maya 2023+ about skincluster backward incompatability
+    """
 
     def __init__(self, *args, **kwargs):
         super(DnaSandboxWidget, self).__init__(*args, **kwargs)
