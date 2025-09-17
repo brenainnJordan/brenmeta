@@ -69,11 +69,22 @@ class PSDPose(object):
         self.input_weights = []
         self.opposite = None  # TODO
 
+    def get_defaults(self):
+        defaults = dict(self.pose.defaults)
+
+        for input_pose, input_weight in zip(self.input_poses, self.input_weights):
+            for attr, default in input_pose.defaults.items():
+                if attr not in defaults:
+                    defaults[attr] = default
+
+        return defaults
+
     def get_values(self, summed=True, absolute=True):
         if not summed:
             return self.pose.get_values(absolute=absolute)
 
         summed_deltas = dict(self.pose.deltas)
+        defaults = self.get_defaults()
 
         for input_pose, input_weight in zip(self.input_poses, self.input_weights):
             for attr, delta in input_pose.deltas.items():
@@ -81,15 +92,13 @@ class PSDPose(object):
 
                 if attr in summed_deltas:
                     summed_deltas[attr] += delta
+                else:
+                    summed_deltas[attr] = delta
 
         if absolute:
             values = {}
 
-            for attr, default in self.pose.defaults.items():
-                if attr not in summed_deltas:
-                    # TODO error?
-                    continue
-
+            for attr, default in defaults.items():
                 values[attr] = default + summed_deltas[attr]
 
             return values
@@ -103,6 +112,11 @@ class PSDPose(object):
 
         return True
 
+    def reset_joints(self):
+        for attr, value in self.get_defaults().items():
+            cmds.setAttr(attr, value)
+
+        return True
 
 def find_expression_index(reader, expression, ignore_namespace=True):
     """Find matching raw control for given expression name and return index
@@ -417,7 +431,7 @@ def get_psd_poses(reader, poses):
     """
     psd_indices = get_psd_indices(reader)
 
-    psd_poses = []
+    psd_poses = {}
 
     for psd_index, psd_data in psd_indices.items():
         psd_pose = PSDPose()
@@ -427,6 +441,6 @@ def get_psd_poses(reader, poses):
             psd_pose.input_poses.append(poses[pose_index])
             psd_pose.input_weights.append(weight)
 
-        psd_poses.append(psd_pose)
+        psd_poses[psd_index] = psd_pose
 
     return psd_poses
