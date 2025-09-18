@@ -67,6 +67,7 @@ class PSDPose(object):
         self.pose = None
         self.input_poses = []
         self.input_weights = []
+        self.input_psd_poses = []
         self.opposite = None  # TODO
 
     def get_defaults(self):
@@ -80,6 +81,7 @@ class PSDPose(object):
         return defaults
 
     def get_values(self, summed=True, absolute=True):
+
         if not summed:
             return self.pose.get_values(absolute=absolute)
 
@@ -88,6 +90,15 @@ class PSDPose(object):
 
         for input_pose, input_weight in zip(self.input_poses, self.input_weights):
             for attr, delta in input_pose.deltas.items():
+                delta *= input_weight
+
+                if attr in summed_deltas:
+                    summed_deltas[attr] += delta
+                else:
+                    summed_deltas[attr] = delta
+
+        for input_psd_pose in self.input_psd_poses:
+            for attr, delta in input_psd_pose.pose.deltas.items():
                 delta *= input_weight
 
                 if attr in summed_deltas:
@@ -433,6 +444,7 @@ def get_psd_poses(reader, poses):
 
     psd_poses = {}
 
+    # create psd pose objects
     for psd_index, psd_data in psd_indices.items():
         psd_pose = PSDPose()
         psd_pose.pose = poses[psd_index]
@@ -442,5 +454,21 @@ def get_psd_poses(reader, poses):
             psd_pose.input_weights.append(weight)
 
         psd_poses[psd_index] = psd_pose
+
+    # add input psds for 3+ way combos
+    for psd_pose in psd_poses.values():
+        for input_psd_pose in psd_poses.values():
+            if input_psd_pose is psd_pose:
+                continue
+
+            # check if input_psd_pose has inputs that contribute to this psd
+            if all([pose in psd_pose.input_poses for pose in input_psd_pose.input_poses]):
+                psd_pose.input_psd_poses.append(input_psd_pose)
+
+        if psd_pose.input_psd_poses:
+            print("psd pose input psd poses found: {} ({})".format(
+                psd_pose.pose.name,
+                [pose.pose.name for pose in psd_pose.input_psd_poses]
+            ))
 
     return psd_poses
