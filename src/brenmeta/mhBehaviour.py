@@ -73,7 +73,7 @@ class PSDPose(object):
     def get_defaults(self):
         defaults = dict(self.pose.defaults)
 
-        for input_pose, input_weight in zip(self.input_poses, self.input_weights):
+        for input_pose in self.input_poses:
             for attr, default in input_pose.defaults.items():
                 if attr not in defaults:
                     defaults[attr] = default
@@ -81,17 +81,18 @@ class PSDPose(object):
         return defaults
 
     def get_values(self, summed=True, absolute=True):
-
+        """
+        Note the input weight is not used here (nor in the rig logic)
+        it actually seems to cause issues
+        """
         if not summed:
             return self.pose.get_values(absolute=absolute)
 
         summed_deltas = dict(self.pose.deltas)
         defaults = self.get_defaults()
 
-        for input_pose, input_weight in zip(self.input_poses, self.input_weights):
+        for input_pose in self.input_poses:
             for attr, delta in input_pose.deltas.items():
-                delta *= input_weight
-
                 if attr in summed_deltas:
                     summed_deltas[attr] += delta
                 else:
@@ -99,8 +100,6 @@ class PSDPose(object):
 
         for input_psd_pose in self.input_psd_poses:
             for attr, delta in input_psd_pose.pose.deltas.items():
-                delta *= input_weight
-
                 if attr in summed_deltas:
                     summed_deltas[attr] += delta
                 else:
