@@ -16,19 +16,20 @@ class Pose(object):
         self.defaults = {}
         self.opposite = None # TODO
 
-    def get_values(self, absolute=True):
+    def get_values(self, absolute=True, blend=1.0):
         if absolute:
             values = {}
 
             for attr, delta in self.deltas.items():
+                delta *= blend
                 values[attr] = self.defaults[attr] + delta
 
             return values
         else:
             return self.deltas
 
-    def pose_joints(self):
-        for attr, value in self.get_values(absolute=True).items():
+    def pose_joints(self, blend=1.0):
+        for attr, value in self.get_values(absolute=True, blend=blend).items():
             cmds.setAttr(attr, value)
 
         return True
@@ -80,13 +81,13 @@ class PSDPose(object):
 
         return defaults
 
-    def get_values(self, summed=True, absolute=True):
+    def get_values(self, summed=True, absolute=True, blend=1.0):
         """
         Note the input weight is not used here (nor in the rig logic)
         it actually seems to cause issues
         """
         if not summed:
-            return self.pose.get_values(absolute=absolute)
+            return self.pose.get_values(absolute=absolute, blend=blend)
 
         summed_deltas = dict(self.pose.deltas)
         defaults = self.get_defaults()
@@ -109,15 +110,16 @@ class PSDPose(object):
             values = {}
 
             for attr, default in defaults.items():
-                values[attr] = default + summed_deltas[attr]
+                delta = summed_deltas[attr] * blend
+                values[attr] = default + delta
 
             return values
 
         else:
             return summed_deltas
 
-    def pose_joints(self, summed=True):
-        for attr, value in self.get_values(summed=summed, absolute=True).items():
+    def pose_joints(self, summed=True, blend=1.0):
+        for attr, value in self.get_values(summed=summed, absolute=True, blend=blend).items():
             cmds.setAttr(attr, value)
 
         return True
