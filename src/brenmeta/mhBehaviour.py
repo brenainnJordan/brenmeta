@@ -16,6 +16,31 @@ class Pose(object):
         self.defaults = {}
         self.opposite = None # TODO
 
+    def __add__(self, other):
+        """Returned summed Pose
+        """
+        summed_pose = Pose(name="{}_{}".format(self.name, other.name))
+
+        summed_pose.defaults = self.defaults
+        summed_pose.defaults.update(other.defaults)
+
+        for attr, delta in self.deltas.items():
+            if attr in other.deltas:
+                summed_pose.deltas[attr] = delta + other.deltas[attr]
+            else:
+                summed_pose.deltas[attr] = delta
+
+        for attr, delta in other.deltas.items():
+            if attr in self.deltas:
+                summed_pose.deltas[attr] += delta
+            else:
+                summed_pose.deltas[attr] = delta
+
+        return summed_pose
+
+    def __repr__(self):
+        return "{}({}: {})".format(self.__class__.__name__, self.index, self.name)
+
     def get_values(self, absolute=True, blend=1.0):
         if absolute:
             values = {}
@@ -71,6 +96,12 @@ class PSDPose(object):
         self.input_psd_poses = []
         self.opposite = None  # TODO
 
+    def __repr__(self):
+        return "{}({}: {}) <- [{}]".format(
+            self.__class__.__name__, self.pose.index, self.pose.name,
+            [pose.name for pose in self.input_poses]
+        )
+
     def get_defaults(self):
         defaults = dict(self.pose.defaults)
 
@@ -110,6 +141,9 @@ class PSDPose(object):
             values = {}
 
             for attr, default in defaults.items():
+                if attr not in summed_deltas:
+                    continue
+
                 delta = summed_deltas[attr] * blend
                 values[attr] = default + delta
 
@@ -466,10 +500,10 @@ def get_psd_poses(reader, poses):
             if all([pose in psd_pose.input_poses for pose in input_psd_pose.input_poses]):
                 psd_pose.input_psd_poses.append(input_psd_pose)
 
-        if psd_pose.input_psd_poses:
-            print("psd pose input psd poses found: {} ({})".format(
-                psd_pose.pose.name,
-                [pose.pose.name for pose in psd_pose.input_psd_poses]
-            ))
+        # if psd_pose.input_psd_poses:
+        #     print("psd pose input psd poses found: {} ({})".format(
+        #         psd_pose.pose.name,
+        #         [pose.pose.name for pose in psd_pose.input_psd_poses]
+        #     ))
 
     return psd_poses

@@ -18,6 +18,26 @@ class MHError(Exception):
     def __init__(self, *args, **kwargs):
         super(MHError, self).__init__(*args, **kwargs)
 
+
+def validate_dependencies():
+    """Make sure plugin is loaded with the correct version
+    """
+
+    if hasattr(dna, "VersionInfo_getMajorVersion"):
+        dna_version = dna.VersionInfo_getMajorVersion()
+        raise MHError("dna lib not supported: {}".format(dna_version))
+
+    if not cmds.pluginInfo("embeddedRL4.mll", query=True, loaded=True):
+        cmds.loadPlugin("embeddedRL4.mll")
+
+    version = cmds.pluginInfo("embeddedRL4.mll", query=True, version=True)
+
+    if version[0] != "1":
+        raise MHError("Metahuman plugin not supported: {}".format(version))
+
+    return True
+
+
 def load_dna(path):
     stream = dna.FileStream(path, dna.FileStream.AccessMode_Read, dna.FileStream.OpenMode_Binary)
     reader = dna.BinaryStreamReader(stream, dna.DataLayer_All)

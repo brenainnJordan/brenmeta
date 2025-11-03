@@ -100,6 +100,7 @@ AVERAGE_CHILDREN = [
 
 PROJECT_AXES = [
     # joint, aim, up, furthest
+    # TODO this is generally not working, change to child average
     ("FACIAL_L_EyeCornerOuter", (1, 0, 0), (0, 1, 0), False),
     ("FACIAL_L_EyeCornerInner", (-1, 0, 0), (0, 1, 0), False),
     ("FACIAL_R_EyeCornerOuter", (-1, 0, 0), (0, 1, 0), False),

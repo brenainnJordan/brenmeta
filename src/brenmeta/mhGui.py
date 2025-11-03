@@ -1101,6 +1101,11 @@ class DnaBuildWidget(QtWidgets.QWidget):
         return True
 
     def build_rig(self):
+        try:
+            mhCore.validate_dependencies()
+        except mhCore.MHError as err:
+            self.error(err)
+            return False
 
         build_mode = str(self.build_combo.currentText())
 
