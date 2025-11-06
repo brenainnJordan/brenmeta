@@ -2,8 +2,8 @@ import random
 
 from maya import cmds
 
-from . import mhMayaUtils
-from . import mhJoints
+from brenmeta.maya import mhMayaUtils
+from brenmeta.dnaMod1 import mhJoints
 
 SNAP = [
     "FACIAL_L_EyeCornerOuter1",

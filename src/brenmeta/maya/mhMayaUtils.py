@@ -4,7 +4,7 @@
 from maya.api import OpenMaya
 from maya import cmds
 
-from . import mhCore
+from brenmeta.core import mhCore
 
 
 def parse_dag_path(dag_path):

@@ -1,17 +1,12 @@
 import os
 import sys
 
-import logging
-
 from maya import cmds
+
+from brenmeta.core import mhCore
 
 # IMPORTANT
 # dna libs are not imported here in case of dependency issues
-
-SRC_DIR = os.path.dirname(__file__)
-ROOT_DIR = os.path.split(os.path.split(SRC_DIR)[0])[0]
-DATA_DIR = os.path.join(ROOT_DIR, "data")
-
 
 def get_dna_viewer_dir():
     import dna_viewer
@@ -25,33 +20,6 @@ def get_dna_data_dir():
     return dna_data_dir
 
 
-def get_basic_logger(name):
-    logger = logging.getLogger(name)
-
-    if not len(logger.handlers):
-        # logger.setLevel(logging.INFO)
-
-        handler = logging.StreamHandler()
-        # consoleHandler.setLevel(logging.INFO)
-        logger.addHandler(handler)
-
-        formatter = logging.Formatter('%(levelname)s: %(message)s ~ %(name)s')
-        logger.handlers[0].setFormatter(formatter)
-
-        logger.propagate = False
-        logger.setLevel(logging.INFO)
-
-    return logger
-
-
-LOG = get_basic_logger(__name__)
-
-
-class MHError(Exception):
-    def __init__(self, *args, **kwargs):
-        super(MHError, self).__init__(*args, **kwargs)
-
-
 def validate_plugin():
     """Make sure plugin is loaded with the correct version
     """
@@ -61,9 +29,9 @@ def validate_plugin():
     version = cmds.pluginInfo("embeddedRL4.mll", query=True, version=True)
 
     if version[0] != "1":
-        raise MHError("Metahuman plugin not supported: {}".format(version))
+        raise mhCore.MHError("Metahuman plugin not supported: {}".format(version))
 
-    LOG.info("Metahuman dependencies validated")
+    mhCore.LOG.info("Metahuman dependencies validated")
 
     return True
 
@@ -80,9 +48,9 @@ def remove_dna_module(dna):
             break
 
     if not dna_module_path:
-        raise MHError("Failed to find dna module path: {}".format(dna))
+        raise mhCore.MHError("Failed to find dna module path: {}".format(dna))
 
-    LOG.warning("Removing dna module: {}".format(dna_module_path))
+    mhCore.LOG.warning("Removing dna module: {}".format(dna_module_path))
 
     sys.path.remove(dna_module_path)
 
@@ -104,7 +72,7 @@ def validate_dna_module(force=True):
             import dna
             validate_dna_module(force=False)
         else:
-            raise MHError("dna lib not supported: {}".format(dna_version))
+            raise mhCore.MHError("dna lib not supported: {}".format(dna_version))
 
     return True
 

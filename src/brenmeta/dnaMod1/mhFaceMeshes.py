@@ -5,8 +5,8 @@ TODO utils to transfer eye meshes etc
 from maya import cmds
 from maya.api import OpenMaya
 
-from . import mhMayaUtils
-from . import mhCore
+from brenmeta.maya import mhMayaUtils
+from brenmeta.core import mhCore
 
 L_EYE_MID_VERTS = "[161:192]"
 R_EYE_MID_VERTS = "[161:192]"

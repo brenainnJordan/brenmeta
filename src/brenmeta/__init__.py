@@ -1,13 +1,13 @@
-from PySide2 import QtCore
 from PySide2 import QtWidgets
-from PySide2 import QtGui
 
-def validate_dependencies():
-    from . import mhCore
+
+def validate_dependencies_v1():
+    from brenmeta.core import mhCore
+    from brenmeta.dnaMod1 import mhSrc
 
     try:
-        mhCore.validate_plugin()
-        mhCore.validate_dna_module(force=False)
+        mhSrc.validate_plugin()
+        mhSrc.validate_dna_module(force=False)
 
     except mhCore.MHError as err:
         res = QtWidgets.QMessageBox.question(
@@ -18,7 +18,7 @@ def validate_dependencies():
 
         if res == QtWidgets.QMessageBox.Yes:
             try:
-                mhCore.validate_dna_module(force=True)
+                mhSrc.validate_dna_module(force=True)
 
             except mhCore.MHError as err:
                 QtWidgets.QMessageBox.critical(
@@ -29,15 +29,19 @@ def validate_dependencies():
 
     return True
 
-def show():
+def show(version=1):
     """
     import brenmeta
-    gui = brenmeta.show()
+    gui = brenmeta.show(version=1)
     """
 
-    validate_dependencies()
+    if version == 1:
+        validate_dependencies_v1()
 
-    from . import mhGui
+        from brenmeta.dnaMod1 import mhGui
 
-    widget = mhGui.DnaSandboxWidget.create()
-    return widget
+        widget = mhGui.DnaModWidget.create()
+        return widget
+    else:
+        # TODO
+        pass

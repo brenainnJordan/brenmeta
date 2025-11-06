@@ -3,7 +3,8 @@ import dnacalib
 
 from maya import cmds
 
-from . import mhMayaUtils
+from brenmeta.maya import mhMayaUtils
+
 
 def get_mesh_indices(dna_obj, reader, lod=None):
     if lod is None:

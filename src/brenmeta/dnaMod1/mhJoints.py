@@ -5,8 +5,8 @@ import math
 from maya import cmds
 from maya.api import OpenMaya
 
-from . import mhCore
-from . import mhMayaUtils
+from brenmeta.core import mhCore
+from brenmeta.maya import mhMayaUtils
 
 
 def get_joint_index(reader, joint_name):

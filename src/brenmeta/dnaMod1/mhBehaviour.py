@@ -3,9 +3,8 @@ from maya import cmds
 import dna
 import dnacalib
 
-from . import mhJoints
-from . import mhCore
-from . import mhMayaUtils
+from brenmeta.core import mhCore
+from brenmeta.maya import mhMayaUtils
 
 
 class Pose(object):

@@ -1,7 +1,7 @@
 import os
 from maya import cmds
 
-from . import mhCore
+from brenmeta.core import mhCore
 
 MATERIAL_MAPPING = {
     "shader_body_shader": None,

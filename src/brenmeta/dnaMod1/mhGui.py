@@ -11,21 +11,21 @@ from maya.api import OpenMaya
 
 from PySide2 import QtCore
 from PySide2 import QtWidgets
-from PySide2 import QtGui
 
 import dna
 import dna_viewer
 import dnacalib
 
-import brenmeta.mhUtils
-from . import mhFaceJoints
-from . import mhMesh
-from . import mhCore
-from . import mhJoints
-from . import mhUeUtils
-from . import mhBehaviour
-from . import mhFaceMaterials
-from . import mhFaceMeshes
+from brenmeta.core import mhCore
+from brenmeta.dnaMod1 import mhSrc
+from brenmeta.dnaMod1 import mhUtils
+from brenmeta.dnaMod1 import mhBehaviour
+from brenmeta.dnaMod1 import mhUeUtils
+from brenmeta.dnaMod1 import mhFaceMeshes
+from brenmeta.dnaMod1 import mhFaceJoints
+from brenmeta.dnaMod1 import mhMesh
+from brenmeta.dnaMod1 import mhJoints
+from brenmeta.dnaMod1 import mhFaceMaterials
 
 
 # GROUP_BOX_STYLE = QtWidgets.QStyleOptionGroupBox()
@@ -522,7 +522,7 @@ class DnaTransferWidget(QtWidgets.QWidget):
         calib_reader = dnacalib.DNACalibDNAReader(dna_obj.reader)
 
         if scale_value != 1.0:
-            brenmeta.mhUtils.scale_dna(calib_reader, scale_value)
+            mhUtils.scale_dna(calib_reader, scale_value)
 
         if self.update_joint_xforms_checkbox.isChecked():
             mhJoints.update_joint_neutral_xforms(calib_reader, err=False)
@@ -536,7 +536,7 @@ class DnaTransferWidget(QtWidgets.QWidget):
         if self.calculate_lods_checkbox.isChecked():
             mhMesh.calculate_lods(dna_obj, calib_reader)
 
-        brenmeta.mhUtils.save_dna(
+        mhUtils.save_dna(
             calib_reader,
             self.path_manager.output_dna_path,
             validate=False,
@@ -631,6 +631,7 @@ class DnaInspectWidget(QtWidgets.QMainWindow):
     maybe???
 
     """
+
     def __init__(self, dna_path, lod, *args, **kwargs):
         super(DnaInspectWidget, self).__init__(*args, **kwargs)
 
@@ -1103,7 +1104,7 @@ class DnaBuildWidget(QtWidgets.QWidget):
 
     def build_rig(self):
         try:
-            mhCore.validate_plugin()
+            mhSrc.validate_plugin()
         except mhCore.MHError as err:
             self.error(err)
             return False
@@ -1556,18 +1557,18 @@ class DnaPosesWidget(QtWidgets.QWidget):
         return True
 
 
-class DnaSandboxWidget(
+class DnaModWidget(
     QtWidgets.QMainWindow
 ):
     """TODO warning for maya 2023+ about skincluster backward incompatability
     """
 
     def __init__(self, *args, **kwargs):
-        super(DnaSandboxWidget, self).__init__(*args, **kwargs)
+        super(DnaModWidget, self).__init__(*args, **kwargs)
 
         self.path_manager = DnaPathManager()
 
-        self.setWindowTitle("Bren's MetaHuman DNA sandbox")
+        self.setWindowTitle("Bren's MetaHuman DNA Modification Tool")
 
         self.setCentralWidget(
             QtWidgets.QWidget()
@@ -1581,7 +1582,7 @@ class DnaSandboxWidget(
         self.config_group_box.setLayout(config_lyt)
 
         self.dna_viewer_dir_widget = DirWidget("Dna Viewer Dir")
-        self.dna_viewer_dir_widget.path = mhCore.get_dna_data_dir()
+        self.dna_viewer_dir_widget.path = mhSrc.get_dna_data_dir()
         self.dna_viewer_dir_widget.setFixedHeight(30)
 
         self.input_file_widget = PathOpenWidget("Input DNA")
