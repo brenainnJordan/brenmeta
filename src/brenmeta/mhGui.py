@@ -17,6 +17,7 @@ import dna
 import dna_viewer
 import dnacalib
 
+import brenmeta.mhUtils
 from . import mhFaceJoints
 from . import mhMesh
 from . import mhCore
@@ -521,7 +522,7 @@ class DnaTransferWidget(QtWidgets.QWidget):
         calib_reader = dnacalib.DNACalibDNAReader(dna_obj.reader)
 
         if scale_value != 1.0:
-            mhCore.scale_dna(calib_reader, scale_value)
+            brenmeta.mhUtils.scale_dna(calib_reader, scale_value)
 
         if self.update_joint_xforms_checkbox.isChecked():
             mhJoints.update_joint_neutral_xforms(calib_reader, err=False)
@@ -535,7 +536,7 @@ class DnaTransferWidget(QtWidgets.QWidget):
         if self.calculate_lods_checkbox.isChecked():
             mhMesh.calculate_lods(dna_obj, calib_reader)
 
-        mhCore.save_dna(
+        brenmeta.mhUtils.save_dna(
             calib_reader,
             self.path_manager.output_dna_path,
             validate=False,
@@ -1102,7 +1103,7 @@ class DnaBuildWidget(QtWidgets.QWidget):
 
     def build_rig(self):
         try:
-            mhCore.validate_dependencies()
+            mhCore.validate_plugin()
         except mhCore.MHError as err:
             self.error(err)
             return False
@@ -1225,14 +1226,17 @@ class DnaPosesWidget(QtWidgets.QWidget):
         self.update_sl_btn = QtWidgets.QPushButton("update pose")
         self.mirror_sl_btn = QtWidgets.QPushButton("mirror")
         self.scale_sl_btn = QtWidgets.QPushButton("scale")
+        self.scale_sl_ipv_btn = QtWidgets.QPushButton("scale IPV")
 
         self.update_sl_btn.clicked.connect(self.update_data)
         self.mirror_sl_btn.clicked.connect(self.mirror_pose)
         self.scale_sl_btn.clicked.connect(self.scale_pose)
+        self.scale_sl_ipv_btn.clicked.connect(self.scale_pose_ipv)
 
         self.selected_data_lyt.addWidget(self.update_sl_btn)
         self.selected_data_lyt.addWidget(self.mirror_sl_btn)
         self.selected_data_lyt.addWidget(self.scale_sl_btn)
+        self.selected_data_lyt.addWidget(self.scale_sl_ipv_btn)
 
         # selected lyt
         self.selected_lyt.addWidget(self.selected_scene_group_box)
@@ -1506,9 +1510,28 @@ class DnaPosesWidget(QtWidgets.QWidget):
         for pose in poses:
             pose.scale_deltas(scale_value)
 
-            # mhBehaviour.scale_pose(
-            #     self.calib_reader, self.poses, pose_index, scale_value, ignore_namespace=False
-            # )
+        return True
+
+    def scale_pose_ipv(self):
+        poses = self.get_selected_poses(warn=True)
+
+        if not poses:
+            return False
+
+        scale_value, ok = QtWidgets.QInputDialog.getDouble(
+            self, "Scale IPV pose(s)", "Value to scale translate values of selected poses\nOn IPV joints only:",
+            value=1.0, min=0.0, max=10000, decimals=3
+        )
+
+        if not ok:
+            return False
+
+        scale_value = float(scale_value)
+
+        ipv_joints = cmds.ls("*IPV*", type="joint")
+
+        for pose in poses:
+            pose.scale_deltas(scale_value, joints=ipv_joints)
 
         return True
 
@@ -1558,7 +1581,7 @@ class DnaSandboxWidget(
         self.config_group_box.setLayout(config_lyt)
 
         self.dna_viewer_dir_widget = DirWidget("Dna Viewer Dir")
-        self.dna_viewer_dir_widget.path = mhCore.DNA_DATA_DIR
+        self.dna_viewer_dir_widget.path = mhCore.get_dna_data_dir()
         self.dna_viewer_dir_widget.setFixedHeight(30)
 
         self.input_file_widget = PathOpenWidget("Input DNA")

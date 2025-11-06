@@ -72,16 +72,20 @@ class Pose(object):
 
         return True
 
-    def scale_deltas(self, value, attrs=None):
+    def scale_deltas(self, value, attrs=None, joints=None):
         # default to just scaling translation
         if attrs is None:
             attrs = ["tx", "ty", "tz"]
 
         for pose_attr in self.deltas.keys():
-            attr = pose_attr.split(".")[-1]
+            joint, attr = pose_attr.split(".")
 
             if attr not in attrs:
                 continue
+
+            if joints:
+                if joint not in joints:
+                    continue
 
             self.deltas[pose_attr] *= value
 
