@@ -17,15 +17,15 @@ import dna_viewer
 import dnacalib
 
 from brenmeta.core import mhCore
-from brenmeta.dnaMod1 import mhSrc
-from brenmeta.dnaMod1 import mhUtils
-from brenmeta.dnaMod1 import mhBehaviour
-from brenmeta.dnaMod1 import mhUeUtils
-from brenmeta.dnaMod1 import mhFaceMeshes
-from brenmeta.dnaMod1 import mhFaceJoints
-from brenmeta.dnaMod1 import mhMesh
-from brenmeta.dnaMod1 import mhJoints
-from brenmeta.dnaMod1 import mhFaceMaterials
+from brenmeta.dna1 import mhSrc
+from brenmeta.dna1 import mhUtils
+from brenmeta.dna1 import mhBehaviour
+from brenmeta.dna1 import mhUeUtils
+from brenmeta.dna1 import mhFaceMeshes
+from brenmeta.dna1 import mhFaceJoints
+from brenmeta.dna1 import mhMesh
+from brenmeta.dna1 import mhJoints
+from brenmeta.dna1 import mhFaceMaterials
 
 
 # GROUP_BOX_STYLE = QtWidgets.QStyleOptionGroupBox()

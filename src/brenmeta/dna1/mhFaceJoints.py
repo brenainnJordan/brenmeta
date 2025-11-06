@@ -3,7 +3,7 @@ import random
 from maya import cmds
 
 from brenmeta.maya import mhMayaUtils
-from brenmeta.dnaMod1 import mhJoints
+from brenmeta.dna1 import mhJoints
 
 SNAP = [
     "FACIAL_L_EyeCornerOuter1",

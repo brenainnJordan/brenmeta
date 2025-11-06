@@ -3,7 +3,7 @@ from PySide2 import QtWidgets
 
 def validate_dependencies_v1():
     from brenmeta.core import mhCore
-    from brenmeta.dnaMod1 import mhSrc
+    from brenmeta.dna1 import mhSrc
 
     try:
         mhSrc.validate_plugin()
@@ -38,7 +38,7 @@ def show(version=1):
     if version == 1:
         validate_dependencies_v1()
 
-        from brenmeta.dnaMod1 import mhGui
+        from brenmeta.dna1 import mhGui
 
         widget = mhGui.DnaModWidget.create()
         return widget
