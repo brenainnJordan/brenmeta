@@ -1167,6 +1167,92 @@ class DnaBuildWidget(QtWidgets.QWidget):
         return True
 
 
+class DnaPosesModel(QtCore.QAbstractItemModel):
+    HEADERS = ["", "pose", "shape"]
+
+    def __init__(self, parent=None):
+        super(DnaPosesModel, self).__init__(parent)
+        self.poses = None
+
+    def set_poses(self, poses):
+        self.beginResetModel()
+        self.poses = poses
+        self.endResetModel()
+
+    def columnCount(self, parent=QtCore.QModelIndex()):
+        return len(self.HEADERS)
+
+    def headerData(self, section, orientation, role):
+        if role in [QtCore.Qt.DisplayRole, QtCore.Qt.EditRole]:
+            if orientation == QtCore.Qt.Horizontal:
+                if section < len(self.HEADERS):
+                    return self.HEADERS[section]
+
+        return super(DnaPosesModel, self).headerData(section, orientation, role)
+
+    def rowCount(self, parent=QtCore.QModelIndex()):
+        if not self.poses:
+            return 0
+
+        if parent.isValid():
+            return 0
+        else:
+            return len(self.poses)
+
+    def data(self, index, role=QtCore.Qt.DisplayRole):
+        if not index.isValid() or not self.poses:
+            return None
+
+        pose = index.internalPointer()
+
+        if role in [QtCore.Qt.DisplayRole, QtCore.Qt.EditRole]:
+            if index.column() == 0:
+                return pose.index
+            if index.column() == 1:
+                return pose.name
+            if index.column() == 2:
+                return pose.shape_name
+
+        return None
+
+    def setData(self, index, value, role=QtCore.Qt.EditRole):
+        if not index.isValid() or not self.poses:
+            return None
+
+        pose = index.internalPointer()
+
+        if role == QtCore.Qt.EditRole:
+            if index.column() == 0:
+                # TODO?
+                return False
+
+        return False
+
+    def index(self, row, column, parent=QtCore.QModelIndex()):
+        if not self.poses:
+            return QtCore.QModelIndex()
+
+        if parent.isValid():
+            return QtCore.QModelIndex()
+
+        return self.createIndex(row, column, self.poses[row])
+
+    def parent(self, index):
+        return QtCore.QModelIndex()
+
+    def flags(self, index):
+        if not self.poses:
+            return QtCore.Qt.NoItemFlags
+
+        flags = QtCore.Qt.ItemFlags()
+
+        # set as appropriate
+        flags = flags | QtCore.Qt.ItemIsEnabled
+        flags = flags | QtCore.Qt.ItemIsSelectable
+
+        return flags
+
+
 class DnaPosesWidget(QtWidgets.QWidget):
     def __init__(self, path_manager, *args, **kwargs):
         super(DnaPosesWidget, self).__init__(*args, **kwargs)
@@ -1190,15 +1276,20 @@ class DnaPosesWidget(QtWidgets.QWidget):
 
         self.path_line_edit = QtWidgets.QLineEdit()
 
-        self.model = QtCore.QStringListModel()
+        # self.model = QtCore.QStringListModel()
+        self.model = DnaPosesModel()
         self.proxy_model = QtCore.QSortFilterProxyModel()
 
         self.proxy_model.setSourceModel(self.model)
         self.proxy_model.setFilterCaseSensitivity(QtCore.Qt.CaseSensitivity.CaseInsensitive)
+        self.proxy_model.setFilterKeyColumn(-1)
 
-        self.view = QtWidgets.QListView()
+        # self.view = QtWidgets.QListView()
+        self.view = QtWidgets.QTreeView()
         self.view.setModel(self.proxy_model)
         self.view.setSelectionMode(self.view.SelectionMode.ExtendedSelection)
+        self.view.header().resizeSection(0, 50)
+        self.view.header().resizeSection(1, 150)
 
         # selected
         self.selected_group_box = QtWidgets.QGroupBox("Selected")
@@ -1333,9 +1424,11 @@ class DnaPosesWidget(QtWidgets.QWidget):
         self.attrs = mhBehaviour.get_joint_attrs(self.calib_reader)
         self.attr_defaults = mhBehaviour.get_joint_defaults(self.calib_reader)
         self.poses = mhBehaviour.get_all_poses(self.calib_reader, absolute=False)
-        self.pose_names = mhBehaviour.get_pose_names(self.calib_reader)
+        # self.pose_names = mhBehaviour.get_pose_names(self.calib_reader)
+        # self.pose_names = [pose.get_display_name() for pose in self.poses]
+        # self.set_pose_names(self.pose_names)
 
-        self.set_pose_names(self.pose_names)
+        self.model.set_poses(self.poses)
 
         QtWidgets.QMessageBox.information(
             self,
@@ -1414,11 +1507,13 @@ class DnaPosesWidget(QtWidgets.QWidget):
         pass
 
     def filter_changed(self):
-        self.proxy_model.setFilterWildcard(self.filter_line_edit.text())
+        self.proxy_model.setFilterWildcard(
+            "*{}*".format(self.filter_line_edit.text())
+        )
 
-    def set_pose_names(self, pose_names):
-        self.model.setStringList(pose_names)
-        return True
+    # def set_pose_names(self, pose_names):
+    #     self.model.setStringList(pose_names)
+    #     return True
 
     def get_selected_poses(self, warn=False):
         poses = []
@@ -1427,11 +1522,6 @@ class DnaPosesWidget(QtWidgets.QWidget):
 
         for proxy_index in selection.indexes():
             index = self.proxy_model.mapToSource(proxy_index)
-
-            # if as_index:
-            #     pose = int(index.row())
-            # else:
-            #     pose = str(index.data())
 
             pose = self.poses[int(index.row())]
 

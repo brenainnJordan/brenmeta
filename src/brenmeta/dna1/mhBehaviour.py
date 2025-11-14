@@ -2,18 +2,22 @@ from maya import cmds
 
 import dna
 import dnacalib
+import dna_viewer
 
 from brenmeta.core import mhCore
 from brenmeta.maya import mhMayaUtils
 
+LOG = mhCore.get_basic_logger(__name__)
+
 
 class Pose(object):
-    def __init__(self, name=None, index=None):
+    def __init__(self, name=None, index=None, shape_name=None):
         self.index = index
         self.name = name
+        self.shape_name = shape_name
         self.deltas = {}
         self.defaults = {}
-        self.opposite = None # TODO
+        self.opposite = None  # TODO
 
     def __add__(self, other):
         """Returned summed Pose
@@ -39,6 +43,20 @@ class Pose(object):
 
     def __repr__(self):
         return "{}({}: {})".format(self.__class__.__name__, self.index, self.name)
+
+    def get_display_name(self, index=True, blendshape=True):
+        display_name = ""
+
+        if index:
+            display_name += "{}: ".format(self.index)
+
+        if self.name:
+            display_name += "{}".format(self.name)
+
+        if blendshape:
+            display_name += " ({})".format(self.shape_name)
+
+        return display_name
 
     def get_values(self, absolute=True, blend=1.0):
         if absolute:
@@ -89,6 +107,7 @@ class Pose(object):
             self.deltas[pose_attr] *= value
 
         return True
+
 
 class PSDPose(object):
     def __init__(self):
@@ -166,6 +185,15 @@ class PSDPose(object):
             cmds.setAttr(attr, value)
 
         return True
+
+    def get_all_input_poses(self):
+        poses = set(self.input_poses)
+
+        for input_psd_pose in self.input_psd_poses:
+            poses.update(input_psd_pose.get_all_input_poses())
+
+        return poses
+
 
 def find_expression_index(reader, expression, ignore_namespace=True):
     """Find matching raw control for given expression name and return index
@@ -246,12 +274,13 @@ def get_all_poses(reader, absolute=True):
     # get data
     joint_attrs = get_joint_attrs(reader)
     joints_attr_defaults = get_joint_defaults(reader)
-    pose_names = get_pose_names(reader)
+    pose_names = get_pose_names(reader, extend_with_shapes=True)
+    blendshape_names = get_columns_to_blendshape_channels(reader)
 
     # get pose values for each joint group
     poses = [
-        Pose(name=name, index=i)
-        for i, name in enumerate(pose_names)
+        Pose(name=name, index=i, shape_name=shape_name)
+        for i, (name, shape_name) in enumerate(zip(pose_names, blendshape_names))
     ]
 
     for group_index in range(reader.getJointGroupCount()):
@@ -433,7 +462,7 @@ def get_columns_to_blendshape_channels(reader):
     return columns_to_blendshapes
 
 
-def get_pose_names(reader):
+def get_pose_names(reader, extend_with_shapes=True):
     """Get appropriate names for all poses (aka joint columns)
     """
 
@@ -444,14 +473,14 @@ def get_pose_names(reader):
         pose_name = pose_name.split(".")[-1]
         pose_names.append(pose_name)
 
-    columns_to_blendshapes = get_columns_to_blendshape_channels(reader)
-
-    pose_names.extend(columns_to_blendshapes[reader.getRawControlCount():])
+    if extend_with_shapes:
+        columns_to_blendshapes = get_columns_to_blendshape_channels(reader)
+        pose_names.extend(columns_to_blendshapes[reader.getRawControlCount():])
 
     return pose_names
 
 
-def get_psd_indices(reader, as_names=False):
+def get_psd_indices(reader):  # , as_names=False):
     """Get a dict of psd indices with corresponding input pose indices and weights
     """
     psd_count = reader.getPSDCount()
@@ -461,12 +490,12 @@ def get_psd_indices(reader, as_names=False):
 
     psd_indices = {}
 
-    names = get_pose_names(reader)
+    # names = get_pose_names(reader)
 
     for psd, pose, weight in zip(rows, columns, values):
-        if as_names:
-            pose = names[pose]
-            psd = names[psd]
+        # if as_names:
+        #     pose = names[pose]
+        #     psd = names[psd]
 
         if psd in psd_indices:
             psd_indices[psd].append((pose, weight))
@@ -474,6 +503,7 @@ def get_psd_indices(reader, as_names=False):
             psd_indices[psd] = [(pose, weight)]
 
     return psd_indices
+
 
 def get_psd_poses(reader, poses):
     """Get a list of PSDPose objects referencing given Pose objects
@@ -510,3 +540,300 @@ def get_psd_poses(reader, poses):
         #     ))
 
     return psd_poses
+
+
+def test(dna_path):
+    dna_obj = dna_viewer.DNA(input_dna_path)
+    calib_reader = dnacalib.DNACalibDNAReader(self.dna_obj.reader)
+
+    self.attrs = mhBehaviour.get_joint_attrs(self.calib_reader)
+    self.attr_defaults = mhBehaviour.get_joint_defaults(self.calib_reader)
+    self.poses = mhBehaviour.get_all_poses(self.calib_reader, absolute=False)
+
+
+def map_expressions_to_controls(tongue=False, eyelashes=False):
+    """Parse expression set driven keys and return dict mapping to driver controls and values
+    """
+    exp_node = "CTRL_expressions"
+    exp_attrs = cmds.listAttr(exp_node, userDefined=True)
+
+    data = [
+        # hard coded eye direction
+        # these are keyed to LOC_L_eyeDriver
+        # so lets just give them here
+        ('eyeLookDownL', ('CTRL_L_eye.translateY', -1.0)),
+        ('eyeLookDownR', ('CTRL_R_eye.translateY', -1.0)),
+        ('eyeLookLeftL', ('CTRL_L_eye.translateX', 1.0)),
+        ('eyeLookLeftR', ('CTRL_R_eye.translateX', 1.0)),
+        ('eyeLookRightL', ('CTRL_L_eye.translateX', -1.0)),
+        ('eyeLookRightR', ('CTRL_R_eye.translateX', -1.0)),
+        ('eyeLookUpL', ('CTRL_L_eye.translateY', 1.0)),
+        ('eyeLookUpR', ('CTRL_R_eye.translateY', 1.0)),
+    ]
+
+    for exp_attr in exp_attrs:
+        anim_nodes = cmds.listConnections(
+            "{}.{}".format(exp_node, exp_attr), source=True, destination=False, type="animCurve"
+        )
+
+        if "eyeLook" in exp_attr:
+            continue
+
+        if "eyelashes" in exp_attr and not eyelashes:
+            continue
+
+        if "tongue" in exp_attr and not tongue:
+            continue
+
+        if not anim_nodes:
+            # data[exp_attr] = None
+            continue
+
+        driver_attr = cmds.listConnections(
+            "{}.input".format(anim_nodes[0]),
+            source=True,
+            destination=False,
+            skipConversionNodes=True,
+            plugs=True,
+        )[0]
+
+        exp_values = cmds.keyframe(anim_nodes[0], query=True, valueChange=True)
+        ctl_values = cmds.keyframe(anim_nodes[0], query=True, floatChange=True)
+
+        # debug
+        debug_msg = "{} - {} - {}\n".format(exp_attr, anim_nodes[0], driver_attr)
+
+        for exp_value, ctl_value in zip(exp_values, ctl_values):
+            debug_msg += "    {} - {}\n".format(ctl_value, exp_value)
+
+        LOG.info(debug_msg)
+
+        # check values
+        if len(exp_values) != 2 and len(ctl_values) != 2:
+            LOG.warning("Cannot map exp: {}".format(exp_attr))
+            # data[exp_attr] = None
+            continue
+
+        if exp_values[0] == 1.0:
+            driver_value = ctl_values[0]
+        elif exp_values[1] == 1.0:
+            driver_value = ctl_values[1]
+        else:
+            LOG.warning("Cannot map exp: {}".format(exp_attr))
+            # data[exp_attr] = None
+            continue
+
+        # add data
+        # data[exp_attr] = (driver_attr, driver_value)
+        data.append((exp_attr, (driver_attr, driver_value)))
+
+    return data
+
+
+def map_psds_to_controls(expression_mapping, psd_poses):
+
+    expression_mapping = {data[0]: data[1] for data in expression_mapping}
+
+    print("TEST", expression_mapping)
+
+    psd_mapping = []
+
+    for psd_pose in psd_poses:
+        poses = psd_pose.get_all_input_poses()
+
+        drivers = []
+
+        for pose in poses:
+            if pose.name not in expression_mapping:
+                LOG.warning("input pose not mapped: {}".format(pose.name))
+                continue
+
+            drivers.append(expression_mapping[pose.name])
+
+        psd_mapping.append((psd_pose.pose.name, drivers))
+
+    return psd_mapping
+
+
+def animate_attr(attr, value, frame, interval):
+    node, attr = attr.split(".")
+
+    LOG.info("    {}.{} {}".format(node, attr, value))
+
+    cmds.setKeyframe(
+        node, at=attr, t=frame, value=0, outTangentType="linear", inTangentType="linear",
+    )
+
+    frame += interval
+
+    cmds.setKeyframe(
+        node, at=attr, t=frame, value=value, outTangentType="linear", inTangentType="linear",
+    )
+
+    frame += interval
+
+    cmds.setKeyframe(
+        node, at=attr, t=frame, value=0, outTangentType="linear", inTangentType="linear",
+    )
+
+    return frame
+
+
+def animate_ctrl_rom(
+        start_frame=0,
+        tongue=False,
+        eyelashes=False,
+        interval=5,
+        combos=True,
+        dna_file=None,
+        combo_mapping=None,
+        update_timeline=True
+):
+
+    mapping = map_expressions_to_controls(tongue=tongue, eyelashes=eyelashes)
+
+    if combos:
+        if combo_mapping:
+            mapping.update(combo_mapping)
+        elif dna_file:
+            LOG.info("Loading dna: {}".format(dna_file))
+            dna_obj = dna_viewer.DNA(dna_file)
+            reader = dnacalib.DNACalibDNAReader(dna_obj.reader)
+
+            poses = get_all_poses(reader)
+            psd_poses = get_psd_poses(reader, poses)
+
+            combo_mapping = map_psds_to_controls(mapping, psd_poses.values())
+            # mapping.update(combo_mapping)
+            mapping += combo_mapping
+        else:
+            raise mhCore.MHError("either dna file or combo_mapping must be specified")
+
+    # organise combos
+    # TODO refactor this to sort by priority
+    combo_grouping = {
+        "CTRL_L_brow_down.translateY": 1.0,
+        "CTRL_R_brow_down.translateY": 1.0,
+        "CTRL_C_jaw.translateY": 1.0,
+        "CTRL_C_jaw.translateX": 1.0,
+        "CTRL_C_jaw.translateX": -1.0,
+        "CTRL_L_eye_blink.translateY": 1.0,
+        "CTRL_R_eye_blink.translateY": 1.0,
+        "CTRL_L_mouth_cornerPull.translateY": 1.0,
+        "CTRL_R_mouth_cornerPull.translateY": 1.0,
+    }
+
+    ungrouped_mapping = []
+    grouped_mapping = {}
+
+    for exp_attr, data in mapping:
+        if isinstance(data, list):
+            group = None
+
+            # check if this combo contains a control value that's in combo grouping
+            for attr, value in data:
+                if attr in combo_grouping:
+                    if value == combo_grouping[attr]:
+                        group = attr
+                        break
+
+            if group:
+                if group in grouped_mapping:
+                    grouped_mapping[group].append((exp_attr, data))
+                else:
+                    grouped_mapping[group] = [(exp_attr, data)]
+            else:
+                ungrouped_mapping.append((exp_attr, data))
+        else:
+            ungrouped_mapping.append((exp_attr, data))
+
+    LOG.info("Grouped mappings:")
+
+    for group, data in grouped_mapping.items():
+        LOG.info("  {}".format(group))
+
+        for attr, value in data:
+            LOG.info("    {}: {}".format(attr, value))
+
+    # create animation
+    frame = start_frame
+
+    LOG.info("Animating controls...")
+
+    # for exp_attr in sorted(mapping.keys()):
+        # if not mapping[exp_attr]:
+        #     continue
+
+    for exp_attr, data in ungrouped_mapping:
+        LOG.info("Keying: {}".format(exp_attr))
+
+        # TODO check keyable
+        if isinstance(data, list):
+            for attr, value in data:
+                next_frame = animate_attr(attr, value, frame, interval)
+        else:
+            attr, value = data
+            next_frame = animate_attr(attr, value, frame, interval)
+
+        frame = next_frame
+
+    LOG.info("Animating groups...")
+
+    for combo_node_attr in sorted(grouped_mapping.keys()):
+        combo_data = grouped_mapping[combo_node_attr]
+        combo_value = combo_grouping[combo_node_attr]
+        combo_node, combo_attr = combo_node_attr.split(".")
+
+        LOG.info("group: {} {}".format(combo_node_attr, combo_value))
+
+        # animate primary combo attr
+        cmds.setKeyframe(
+            combo_node, at=combo_attr, t=frame, value=0, outTangentType="linear", inTangentType="linear",
+        )
+
+        frame += interval
+
+        cmds.setKeyframe(
+            combo_node, at=combo_attr, t=frame, value=combo_value, outTangentType="linear", inTangentType="linear",
+        )
+
+        frame += interval
+
+        # animate combos
+        next_frame = frame
+
+        for pose_name, pose_data in combo_data:
+            for attr, value in pose_data:
+                if attr == combo_node_attr:
+                    continue
+
+                next_frame = animate_attr(attr, value, frame, interval)
+
+            frame = next_frame
+
+        # reset primary combo attr
+        cmds.setKeyframe(
+            combo_node, at=combo_attr, t=frame, value=combo_value, outTangentType="linear", inTangentType="linear",
+        )
+
+        frame += interval
+
+        cmds.setKeyframe(
+            combo_node, at=combo_attr, t=frame, value=0, outTangentType="linear", inTangentType="linear",
+        )
+
+    if update_timeline:
+        start = cmds.playbackOptions(query=True, animationStartTime=True)
+        end = cmds.playbackOptions(query=True, animationEndTime=True)
+
+        if start > start_frame:
+            start = cmds.playbackOptions(animationStartTime=start_frame)
+            cmds.playbackOptions(minTime=start_frame)
+
+        if end < frame:
+            cmds.playbackOptions(animationEndTime=frame)
+            cmds.playbackOptions(maxTime=frame)
+
+    LOG.info("ROM complete")
+
+    return True
