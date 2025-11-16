@@ -542,14 +542,29 @@ def get_psd_poses(reader, poses):
     return psd_poses
 
 
-def test(dna_path):
-    dna_obj = dna_viewer.DNA(input_dna_path)
-    calib_reader = dnacalib.DNACalibDNAReader(self.dna_obj.reader)
+def get_all_board_controls():
+    frm_group = "FRM_faceGUI"
+    transforms = cmds.listRelatives(frm_group, type="transform")
 
-    self.attrs = mhBehaviour.get_joint_attrs(self.calib_reader)
-    self.attr_defaults = mhBehaviour.get_joint_defaults(self.calib_reader)
-    self.poses = mhBehaviour.get_all_poses(self.calib_reader, absolute=False)
+    groups = [transform for transform in transforms if transform.startswith("GRP_")]
 
+    controls = []
+
+    for group in groups:
+        transforms = cmds.listRelatives(group, allDescendents=True, type="transform")
+        controls += [transform for transform in transforms if transform.startswith("CTRL_")]
+
+    return controls
+
+
+def reset_control_board_anim():
+    controls = get_all_board_controls()
+    cmds.cutKey(controls, clear=True)
+
+    for control in controls:
+        cmds.xform(control, translation=(0,0,0))
+
+    return True
 
 def map_expressions_to_controls(tongue=False, eyelashes=False):
     """Parse expression set driven keys and return dict mapping to driver controls and values
@@ -687,8 +702,12 @@ def animate_ctrl_rom(
         combos=True,
         dna_file=None,
         combo_mapping=None,
-        update_timeline=True
+        update_timeline=True,
+        combine_lr=False,
+        annotate=True,
 ):
+
+    # TODO combine lr
 
     mapping = map_expressions_to_controls(tongue=tongue, eyelashes=eyelashes)
 
@@ -710,18 +729,25 @@ def animate_ctrl_rom(
             raise mhCore.MHError("either dna file or combo_mapping must be specified")
 
     # organise combos
-    # TODO refactor this to sort by priority
-    combo_grouping = {
-        "CTRL_L_brow_down.translateY": 1.0,
-        "CTRL_R_brow_down.translateY": 1.0,
-        "CTRL_C_jaw.translateY": 1.0,
-        "CTRL_C_jaw.translateX": 1.0,
-        "CTRL_C_jaw.translateX": -1.0,
-        "CTRL_L_eye_blink.translateY": 1.0,
-        "CTRL_R_eye_blink.translateY": 1.0,
-        "CTRL_L_mouth_cornerPull.translateY": 1.0,
-        "CTRL_R_mouth_cornerPull.translateY": 1.0,
-    }
+    combo_groups = [
+        ("CTRL_L_brow_down.translateY", 1.0),
+        ("CTRL_R_brow_down.translateY", 1.0),
+        ("CTRL_C_jaw.translateY", 1.0),
+        ("CTRL_C_jaw.translateX", 1.0),
+        ("CTRL_C_jaw.translateX", -1.0),
+        ("CTRL_L_eye_blink.translateY", 1.0),
+        ("CTRL_R_eye_blink.translateY", 1.0),
+        ("CTRL_L_mouth_cornerPull.translateY", 1.0),
+        ("CTRL_R_mouth_cornerPull.translateY", 1.0),
+        ("CTRL_L_mouth_stretch.translateY", 1.0),
+        ("CTRL_R_mouth_stretch.translateY", 1.0),
+        ("CTRL_L_mouth_upperLipRaise.translateY", 1.0),
+        ("CTRL_R_mouth_upperLipRaise.translateY", 1.0),
+        ("CTRL_L_mouth_dimple.translateY", 1.0),
+        ("CTRL_R_mouth_dimple.translateY", 1.0),
+    ]
+
+    combo_groups_dict = {a: b for a, b in combo_groups}
 
     ungrouped_mapping = []
     grouped_mapping = {}
@@ -731,11 +757,12 @@ def animate_ctrl_rom(
             group = None
 
             # check if this combo contains a control value that's in combo grouping
-            for attr, value in data:
-                if attr in combo_grouping:
-                    if value == combo_grouping[attr]:
-                        group = attr
-                        break
+            attrs = [attr for attr, value in data]
+
+            for combo_attr, combo_value in combo_groups:
+                if combo_attr in attrs:
+                    group = combo_attr
+                    break
 
             if group:
                 if group in grouped_mapping:
@@ -760,41 +787,65 @@ def animate_ctrl_rom(
 
     LOG.info("Animating controls...")
 
-    # for exp_attr in sorted(mapping.keys()):
-        # if not mapping[exp_attr]:
-        #     continue
+    left_frames = {}
+    annotation_data = []
 
     for exp_attr, data in ungrouped_mapping:
         LOG.info("Keying: {}".format(exp_attr))
 
+        exp_frame = frame
+
+        if combine_lr:
+            if exp_attr.endswith("R"):
+                l_exp_attr = exp_attr[:-1]+"L"
+                if l_exp_attr in left_frames:
+                    exp_frame = left_frames[l_exp_attr]
+
+            elif exp_attr.endswith("L"):
+                left_frames[exp_attr] = exp_frame
+
         # TODO check keyable
         if isinstance(data, list):
+            annotation_text = ""
+
             for attr, value in data:
-                next_frame = animate_attr(attr, value, frame, interval)
+                next_frame = animate_attr(attr, value, exp_frame, interval)
+
+                # TODO continue annotation
+                annotation_text += ""
+
         else:
             attr, value = data
-            next_frame = animate_attr(attr, value, frame, interval)
+            next_frame = animate_attr(attr, value, exp_frame, interval)
 
-        frame = next_frame
+        if not (combine_lr and exp_attr.endswith("R")):
+            frame = next_frame
 
     LOG.info("Animating groups...")
 
-    for combo_node_attr in sorted(grouped_mapping.keys()):
-        combo_data = grouped_mapping[combo_node_attr]
-        combo_value = combo_grouping[combo_node_attr]
-        combo_node, combo_attr = combo_node_attr.split(".")
+    left_group_frames = {}
 
-        LOG.info("group: {} {}".format(combo_node_attr, combo_value))
+    for combo_ctrl_attr, combo_value in combo_groups:
+        if combine_lr:
+            if combo_ctrl_attr.startswith("CTRL_L_"):
+                left_group_frames[combo_ctrl_attr] = frame
+            elif combo_ctrl_attr.startswith("CTRL_R_"):
+                continue
+
+        combo_data = grouped_mapping[combo_ctrl_attr]
+        combo_ctrl, combo_attr = combo_ctrl_attr.split(".")
+
+        LOG.info("group: {} {}".format(combo_attr, combo_value))
 
         # animate primary combo attr
         cmds.setKeyframe(
-            combo_node, at=combo_attr, t=frame, value=0, outTangentType="linear", inTangentType="linear",
+            combo_ctrl, at=combo_attr, t=frame, value=0, outTangentType="linear", inTangentType="linear",
         )
 
         frame += interval
 
         cmds.setKeyframe(
-            combo_node, at=combo_attr, t=frame, value=combo_value, outTangentType="linear", inTangentType="linear",
+            combo_ctrl, at=combo_attr, t=frame, value=combo_value, outTangentType="linear", inTangentType="linear",
         )
 
         frame += interval
@@ -802,9 +853,12 @@ def animate_ctrl_rom(
         # animate combos
         next_frame = frame
 
-        for pose_name, pose_data in combo_data:
+        for exp_attr, pose_data in combo_data:
+            if combine_lr and exp_attr.endswith("L"):
+                left_frames[exp_attr] = frame
+
             for attr, value in pose_data:
-                if attr == combo_node_attr:
+                if attr == combo_ctrl_attr:
                     continue
 
                 next_frame = animate_attr(attr, value, frame, interval)
@@ -813,26 +867,70 @@ def animate_ctrl_rom(
 
         # reset primary combo attr
         cmds.setKeyframe(
-            combo_node, at=combo_attr, t=frame, value=combo_value, outTangentType="linear", inTangentType="linear",
+            combo_ctrl, at=combo_attr, t=frame, value=combo_value, outTangentType="linear", inTangentType="linear",
         )
 
         frame += interval
 
         cmds.setKeyframe(
-            combo_node, at=combo_attr, t=frame, value=0, outTangentType="linear", inTangentType="linear",
+            combo_ctrl, at=combo_attr, t=frame, value=0, outTangentType="linear", inTangentType="linear",
         )
 
+    # animate right groups
+    if combine_lr:
+        for l_combo_ctrl_attr, l_frame in left_group_frames.items():
+            r_combo_ctrl_attr = l_combo_ctrl_attr.replace("_L_", "_R_")
+
+            combo_value = combo_groups_dict[r_combo_ctrl_attr]
+            combo_data = grouped_mapping[r_combo_ctrl_attr]
+            combo_ctrl, combo_attr = r_combo_ctrl_attr.split(".")
+
+            LOG.info("group: {} {}".format(combo_attr, combo_value))
+
+            # animate primary combo attr
+            cmds.setKeyframe(
+                combo_ctrl, at=combo_attr, t=l_frame, value=0, outTangentType="linear", inTangentType="linear",
+            )
+
+            l_frame += interval
+
+            cmds.setKeyframe(
+                combo_ctrl, at=combo_attr, t=l_frame, value=combo_value, outTangentType="linear", inTangentType="linear",
+            )
+
+            l_frame += interval
+
+            # animate combos
+            # assumes combo data is in same order as left combo data
+            next_frame = l_frame
+
+            for exp_attr, pose_data in combo_data:
+                for attr, value in pose_data:
+                    if attr == r_combo_ctrl_attr:
+                        continue
+
+                    next_frame = animate_attr(attr, value, l_frame, interval)
+
+                l_frame = next_frame
+
+            # reset primary combo attr
+            cmds.setKeyframe(
+                combo_ctrl, at=combo_attr, t=l_frame, value=combo_value, outTangentType="linear", inTangentType="linear",
+            )
+
+            l_frame += interval
+
+            cmds.setKeyframe(
+                combo_ctrl, at=combo_attr, t=l_frame, value=0, outTangentType="linear", inTangentType="linear",
+            )
+
+
     if update_timeline:
-        start = cmds.playbackOptions(query=True, animationStartTime=True)
-        end = cmds.playbackOptions(query=True, animationEndTime=True)
+        cmds.playbackOptions(animationStartTime=start_frame)
+        cmds.playbackOptions(minTime=start_frame)
 
-        if start > start_frame:
-            start = cmds.playbackOptions(animationStartTime=start_frame)
-            cmds.playbackOptions(minTime=start_frame)
-
-        if end < frame:
-            cmds.playbackOptions(animationEndTime=frame)
-            cmds.playbackOptions(maxTime=frame)
+        cmds.playbackOptions(animationEndTime=frame)
+        cmds.playbackOptions(maxTime=frame)
 
     LOG.info("ROM complete")
 

@@ -1,10 +1,13 @@
 """Supporting maya utilities
 """
 
+import json
+
 from maya.api import OpenMaya
 from maya import cmds
 
 from brenmeta.core import mhCore
+
 
 
 def parse_dag_path(dag_path):
@@ -250,3 +253,52 @@ def edges_to_vertex_ids(mesh, edge_ids):
     vert_ids = list(vert_ids)
 
     return vert_ids
+
+def create_type_text(name, text):
+    type_node = cmds.createNode("type", name="{}_type".format(text))
+    transform = cmds.createNode("transform", name=name)
+    shape = cmds.createNode("mesh", name="{}Shape".format(name), parent=transform)
+
+    cmds.connectAttr(
+        "{}.outputMesh".format(type_node),
+        "{}.inMesh".format(shape)
+    )
+
+    if text:
+        text_hex = ' '.join(f'{b:02X}' for b in text.encode('utf-8'))
+
+        cmds.setAttr(
+            "{}.textInput".format(type_node), text_hex, type="string"
+        )
+
+    return type_node, transform, shape
+
+
+def set_animated_text(type_node, text_data):
+    """Set animated text on a type node
+
+    text_data must be formated as a list of tuples: (<text>, <frame>)
+
+    eg.
+    data = [
+        ("stuff", 0),
+        ("things", 10),
+        ("test", 30),
+    ]
+
+    """
+
+    cmds.setAttr("{}.generator".format(type_node), 8)
+
+    data = [
+        {
+            "hex": ' '.join(f'{b:02X}' for b in text.encode('utf-8')),
+            "frame": frame,
+        } for text, frame in text_data
+    ]
+
+    str_data = json.dumps(data)
+
+    cmds.setAttr("{}.animatedType".format(type_node), str_data, type="string")
+
+    return True
