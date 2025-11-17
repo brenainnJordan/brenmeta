@@ -749,6 +749,9 @@ def animate_ctrl_rom(
 
     combo_groups_dict = {a: b for a, b in combo_groups}
 
+    # group combos by if they contain one of the attributes in combo_groups
+    # prioritised by attr order in combo_groups
+
     ungrouped_mapping = []
     grouped_mapping = {}
 
@@ -759,9 +762,9 @@ def animate_ctrl_rom(
             # check if this combo contains a control value that's in combo grouping
             attrs = [attr for attr, value in data]
 
-            for combo_attr, combo_value in combo_groups:
-                if combo_attr in attrs:
-                    group = combo_attr
+            for r_combo_attr, r_combo_value in combo_groups:
+                if r_combo_attr in attrs:
+                    group = r_combo_attr
                     break
 
             if group:
@@ -774,6 +777,7 @@ def animate_ctrl_rom(
         else:
             ungrouped_mapping.append((exp_attr, data))
 
+    # log grouping for debugging
     LOG.info("Grouped mappings:")
 
     for group, data in grouped_mapping.items():
@@ -788,7 +792,7 @@ def animate_ctrl_rom(
     LOG.info("Animating controls...")
 
     left_frames = {}
-    annotation_data = []
+    annotation_data = {}
 
     for exp_attr, data in ungrouped_mapping:
         LOG.info("Keying: {}".format(exp_attr))
@@ -796,6 +800,8 @@ def animate_ctrl_rom(
         exp_frame = frame
 
         if combine_lr:
+            # either store the exp frame for later if this is a left expression
+            # or retrieve the left frame if it's a right expression
             if exp_attr.endswith("R"):
                 l_exp_attr = exp_attr[:-1]+"L"
                 if l_exp_attr in left_frames:
@@ -804,48 +810,55 @@ def animate_ctrl_rom(
             elif exp_attr.endswith("L"):
                 left_frames[exp_attr] = exp_frame
 
+        # append annotation
+        if exp_frame not in annotation_data:
+            annotation_data[exp_frame] = ""
+
+        annotation_data[exp_frame] += "{}\n".format(exp_attr)
+
+        # create keyframes and append annotation
         # TODO check keyable
         if isinstance(data, list):
-            annotation_text = ""
-
             for attr, value in data:
                 next_frame = animate_attr(attr, value, exp_frame, interval)
-
-                # TODO continue annotation
-                annotation_text += ""
-
+                annotation_data[exp_frame] += "    {}\n".format(attr)
         else:
             attr, value = data
             next_frame = animate_attr(attr, value, exp_frame, interval)
+            annotation_data[exp_frame] += "    {}\n".format(attr)
 
+        # continue to next expression
         if not (combine_lr and exp_attr.endswith("R")):
             frame = next_frame
 
+        annotation_data[exp_frame] += "\n\n"
+
+    # animate middle and left combo groups
     LOG.info("Animating groups...")
 
     left_group_frames = {}
 
-    for combo_ctrl_attr, combo_value in combo_groups:
+    for combo_ctrl_attr, r_combo_value in combo_groups:
         if combine_lr:
             if combo_ctrl_attr.startswith("CTRL_L_"):
-                left_group_frames[combo_ctrl_attr] = frame
+                left_group_frames[combo_ctrl_attr] = [frame]
             elif combo_ctrl_attr.startswith("CTRL_R_"):
                 continue
 
-        combo_data = grouped_mapping[combo_ctrl_attr]
-        combo_ctrl, combo_attr = combo_ctrl_attr.split(".")
+        r_combo_data = grouped_mapping[combo_ctrl_attr]
+        r_combo_ctrl, r_combo_attr = combo_ctrl_attr.split(".")
 
-        LOG.info("group: {} {}".format(combo_attr, combo_value))
+        LOG.info("group: {} {}".format(r_combo_attr, r_combo_value))
 
         # animate primary combo attr
         cmds.setKeyframe(
-            combo_ctrl, at=combo_attr, t=frame, value=0, outTangentType="linear", inTangentType="linear",
+            r_combo_ctrl, at=r_combo_attr, t=frame, value=0, outTangentType="linear", inTangentType="linear",
         )
 
         frame += interval
 
         cmds.setKeyframe(
-            combo_ctrl, at=combo_attr, t=frame, value=combo_value, outTangentType="linear", inTangentType="linear",
+            r_combo_ctrl, at=r_combo_attr, t=frame, value=r_combo_value, outTangentType="linear", inTangentType="linear",
         )
 
         frame += interval
@@ -853,75 +866,126 @@ def animate_ctrl_rom(
         # animate combos
         next_frame = frame
 
-        for exp_attr, pose_data in combo_data:
-            if combine_lr and exp_attr.endswith("L"):
-                left_frames[exp_attr] = frame
+        for exp_attr, pose_data in r_combo_data:
+            LOG.info("Keying: {}".format(exp_attr))
+
+            exp_frame = frame
+
+            # either store the exp frame for later if this is a left expression
+            # or retrieve the left frame if it's a right expression
+            # note that this is for middle combo_ctrl_attrs
+            # that have both left and right grouped expressions
+            if combine_lr:
+                if exp_attr.endswith("R"):
+                    l_exp_attr = exp_attr[:-1]+"L"
+                    if l_exp_attr in left_frames:
+                        exp_frame = left_frames[l_exp_attr]
+
+                elif exp_attr.endswith("L"):
+                    left_frames[exp_attr] = exp_frame
+
+            if exp_frame not in annotation_data:
+                annotation_data[exp_frame] = ""
+
+            annotation_data[exp_frame] += "{}\n".format(exp_attr)
 
             for attr, value in pose_data:
+                annotation_data[exp_frame] += "    {}\n".format(attr)
+
+                # safeguard to ensure combo control doesn't get keyed during group
                 if attr == combo_ctrl_attr:
                     continue
 
-                next_frame = animate_attr(attr, value, frame, interval)
+                # safeguard to ensure opposite control doesn't get keyed if we're combining l/r combo groups
+                if combine_lr and "_R_" in attr:
+                    r_combo_ctrl_attr = combo_ctrl_attr.replace("_L_", "_R_")
+                    if attr == r_combo_ctrl_attr:
+                        continue
 
-            frame = next_frame
+                # animate attr
+                next_frame = animate_attr(attr, value, exp_frame, interval)
+
+            if not (combine_lr and exp_attr.endswith("R")):
+                frame = next_frame
+
+            annotation_data[exp_frame] += "\n\n"
 
         # reset primary combo attr
+        if combine_lr and combo_ctrl_attr.startswith("CTRL_L_"):
+            left_group_frames[combo_ctrl_attr].append(frame)
+
         cmds.setKeyframe(
-            combo_ctrl, at=combo_attr, t=frame, value=combo_value, outTangentType="linear", inTangentType="linear",
+            r_combo_ctrl, at=r_combo_attr, t=frame, value=r_combo_value, outTangentType="linear", inTangentType="linear",
         )
 
         frame += interval
 
         cmds.setKeyframe(
-            combo_ctrl, at=combo_attr, t=frame, value=0, outTangentType="linear", inTangentType="linear",
+            r_combo_ctrl, at=r_combo_attr, t=frame, value=0, outTangentType="linear", inTangentType="linear",
         )
 
     # animate right groups
     if combine_lr:
-        for l_combo_ctrl_attr, l_frame in left_group_frames.items():
+        for l_combo_ctrl_attr, (l_frame, l_end_frame) in left_group_frames.items():
             r_combo_ctrl_attr = l_combo_ctrl_attr.replace("_L_", "_R_")
 
-            combo_value = combo_groups_dict[r_combo_ctrl_attr]
-            combo_data = grouped_mapping[r_combo_ctrl_attr]
-            combo_ctrl, combo_attr = r_combo_ctrl_attr.split(".")
+            r_combo_value = combo_groups_dict[r_combo_ctrl_attr]
+            r_combo_data = grouped_mapping[r_combo_ctrl_attr]
+            r_combo_ctrl, r_combo_attr = r_combo_ctrl_attr.split(".")
 
-            LOG.info("group: {} {}".format(combo_attr, combo_value))
+            LOG.info("group: {} {}".format(r_combo_attr, r_combo_value))
 
             # animate primary combo attr
             cmds.setKeyframe(
-                combo_ctrl, at=combo_attr, t=l_frame, value=0, outTangentType="linear", inTangentType="linear",
+                r_combo_ctrl, at=r_combo_attr, t=l_frame, value=0, outTangentType="linear", inTangentType="linear",
             )
 
             l_frame += interval
 
             cmds.setKeyframe(
-                combo_ctrl, at=combo_attr, t=l_frame, value=combo_value, outTangentType="linear", inTangentType="linear",
+                r_combo_ctrl, at=r_combo_attr, t=l_frame, value=r_combo_value, outTangentType="linear", inTangentType="linear",
             )
 
             l_frame += interval
 
             # animate combos
-            # assumes combo data is in same order as left combo data
-            next_frame = l_frame
+            for exp_attr, pose_data in r_combo_data:
 
-            for exp_attr, pose_data in combo_data:
+                if not exp_attr.endswith("R"):
+                    LOG.warning("non-R expression in R combo: {}".format(exp_attr))
+                    continue
+
+                l_exp_attr = exp_attr[:-1] + "L"
+
+                if l_exp_attr not in left_frames:
+                    LOG.warning("left expression not found: {}".format(l_exp_attr))
+                    continue
+
+                exp_frame = left_frames[l_exp_attr]
+
+                annotation_data[exp_frame] += "{}\n".format(exp_attr)
+
                 for attr, value in pose_data:
-                    if attr == r_combo_ctrl_attr:
+                    annotation_data[exp_frame] += "    {}\n".format(attr)
+
+                    # safeguard to ensure neither l or r combo controls get keyed during group
+                    if attr in [r_combo_ctrl_attr, l_combo_ctrl_attr]:
                         continue
 
-                    next_frame = animate_attr(attr, value, l_frame, interval)
+                    # animate attr
+                    next_frame = animate_attr(attr, value, exp_frame, interval)
 
-                l_frame = next_frame
+                # l_frame = next_frame
 
             # reset primary combo attr
             cmds.setKeyframe(
-                combo_ctrl, at=combo_attr, t=l_frame, value=combo_value, outTangentType="linear", inTangentType="linear",
+                r_combo_ctrl, at=r_combo_attr, t=l_end_frame, value=r_combo_value, outTangentType="linear", inTangentType="linear",
             )
 
-            l_frame += interval
+            # l_frame += interval
 
             cmds.setKeyframe(
-                combo_ctrl, at=combo_attr, t=l_frame, value=0, outTangentType="linear", inTangentType="linear",
+                r_combo_ctrl, at=r_combo_attr, t=l_end_frame+interval, value=0, outTangentType="linear", inTangentType="linear",
             )
 
 
@@ -931,6 +995,10 @@ def animate_ctrl_rom(
 
         cmds.playbackOptions(animationEndTime=frame)
         cmds.playbackOptions(maxTime=frame)
+
+    if annotate:
+        type_node, transform, shape = mhMayaUtils.create_type_text("MH_annotation", None)
+        mhMayaUtils.set_animated_text(type_node, annotation_data)
 
     LOG.info("ROM complete")
 

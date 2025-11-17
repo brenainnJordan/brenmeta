@@ -270,6 +270,10 @@ def create_type_text(name, text):
         cmds.setAttr(
             "{}.textInput".format(type_node), text_hex, type="string"
         )
+    else:
+        cmds.setAttr(
+            "{}.textInput".format(type_node), "", type="string"
+        )
 
     return type_node, transform, shape
 
@@ -280,11 +284,11 @@ def set_animated_text(type_node, text_data):
     text_data must be formated as a list of tuples: (<text>, <frame>)
 
     eg.
-    data = [
-        ("stuff", 0),
-        ("things", 10),
-        ("test", 30),
-    ]
+    data = {
+        0: "stuff",
+        10: "things",
+        30: "test",
+    }
 
     """
 
@@ -292,9 +296,9 @@ def set_animated_text(type_node, text_data):
 
     data = [
         {
-            "hex": ' '.join(f'{b:02X}' for b in text.encode('utf-8')),
+            "hex": ' '.join(f'{b:02X}' for b in text_data[frame].encode('utf-8')),
             "frame": frame,
-        } for text, frame in text_data
+        } for frame in sorted(text_data.keys())
     ]
 
     str_data = json.dumps(data)
