@@ -542,23 +542,31 @@ def get_psd_poses(reader, poses):
     return psd_poses
 
 
-def get_all_board_controls():
+def get_all_board_controls(namespace=None):
     frm_group = "FRM_faceGUI"
+    grp_prefix = "GRP_"
+    ctrl_prefix = "CTRL_"
+
+    if namespace:
+        frm_group = "{}:{}".format(namespace, frm_group)
+        grp_prefix = "{}:{}".format(namespace, grp_prefix)
+        ctrl_prefix = "{}:{}".format(namespace, ctrl_prefix)
+
     transforms = cmds.listRelatives(frm_group, type="transform")
 
-    groups = [transform for transform in transforms if transform.startswith("GRP_")]
+    groups = [transform for transform in transforms if transform.startswith(grp_prefix)]
 
     controls = []
 
     for group in groups:
         transforms = cmds.listRelatives(group, allDescendents=True, type="transform")
-        controls += [transform for transform in transforms if transform.startswith("CTRL_")]
+        controls += [transform for transform in transforms if transform.startswith(ctrl_prefix)]
 
     return controls
 
 
-def reset_control_board_anim():
-    controls = get_all_board_controls()
+def reset_control_board_anim(namespace=None):
+    controls = get_all_board_controls(namespace=namespace)
     cmds.cutKey(controls, clear=True)
 
     for control in controls:
@@ -566,10 +574,14 @@ def reset_control_board_anim():
 
     return True
 
-def map_expressions_to_controls(tongue=False, eyelashes=False):
+def map_expressions_to_controls(tongue=False, eyelashes=False, namespace=None):
     """Parse expression set driven keys and return dict mapping to driver controls and values
     """
     exp_node = "CTRL_expressions"
+
+    if namespace:
+        exp_node = "{}:{}".format(namespace, exp_node)
+
     exp_attrs = cmds.listAttr(exp_node, userDefined=True)
 
     data = [
@@ -585,6 +597,9 @@ def map_expressions_to_controls(tongue=False, eyelashes=False):
         ('eyeLookUpL', ('CTRL_L_eye.translateY', 1.0)),
         ('eyeLookUpR', ('CTRL_R_eye.translateY', 1.0)),
     ]
+
+    if namespace:
+        data = [(name, ("{}:{}".format(namespace, attr), value)) for name, (attr, value) in data]
 
     for exp_attr in exp_attrs:
         anim_nodes = cmds.listConnections(
@@ -670,8 +685,11 @@ def map_psds_to_controls(expression_mapping, psd_poses):
     return psd_mapping
 
 
-def animate_attr(attr, value, frame, interval):
+def animate_attr(attr, value, frame, interval, namespace=None):
     node, attr = attr.split(".")
+
+    # if namespace:
+    #     node = "{}:{}".format(namespace, node)
 
     LOG.info("    {}.{} {}".format(node, attr, value))
 
@@ -705,11 +723,12 @@ def animate_ctrl_rom(
         update_timeline=True,
         combine_lr=False,
         annotate=True,
+        namespace=None,
 ):
 
     # TODO combine lr
 
-    mapping = map_expressions_to_controls(tongue=tongue, eyelashes=eyelashes)
+    mapping = map_expressions_to_controls(tongue=tongue, eyelashes=eyelashes, namespace=namespace)
 
     if combos:
         if combo_mapping:
@@ -747,6 +766,12 @@ def animate_ctrl_rom(
         ("CTRL_R_mouth_dimple.translateY", 1.0),
     ]
 
+    if namespace:
+        combo_groups = [
+            ("{}:{}".format(namespace, attr), value)
+            for attr, value in combo_groups
+        ]
+
     combo_groups_dict = {a: b for a, b in combo_groups}
 
     # group combos by if they contain one of the attributes in combo_groups
@@ -762,9 +787,9 @@ def animate_ctrl_rom(
             # check if this combo contains a control value that's in combo grouping
             attrs = [attr for attr, value in data]
 
-            for r_combo_attr, r_combo_value in combo_groups:
-                if r_combo_attr in attrs:
-                    group = r_combo_attr
+            for combo_attr, combo_value in combo_groups:
+                if combo_attr in attrs:
+                    group = combo_attr
                     break
 
             if group:
@@ -820,11 +845,11 @@ def animate_ctrl_rom(
         # TODO check keyable
         if isinstance(data, list):
             for attr, value in data:
-                next_frame = animate_attr(attr, value, exp_frame, interval)
+                next_frame = animate_attr(attr, value, exp_frame, interval, namespace=namespace)
                 annotation_data[exp_frame] += "    {}\n".format(attr)
         else:
             attr, value = data
-            next_frame = animate_attr(attr, value, exp_frame, interval)
+            next_frame = animate_attr(attr, value, exp_frame, interval, namespace=namespace)
             annotation_data[exp_frame] += "    {}\n".format(attr)
 
         # continue to next expression
@@ -838,27 +863,30 @@ def animate_ctrl_rom(
 
     left_group_frames = {}
 
-    for combo_ctrl_attr, r_combo_value in combo_groups:
+    for combo_ctrl_attr, combo_value in combo_groups:
         if combine_lr:
-            if combo_ctrl_attr.startswith("CTRL_L_"):
+            if "_L_" in combo_ctrl_attr:
                 left_group_frames[combo_ctrl_attr] = [frame]
-            elif combo_ctrl_attr.startswith("CTRL_R_"):
+            elif "_R_" in combo_ctrl_attr:
                 continue
 
-        r_combo_data = grouped_mapping[combo_ctrl_attr]
-        r_combo_ctrl, r_combo_attr = combo_ctrl_attr.split(".")
+        combo_data = grouped_mapping[combo_ctrl_attr]
+        combo_ctrl, combo_attr = combo_ctrl_attr.split(".")
 
-        LOG.info("group: {} {}".format(r_combo_attr, r_combo_value))
+        # if namespace:
+        #     combo_ctrl = "{}:{}".format(namespace, combo_ctrl)
+
+        LOG.info("group: {} {}".format(combo_attr, combo_value))
 
         # animate primary combo attr
         cmds.setKeyframe(
-            r_combo_ctrl, at=r_combo_attr, t=frame, value=0, outTangentType="linear", inTangentType="linear",
+            combo_ctrl, at=combo_attr, t=frame, value=0, outTangentType="linear", inTangentType="linear",
         )
 
         frame += interval
 
         cmds.setKeyframe(
-            r_combo_ctrl, at=r_combo_attr, t=frame, value=r_combo_value, outTangentType="linear", inTangentType="linear",
+            combo_ctrl, at=combo_attr, t=frame, value=combo_value, outTangentType="linear", inTangentType="linear",
         )
 
         frame += interval
@@ -866,7 +894,7 @@ def animate_ctrl_rom(
         # animate combos
         next_frame = frame
 
-        for exp_attr, pose_data in r_combo_data:
+        for exp_attr, pose_data in combo_data:
             LOG.info("Keying: {}".format(exp_attr))
 
             exp_frame = frame
@@ -903,7 +931,7 @@ def animate_ctrl_rom(
                         continue
 
                 # animate attr
-                next_frame = animate_attr(attr, value, exp_frame, interval)
+                next_frame = animate_attr(attr, value, exp_frame, interval, namespace=namespace)
 
             if not (combine_lr and exp_attr.endswith("R")):
                 frame = next_frame
@@ -911,17 +939,17 @@ def animate_ctrl_rom(
             annotation_data[exp_frame] += "\n\n"
 
         # reset primary combo attr
-        if combine_lr and combo_ctrl_attr.startswith("CTRL_L_"):
+        if combine_lr and "_L_" in combo_ctrl_attr:
             left_group_frames[combo_ctrl_attr].append(frame)
 
         cmds.setKeyframe(
-            r_combo_ctrl, at=r_combo_attr, t=frame, value=r_combo_value, outTangentType="linear", inTangentType="linear",
+            combo_ctrl, at=combo_attr, t=frame, value=combo_value, outTangentType="linear", inTangentType="linear",
         )
 
         frame += interval
 
         cmds.setKeyframe(
-            r_combo_ctrl, at=r_combo_attr, t=frame, value=0, outTangentType="linear", inTangentType="linear",
+            combo_ctrl, at=combo_attr, t=frame, value=0, outTangentType="linear", inTangentType="linear",
         )
 
     # animate right groups
@@ -933,7 +961,10 @@ def animate_ctrl_rom(
             r_combo_data = grouped_mapping[r_combo_ctrl_attr]
             r_combo_ctrl, r_combo_attr = r_combo_ctrl_attr.split(".")
 
-            LOG.info("group: {} {}".format(r_combo_attr, r_combo_value))
+            # if namespace:
+            #     r_combo_ctrl = "{}:{}".format(namespace, r_combo_ctrl)
+
+            LOG.info("group: {} {}".format(r_combo_ctrl_attr, r_combo_value))
 
             # animate primary combo attr
             cmds.setKeyframe(
@@ -973,7 +1004,7 @@ def animate_ctrl_rom(
                         continue
 
                     # animate attr
-                    next_frame = animate_attr(attr, value, exp_frame, interval)
+                    next_frame = animate_attr(attr, value, exp_frame, interval, namespace=namespace)
 
                 # l_frame = next_frame
 
@@ -985,7 +1016,7 @@ def animate_ctrl_rom(
             # l_frame += interval
 
             cmds.setKeyframe(
-                r_combo_ctrl, at=r_combo_attr, t=l_end_frame+interval, value=0, outTangentType="linear", inTangentType="linear",
+                r_combo_ctrl, at=r_combo_attr, t=l_end_frame + interval, value=0, outTangentType="linear", inTangentType="linear",
             )
 
 
