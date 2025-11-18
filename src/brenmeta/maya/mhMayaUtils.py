@@ -255,7 +255,7 @@ def edges_to_vertex_ids(mesh, edge_ids):
     return vert_ids
 
 def create_type_text(name, text):
-    type_node = cmds.createNode("type", name="{}_type".format(text))
+    type_node = cmds.createNode("type", name="{}_type".format(name))
     transform = cmds.createNode("transform", name=name)
     shape = cmds.createNode("mesh", name="{}Shape".format(name), parent=transform)
 
