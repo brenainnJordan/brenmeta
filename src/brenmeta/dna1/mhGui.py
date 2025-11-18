@@ -27,270 +27,9 @@ from brenmeta.dna1 import mhFaceJoints
 from brenmeta.dna1 import mhMesh
 from brenmeta.dna1 import mhJoints
 from brenmeta.dna1 import mhFaceMaterials
+from brenmeta.maya import mhAnimUtils
 
-
-# GROUP_BOX_STYLE = QtWidgets.QStyleOptionGroupBox()
-# GROUP_BOX_STYLE.lineWidth = 2
-# GROUP_BOX_STYLE.features = QtWidgets.QStyleOptionFrame.Rounded
-#
-#
-# class LabelledSpinBox(QtWidgets.QWidget):
-#     SPIN_BOX_CLS = QtWidgets.QSpinBox
-#
-#     def __init__(self, name, label_width=80, spin_box_width=80, height=30, default=0, **kwargs):
-#         super(LabelledSpinBox, self).__init__(**kwargs)
-#
-#         self.setFixedHeight(height)
-#
-#         lyt = QtWidgets.QHBoxLayout()
-#         lyt.setContentsMargins(0, 0, 0, 0)
-#         self.setLayout(lyt)
-#
-#         self.label = QtWidgets.QLabel(name)
-#         self.spin_box = self.SPIN_BOX_CLS()
-#         self.spin_box.setValue(default)
-#
-#         self.label.setFixedWidth(label_width)
-#         self.spin_box.setFixedWidth(spin_box_width)
-#
-#         lyt.addWidget(self.label)
-#         lyt.addWidget(self.spin_box)
-#         lyt.addStretch()
-#
-#
-# class LabelledDoubleSpinBox(LabelledSpinBox):
-#     SPIN_BOX_CLS = QtWidgets.QDoubleSpinBox
-#
-#     def __init__(self, name, label_width=80, spin_box_width=80, height=30, default=0, **kwargs):
-#         super(LabelledDoubleSpinBox, self).__init__(
-#             name, label_width=label_width, spin_box_width=spin_box_width, height=height, default=default, **kwargs
-#         )
-#
-#
-# class PathWidgetBase(
-#     QtWidgets.QWidget
-# ):
-#     PATH_CHANGED = QtCore.Signal()
-#
-#     def __init__(self, label, *args, **kwargs):
-#         super(PathWidgetBase, self).__init__(*args, **kwargs)
-#
-#         self.lyt = QtWidgets.QHBoxLayout()
-#         self.setLayout(self.lyt)
-#
-#         self.label = QtWidgets.QLabel(label)
-#         self.label.setFixedWidth(100)
-#         self.line_edit = QtWidgets.QLineEdit()
-#         self.browse_btn = QtWidgets.QPushButton("...")
-#         self.browse_btn.setFixedWidth(30)
-#
-#         self.lyt.addWidget(self.label)
-#         self.lyt.addWidget(self.line_edit)
-#         self.lyt.addWidget(self.browse_btn)
-#
-#         self.lyt.setContentsMargins(0, 0, 0, 0)
-#         self.lyt.setSpacing(0)
-#
-#         self.line_edit.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
-#         self.browse_btn.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
-#
-#         self.browse_btn.clicked.connect(self.browse_clicked)
-#
-#         self.caption = label
-#         self.filter = "files (*.dna)"
-#
-#         self.line_edit.textChanged.connect(self.emit_path_changed)
-#
-#     @property
-#     def path(self):
-#         return self.line_edit.text()
-#
-#     @path.setter
-#     def path(self, value):
-#         self.line_edit.setText(value)
-#
-#     def browse_clicked(self):
-#         """Overridible method"""
-#         return None
-#
-#     def emit_path_changed(self):
-#         self.PATH_CHANGED.emit()
-#
-#
-# class DirWidget(PathWidgetBase):
-#
-#     def __init__(self, *args, **kwargs):
-#         super(DirWidget, self).__init__(*args, **kwargs)
-#
-#     def browse_clicked(self):
-#         path = QtWidgets.QFileDialog.getExistingDirectory(
-#             self,
-#             # "test",
-#             self.caption,
-#             self.path,
-#         )
-#
-#         if not path:
-#             return
-#
-#         self.line_edit.setText(path)
-#
-#         return path
-#
-#
-# class PathOpenWidget(PathWidgetBase):
-#
-#     def __init__(self, *args, **kwargs):
-#         super(PathOpenWidget, self).__init__(*args, **kwargs)
-#
-#     def browse_clicked(self):
-#         file_path, file_type = QtWidgets.QFileDialog.getOpenFileName(
-#             self,
-#             "Input Dna file",
-#             self.path,
-#             self.filter
-#         )
-#
-#         if file_path == "":
-#             return
-#
-#         self.line_edit.setText(file_path)
-#
-#         return file_path
-#
-#
-# class PathSaveWidget(PathWidgetBase):
-#
-#     def __init__(self, *args, **kwargs):
-#         super(PathSaveWidget, self).__init__(*args, **kwargs)
-#
-#     def browse_clicked(self):
-#         file_path, file_type = QtWidgets.QFileDialog.getSaveFileName(
-#             self,
-#             "Output Dna file",
-#             self.path,
-#             self.filter
-#         )
-#
-#         if file_path == "":
-#             return
-#
-#         self.line_edit.setText(file_path)
-#
-#         return file_path
-#
-#
-# class NodeLineEdit(
-#     QtWidgets.QWidget
-# ):
-#
-#     def __init__(self, default, *args, **kwargs):
-#         super(NodeLineEdit, self).__init__(*args, **kwargs)
-#
-#         self.lyt = QtWidgets.QHBoxLayout()
-#         self.setLayout(self.lyt)
-#
-#         self.line_edit = QtWidgets.QLineEdit(default)
-#
-#         self.set_btn = QtWidgets.QPushButton("<<")
-#         self.set_btn.setFixedWidth(30)
-#
-#         self.lyt.addWidget(self.line_edit)
-#         self.lyt.addWidget(self.set_btn)
-#
-#         self.lyt.setContentsMargins(0, 0, 0, 0)
-#         self.lyt.setSpacing(0)
-#
-#         self.line_edit.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
-#         self.set_btn.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
-#
-#         self.set_btn.clicked.connect(self.set_clicked)
-#
-#     @property
-#     def node(self):
-#         return self.line_edit.text()
-#
-#     def set_clicked(self):
-#         nodes = cmds.ls(sl=True)
-#
-#         if not nodes:
-#             self.line_edit.setText("")
-#         else:
-#             self.line_edit.setText(nodes[0])
-#
-#         return True
-#
-#
-# class DnaPathManager(object):
-#     def __init__(self):
-#         self.input_path = None
-#         self.output_path = None
-#         self.dna_viewer_data_path = None
-#
-#     def get_assets(self):
-#         generic_assets = None
-#
-#         assets = ["Input Dna", "Output Dna"]
-#
-#         if self.dna_viewer_data_path:
-#             generic_assets = []
-#
-#             dna_path = os.path.join(self.dna_viewer_data_path, "dna_files")
-#
-#             if os.path.exists(dna_path):
-#                 for i in os.listdir(dna_path):
-#                     if any([
-#                         not i.endswith(".dna"),
-#                     ]):
-#                         continue
-#
-#                     generic_assets.append(i.split(".")[0])
-#
-#         if generic_assets:
-#             assets += generic_assets
-#
-#         return assets
-#
-#     def get_path(self, asset):
-#         dna_paths = {
-#             "Input Dna": self.input_dna_path,
-#             "Output Dna": self.output_dna_path,
-#         }
-#
-#         if asset in dna_paths:
-#             dna_path = dna_paths[asset]
-#
-#         else:
-#             dna_path = os.path.join(
-#                 self.dna_viewer_data_path,
-#                 "dna_files",
-#                 "{}.dna".format(asset)
-#             )
-#
-#         return dna_path
-#
-#
-# class DnaTransferMeshWidget(QtWidgets.QWidget):
-#     def __init__(self, label, src, dst, *args, **kwargs):
-#         super(DnaTransferMeshWidget, self).__init__(*args, **kwargs)
-#
-#         self.setFixedHeight(30)
-#
-#         lyt = QtWidgets.QHBoxLayout()
-#         lyt.setContentsMargins(0, 0, 0, 0)
-#         self.setLayout(lyt)
-#
-#         self.checkbox = QtWidgets.QCheckBox(label)
-#         self.checkbox.setCheckState(QtCore.Qt.Checked)
-#         self.checkbox.setFixedWidth(80)
-#
-#         self.src = NodeLineEdit(src)
-#         self.dst = NodeLineEdit(dst)
-#
-#         lyt.addWidget(self.checkbox)
-#         lyt.addWidget(self.src)
-#         lyt.addWidget(self.dst)
-#
+LOG = mhCore.get_basic_logger(__name__)
 
 class DnaTransferWidget(QtWidgets.QWidget):
 
@@ -1682,13 +1421,6 @@ class DnaQCWidget(QtWidgets.QWidget):
             self.error(err)
             return False
 
-        dna_name = str(self.dna_combo.currentText())
-        dna_path = self.path_manager.get_path(dna_name)
-
-        if not os.path.exists(dna_path):
-            self.error("Dna path not found: {}".format(dna_path))
-            return False
-
         namespace = self.namespace_edit.line_edit.text()
         update_timeline = self.update_timeline_checkbox.isChecked()
         annotate = self.annotate_checkbox.isChecked()
@@ -1696,23 +1428,48 @@ class DnaQCWidget(QtWidgets.QWidget):
         combos = self.combos_checkbox.isChecked()
         start_frame = self.start_spin.spin_box.value()
         interval = self.frame_interval.spin_box.value()
-        mhBehaviour.reset_control_board_anim(namespace=namespace)
+        tongue = False
+        eyelashes = False
 
-        if annotate and cmds.objExists(mhBehaviour.ANNOTATION_NAME):
-            cmds.delete(mhBehaviour.ANNOTATION_NAME)
+        if combos:
+            # get combos from dna file and map to controls
+            dna_name = str(self.dna_combo.currentText())
+            dna_path = self.path_manager.get_path(dna_name)
 
-        mhBehaviour.animate_ctrl_rom(
+            if not os.path.exists(dna_path):
+                self.error("Dna path not found: {}".format(dna_path))
+                return False
+
+            LOG.info("Loading dna: {}".format(dna_path))
+            dna_obj = dna_viewer.DNA(dna_path)
+            reader = dnacalib.DNACalibDNAReader(dna_obj.reader)
+
+            poses = mhBehaviour.get_all_poses(reader)
+            psd_poses = mhBehaviour.get_psd_poses(reader, poses)
+
+            mapping = mhAnimUtils.map_expressions_to_controls(tongue=tongue, eyelashes=eyelashes, namespace=namespace)
+
+            combo_mapping = mhAnimUtils.map_psds_to_controls(mapping, psd_poses.values())
+        else:
+            combo_mapping = None
+
+        # animate controls
+        if cmds.objExists(mhAnimUtils.ANNOTATION_NAME):
+            cmds.delete(mhAnimUtils.ANNOTATION_NAME)
+
+        mhAnimUtils.reset_control_board_anim(namespace=namespace)
+
+        mhAnimUtils.animate_ctrl_rom(
             combos=combos,
-            dna_file=dna_path,
             combine_lr=combine_lr,
             namespace=namespace,
             start_frame=start_frame,
             interval=interval,
             update_timeline=update_timeline,
             annotate=annotate,
-            tongue=False,
-            eyelashes=False,
-            combo_mapping=None,
+            tongue=tongue,
+            eyelashes=eyelashes,
+            combo_mapping=combo_mapping,
         )
 
         return True
