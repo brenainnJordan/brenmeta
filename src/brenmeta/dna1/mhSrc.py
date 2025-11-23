@@ -36,30 +36,6 @@ def validate_plugin():
     return True
 
 
-def remove_dna_module(dna):
-    """Remove dna module from memory and sys.path so other versions can be sourced
-    """
-
-    dna_module_path = None
-
-    for path in sys.path:
-        if path in dna.__file__:
-            dna_module_path = path
-            break
-
-    if not dna_module_path:
-        raise mhCore.MHError("Failed to find dna module path: {}".format(dna))
-
-    mhCore.LOG.warning("Removing dna module: {}".format(dna_module_path))
-
-    sys.path.remove(dna_module_path)
-
-    del dna
-    del sys.modules["dna"]
-
-    return True
-
-
 def validate_dna_module(force=True):
     import dna
 
@@ -67,7 +43,7 @@ def validate_dna_module(force=True):
         dna_version = dna.VersionInfo_getMajorVersion()
 
         if force:
-            remove_dna_module(dna)
+            mhCore.remove_module_from_sys(dna)
             # try again
             import dna
             validate_dna_module(force=False)

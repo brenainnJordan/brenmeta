@@ -4,11 +4,8 @@ from maya import cmds
 from maya import OpenMayaUI
 from maya.api import OpenMaya
 
-from PySide2 import QtCore
-from PySide2 import QtWidgets
-
-import dna
-import dna_viewer
+from Qt import QtCore
+from Qt import QtWidgets
 
 
 class LabelledSpinBox(QtWidgets.QWidget):

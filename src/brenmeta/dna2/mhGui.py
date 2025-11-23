@@ -17,22 +17,25 @@ except ImportError:
     from shiboken6 import wrapInstance   # Maya with PySide6
 
 import dna
-import dna_viewer
-import dnacalib
+import dnacalib2
+import mh_character_assembler
 
 from brenmeta.core import mhCore
 from brenmeta.core import mhWidgets
-from brenmeta.dna1 import mhSrc
-from brenmeta.dna1 import mhUtils
-from brenmeta.dna1 import mhBehaviour
-from brenmeta.dna1 import mhUeUtils
-from brenmeta.dna1 import mhMesh
-from brenmeta.dna1 import mhJoints
+from brenmeta.dna2 import mhSrc
+from brenmeta.dna2 import mhUtils
+# from brenmeta.dna1 import mhSrc
+# from brenmeta.dna1 import mhUtils
+# from brenmeta.dna1 import mhBehaviour
+# from brenmeta.dna1 import mhUeUtils
+# from brenmeta.dna1 import mhMesh
+# from brenmeta.dna1 import mhJoints
 from brenmeta.mh import mhFaceMaterials, mhFaceJoints
 from brenmeta.mh import mhFaceMeshes
 from brenmeta.maya import mhAnimUtils
 
 LOG = mhCore.get_basic_logger(__name__)
+
 
 class DnaTransferWidget(QtWidgets.QWidget):
 
@@ -113,7 +116,8 @@ class DnaTransferWidget(QtWidgets.QWidget):
 
         self.input_dna_combo = QtWidgets.QComboBox()
 
-        self.scale_spin = mhWidgets.LabelledDoubleSpinBox("scale", label_width=80, spin_box_width=80, height=30, default=1.0)
+        self.scale_spin = mhWidgets.LabelledDoubleSpinBox("scale", label_width=80, spin_box_width=80, height=30,
+                                                          default=1.0)
         self.scale_spin.spin_box.setMinimum(0.0)
         self.scale_spin.spin_box.setMaximum(100000.0)
 
@@ -821,19 +825,6 @@ class DnaBuildWidget(QtWidgets.QWidget):
             self.error("Dna path not found: {}".format(dna_path))
             return False
 
-        analog_gui = os.path.join(self.path_manager.dna_assets_path, "analog_gui.ma")
-
-        gui = os.path.join(self.path_manager.dna_assets_path, "gui.ma")
-
-        additional_assemble_script = os.path.join(
-            self.path_manager.dna_assets_path, "additional_assemble_script.py"
-        )
-
-        # check dependencies exist
-        for file_path in [analog_gui, gui, additional_assemble_script]:
-            if not os.path.exists(file_path):
-                self.error("Dependency file not found: {}".format(file_path))
-
         # confirm
         confirm = QtWidgets.QMessageBox.warning(
             self,
@@ -845,28 +836,28 @@ class DnaBuildWidget(QtWidgets.QWidget):
         if confirm is QtWidgets.QMessageBox.Cancel:
             return None
 
-        dna = dna_viewer.DNA(dna_path)
-
         if self.partial_rig_group_box.isChecked():
-
-            config = dna_viewer.Config(
+            mhUtils.import_components(
+                dna_path,
+                self.path_manager.dna_assets_path,
                 add_joints=self.joints_checkbox.isChecked(),
-                add_blend_shapes=self.blendshapes_checkbox.isChecked(),
+                add_rig_logic=False,
                 add_skin_cluster=self.skin_cluster_checkbox.isChecked(),
-                lod_filter=[0],
+                add_blend_shapes=self.blendshapes_checkbox.isChecked(),
+                lod=0,
+                scene_up="y",
             )
-
-            dna_viewer.build_meshes(dna=dna, config=config)
-
         else:
-
-            config = dna_viewer.RigConfig(
-                gui_path=gui,
-                analog_gui_path=analog_gui,
-                aas_path=additional_assemble_script,
+            mhUtils.import_components(
+                dna_path,
+                self.path_manager.dna_assets_path,
+                add_joints=True,
+                add_rig_logic=True,
+                add_skin_cluster=True,
+                add_blend_shapes=True,
+                lod=None,
+                scene_up="y",
             )
-
-            dna_viewer.build_rig(dna=dna, config=config)
 
         return True
 
@@ -1079,18 +1070,6 @@ class DnaPosesWidget(QtWidgets.QWidget):
         self.setLayout(lyt)
 
         self.view.selectionModel().selectionChanged.connect(self.selection_changed)
-
-        # QtCore.QObject.connect(
-        #     self.view.selectionModel(),
-        #     QtCore.SIGNAL("currentChanged(QModelIndex, QModelIndex)"),
-        #     self.selection_changed
-        # )
-        #
-        # QtCore.QObject.connect(
-        #     self.view.selectionModel(),
-        #     QtCore.SIGNAL("selectionChanged(QItemSelection, QItemSelection)"),
-        #     self.selection_changed
-        # )
 
     def update_assets(self):
         self.input_combo.clear()

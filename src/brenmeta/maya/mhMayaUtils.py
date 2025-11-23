@@ -10,6 +10,23 @@ from brenmeta.core import mhCore
 
 
 
+def break_connections(attrs):
+    if not isinstance(attrs, (list, tuple)):
+        attrs = [attrs]
+
+    for attr in attrs:
+        cons = cmds.listConnections(
+            attr, source=True, destination=False, plugs=True
+        )
+
+        if not cons:
+            continue
+
+        cmds.disconnectAttr(cons[0], attr)
+
+    return True
+
+
 def parse_dag_path(dag_path):
     if isinstance(dag_path, OpenMaya.MDagPath):
         return dag_path
@@ -254,55 +271,25 @@ def edges_to_vertex_ids(mesh, edge_ids):
 
     return vert_ids
 
-def create_type_text(name, text):
-    type_node = cmds.createNode("type", name="{}_type".format(name))
-    transform = cmds.createNode("transform", name=name)
-    shape = cmds.createNode("mesh", name="{}Shape".format(name), parent=transform)
 
-    cmds.connectAttr(
-        "{}.outputMesh".format(type_node),
-        "{}.inMesh".format(shape)
+def get_furthest_intersection(mesh_fn, ray_start, ray_vector, both_directions=False, max_distance=10000):
+    hit_data = mesh_fn.allIntersections(
+        ray_start,
+        ray_vector,
+        OpenMaya.MSpace.kWorld,
+        max_distance,
+        both_directions,
     )
 
-    if text:
-        text_hex = ' '.join(f'{b:02X}' for b in text.encode('utf-8'))
+    if hit_data is None:
+        return None
 
-        cmds.setAttr(
-            "{}.textInput".format(type_node), text_hex, type="string"
-        )
-    else:
-        cmds.setAttr(
-            "{}.textInput".format(type_node), "", type="string"
-        )
+    params = list(hit_data[1])
+    max_distance_index = params.index(max(params))
 
-    return type_node, transform, shape
+    result = [i[max_distance_index] for i in hit_data]
 
+    # bugfix to avoid maya overwriting stuff in memory (wierd!!!)
+    result[0] = OpenMaya.MPoint(list(result[0]))
 
-def set_animated_text(type_node, text_data):
-    """Set animated text on a type node
-
-    text_data must be formated as a list of tuples: (<text>, <frame>)
-
-    eg.
-    data = {
-        0: "stuff",
-        10: "things",
-        30: "test",
-    }
-
-    """
-
-    cmds.setAttr("{}.generator".format(type_node), 8)
-
-    data = [
-        {
-            "hex": ' '.join(f'{b:02X}' for b in text_data[frame].encode('utf-8')),
-            "frame": frame,
-        } for frame in sorted(text_data.keys())
-    ]
-
-    str_data = json.dumps(data)
-
-    cmds.setAttr("{}.animatedType".format(type_node), str_data, type="string")
-
-    return True
+    return result

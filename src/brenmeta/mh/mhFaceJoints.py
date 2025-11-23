@@ -2,8 +2,8 @@ import random
 
 from maya import cmds
 
+from brenmeta.maya import mhJointUtils
 from brenmeta.maya import mhMayaUtils
-from brenmeta.dna1 import mhJoints
 
 SNAP = [
     "FACIAL_L_EyeCornerOuter1",
@@ -146,7 +146,7 @@ def set_joint_look(default_visibility=True):
             "{}.drawStyle".format(joint_name), draw_style
         )
 
-    # create vis layers
+    # create vis layers with seeded random colours
     random.seed(13)
 
     for name in [
@@ -323,7 +323,7 @@ def transfer_joint_placement(root, src_head, dst_head, threshold=0.5):
     # ** get data **
 
     # get snap mapping
-    snap_mapping = mhJoints.map_joints_to_vertex_ids(
+    snap_mapping = mhJointUtils.map_joints_to_vertex_ids(
         snap_joints, src_head, threshold=threshold
     )
 
@@ -343,7 +343,7 @@ def transfer_joint_placement(root, src_head, dst_head, threshold=0.5):
         else:
             vector = DEFAULT_OFFSET_VECTOR
 
-        joint_offset = mhJoints.get_joint_offset_from_mesh(
+        joint_offset = mhJointUtils.get_joint_offset_from_mesh(
             joint, src_head, vector, max_distance=10000, both_directions=False
         )
 
@@ -355,7 +355,7 @@ def transfer_joint_placement(root, src_head, dst_head, threshold=0.5):
 
     for joint, aim_vector, up_vector, furthest in PROJECT_AXES:
         try:
-            data = mhJoints.map_joint_axes_to_mesh(
+            data = mhJointUtils.map_joint_axes_to_mesh(
                 joint,
                 src_head,
                 aim_vector,
@@ -374,7 +374,7 @@ def transfer_joint_placement(root, src_head, dst_head, threshold=0.5):
         print("    {}".format(joint))
 
     snap_mapping.update(
-        mhJoints.map_joints_to_vertex_ids(
+        mhJointUtils.map_joints_to_vertex_ids(
             failed_joints, src_head, threshold=threshold
         )
     )
@@ -382,11 +382,11 @@ def transfer_joint_placement(root, src_head, dst_head, threshold=0.5):
     # ** transfer joints placements **
 
     # snap joints
-    mhJoints.snap_joints_to_vertex_ids(dst_head, snap_mapping)
+    mhJointUtils.snap_joints_to_vertex_ids(dst_head, snap_mapping)
 
     # average to children
     for joint in AVERAGE_CHILDREN:
-        mhJoints.snap_joint_to_child_average(joint)
+        mhJointUtils.snap_joint_to_child_average(joint)
 
     # average and offset joints
     for joint in AVERAGE_CHILDREN_PLUS_OFFSET:
@@ -396,9 +396,9 @@ def transfer_joint_placement(root, src_head, dst_head, threshold=0.5):
         else:
             vector = DEFAULT_OFFSET_VECTOR
 
-        mhJoints.snap_joint_to_child_average(joint)
+        mhJointUtils.snap_joint_to_child_average(joint)
 
-        mhJoints.offset_joint_from_mesh(
+        mhJointUtils.offset_joint_from_mesh(
             joint, dst_head, joint_offsets[joint]
         )
 
@@ -407,7 +407,7 @@ def transfer_joint_placement(root, src_head, dst_head, threshold=0.5):
         if joint not in joint_projections:
             continue
 
-        mhJoints.snap_joint_to_axes_data(
+        mhJointUtils.snap_joint_to_axes_data(
             joint,
             dst_head,
             joint_projections[joint],
@@ -425,14 +425,14 @@ def transfer_teeth(src_mesh, dst_mesh):
         "FACIAL_C_TeethLower",
         "FACIAL_C_TeethUpper",
     ]:
-        data = mhJoints.map_joint_axes_to_mesh(
+        data = mhJointUtils.map_joint_axes_to_mesh(
             joint,
             src_mesh,
             (0, 0, 1),
             (1, 0, 0),
         )
 
-        mhJoints.snap_joint_to_axes_data(
+        mhJointUtils.snap_joint_to_axes_data(
             joint,
             dst_mesh,
             data,
@@ -444,7 +444,7 @@ def transfer_teeth(src_mesh, dst_mesh):
     for i in range(1, 5):
         joint = "FACIAL_C_Tongue{}".format(i)
 
-        data = mhJoints.map_joint_axes_to_mesh(
+        data = mhJointUtils.map_joint_axes_to_mesh(
             joint,
             src_mesh,
             (0, 1, 0),
@@ -455,7 +455,7 @@ def transfer_teeth(src_mesh, dst_mesh):
         tongue_data.append((joint, data))
 
     for joint, data in tongue_data:
-        mhJoints.snap_joint_to_axes_data(
+        mhJointUtils.snap_joint_to_axes_data(
             joint,
             dst_mesh,
             data,
@@ -479,7 +479,7 @@ def transfer_eye(src_mesh, dst_mesh, side):
     ]
 
     # snap to middle of eye mesh
-    data = mhJoints.map_joint_axes_to_mesh(
+    data = mhJointUtils.map_joint_axes_to_mesh(
         eye_joint,
         src_mesh,
         (0, 0, 1),
@@ -487,7 +487,7 @@ def transfer_eye(src_mesh, dst_mesh, side):
         furthest=False
     )
 
-    mhJoints.snap_joint_to_axes_data(
+    mhJointUtils.snap_joint_to_axes_data(
         eye_joint,
         dst_mesh,
         data,
@@ -498,7 +498,7 @@ def transfer_eye(src_mesh, dst_mesh, side):
     for joint in joints:
         joint = joint.format(side)
 
-        mhJoints.snap_joint_to_axes_data(
+        mhJointUtils.snap_joint_to_axes_data(
             joint,
             dst_mesh,
             data,

@@ -25,6 +25,61 @@ COMBO_GROUPS = [
             ("CTRL_R_mouth_dimple.translateY", 1.0),
         ]
 
+
+def create_type_text(name, text):
+    type_node = cmds.createNode("type", name="{}_type".format(name))
+    transform = cmds.createNode("transform", name=name)
+    shape = cmds.createNode("mesh", name="{}Shape".format(name), parent=transform)
+
+    cmds.connectAttr(
+        "{}.outputMesh".format(type_node),
+        "{}.inMesh".format(shape)
+    )
+
+    if text:
+        text_hex = ' '.join(f'{b:02X}' for b in text.encode('utf-8'))
+
+        cmds.setAttr(
+            "{}.textInput".format(type_node), text_hex, type="string"
+        )
+    else:
+        cmds.setAttr(
+            "{}.textInput".format(type_node), "", type="string"
+        )
+
+    return type_node, transform, shape
+
+
+def set_animated_text(type_node, text_data):
+    """Set animated text on a type node
+
+    text_data must be formated as a list of tuples: (<text>, <frame>)
+
+    eg.
+    data = {
+        0: "stuff",
+        10: "things",
+        30: "test",
+    }
+
+    """
+
+    cmds.setAttr("{}.generator".format(type_node), 8)
+
+    data = [
+        {
+            "hex": ' '.join(f'{b:02X}' for b in text_data[frame].encode('utf-8')),
+            "frame": frame,
+        } for frame in sorted(text_data.keys())
+    ]
+
+    str_data = json.dumps(data)
+
+    cmds.setAttr("{}.animatedType".format(type_node), str_data, type="string")
+
+    return True
+
+
 def get_all_board_controls(namespace=None):
     frm_group = "FRM_faceGUI"
     grp_prefix = "GRP_"
@@ -487,8 +542,8 @@ def animate_ctrl_rom(
         cmds.playbackOptions(maxTime=frame)
 
     if annotate:
-        type_node, transform, shape = mhMayaUtils.create_type_text(ANNOTATION_NAME, None)
-        mhMayaUtils.set_animated_text(type_node, annotation_data)
+        type_node, transform, shape = create_type_text(ANNOTATION_NAME, None)
+        set_animated_text(type_node, annotation_data)
 
     LOG.info("ROM complete")
 

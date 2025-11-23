@@ -40,6 +40,31 @@ class MHError(Exception):
         super(MHError, self).__init__(*args, **kwargs)
 
 
+def remove_module_from_sys(module):
+    """Forcefully remove module from memory and sys.path so other versions can be sourced
+    """
+
+    module_path = None
+
+    for path in sys.path:
+        if path in module.__file__:
+            module_path = path
+            break
+
+    if not module_path:
+        raise MHError("Failed to find module path: {}".format(module))
+
+    LOG.warning("Removing module: {}".format(module_path))
+
+    sys.path.remove(module_path)
+
+    module_name = module.__name__
+    del module
+    del sys.modules[module_name]
+
+    return True
+
+
 class Pose(object):
     def __init__(self, name=None, index=None, shape_name=None):
         self.index = index

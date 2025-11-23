@@ -1,7 +1,7 @@
 """
 TODO utils to transfer eye meshes etc
 """
-
+import math
 from maya import cmds
 from maya.api import OpenMaya
 
@@ -124,6 +124,10 @@ R_EYE_SHELL_CORNER_VERTS = [
     141, 143, 145, 148, 152, 155, 158, 159, 162, 188, 189, 190, 191, 200, 201, 202, 203, 241, 242, 243, 244, 245, 246,
     247, 248, 249, 250, 251, 252
 ]
+
+NOSE_TIP_VERT = 2925
+FOREHEAD_TOP_VERT = 2957
+BACK_HEAD_VERT = 3025
 
 
 def create_cone_from_edges(name, mesh, vertex_ids, origin, scale=1.0):
@@ -790,3 +794,63 @@ mhFaceMeshes.transfer_eye_meshes(
                 cmds.delete(node)
 
     return True
+
+
+def align_face_meshes(mesh, target_mesh, nodes=None, align_scale=True):
+    """Align one metahuman face mesh to another.
+    Uses the tip of the nose, top of forehead and back of head to align.
+    If nodes is specified, these nodes are carried with the transformation.
+    """
+    # get points
+    points = mhMayaUtils.get_points(mesh)
+    target_points = mhMayaUtils.get_points(target_mesh)
+
+    transform_verts = [NOSE_TIP_VERT, BACK_HEAD_VERT, FOREHEAD_TOP_VERT]
+
+    transform_points = [points[i] for i in transform_verts]
+    target_transform_points = [target_points[i] for i in transform_verts]
+
+    # construct matrices
+    aim_vector = (0, 0, -1)
+    up_vector = (0, 1, 0)
+
+    matrix = mhMayaUtils.create_aim_matrix_from_positions(
+        *transform_points, aim_vector=aim_vector, up_vector=up_vector
+    )
+
+    target_matrix = mhMayaUtils.create_aim_matrix_from_positions(
+        *target_transform_points, aim_vector=aim_vector, up_vector=up_vector
+    )
+
+    if align_scale:
+        # determine scale
+        lengths = [
+            transform_points[a].distanceTo(transform_points[b]) for a, b in [(0, 1), (0, 2), (1, 2)]
+        ]
+
+        target_lengths = [
+            target_transform_points[a].distanceTo(target_transform_points[b]) for a, b in [(0, 1), (0, 2), (1, 2)]
+        ]
+
+        ratios = [target_length / length for target_length, length in zip(target_lengths, lengths)]
+        scale = mean(ratios)
+
+        scale_matrix = OpenMaya.MTransformationMatrix()
+        scale_matrix.scaleBy([scale] * 3, OpenMaya.MSpace.kWorld)
+
+        untransform_matrix = matrix.inverse() * scale_matrix.asMatrix() * target_matrix
+    else:
+        untransform_matrix = matrix.inverse() * target_matrix
+
+    if nodes:
+        nodes.append(mesh)
+    else:
+        nodes = [mesh]
+
+    for node in nodes:
+        current_matrix = cmds.xform(node, query=True, matrix=True, worldSpace=True)
+        current_matrix = OpenMaya.MMatrix(current_matrix)
+        node_matrix = current_matrix * untransform_matrix
+        cmds.xform(node, matrix=list(node_matrix), worldSpace=True)
+
+    return untransform_matrix
