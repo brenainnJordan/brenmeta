@@ -20,17 +20,18 @@ import dna
 import dnacalib2
 import mh_character_assembler
 
+from mh_assemble_lib.model.dnalib import DNAReader, Layer
+
 from brenmeta.core import mhCore
 from brenmeta.core import mhWidgets
 from brenmeta.dna2 import mhSrc
 from brenmeta.dna2 import mhUtils
-# from brenmeta.dna1 import mhSrc
-# from brenmeta.dna1 import mhUtils
-# from brenmeta.dna1 import mhBehaviour
+from brenmeta.dna2 import mhBehaviour
 # from brenmeta.dna1 import mhUeUtils
-# from brenmeta.dna1 import mhMesh
-# from brenmeta.dna1 import mhJoints
-from brenmeta.mh import mhFaceMaterials, mhFaceJoints
+from brenmeta.dna2 import mhMesh
+from brenmeta.dna2 import mhJoints
+from brenmeta.mh import mhFaceMaterials
+from brenmeta.mh import mhFaceJoints
 from brenmeta.mh import mhFaceMeshes
 from brenmeta.maya import mhAnimUtils
 
@@ -264,9 +265,9 @@ class DnaTransferWidget(QtWidgets.QWidget):
         if confirm is QtWidgets.QMessageBox.Cancel:
             return None
 
-        dna_obj = dna_viewer.DNA(input_dna_path)
+        dna_obj = DNAReader.read(input_dna_path, Layer.all)
 
-        calib_reader = dnacalib.DNACalibDNAReader(dna_obj.reader)
+        calib_reader = dnacalib2.DNACalibDNAReader(dna_obj._reader)
 
         if scale_value != 1.0:
             mhUtils.scale_dna(calib_reader, scale_value)
@@ -348,7 +349,7 @@ class DnaInspectWidget(QtWidgets.QMainWindow):
         self.setWindowTitle(filename)
 
         dna_obj = dna_viewer.DNA(dna_path)
-        calib_reader = dnacalib.DNACalibDNAReader(dna_obj.reader)
+        calib_reader = dnacalib2.DNACalibDNAReader(dna_obj.reader)
 
         # mesh text
         mesh_fmt = "    {mesh_name}: {point_count} points, {blendshape_count} blendshape targets\n"
@@ -1103,8 +1104,8 @@ class DnaPosesWidget(QtWidgets.QWidget):
             return None
 
         # load dna and get poses
-        self.dna_obj = dna_viewer.DNA(input_dna_path)
-        self.calib_reader = dnacalib.DNACalibDNAReader(self.dna_obj.reader)
+        reader = mhUtils.load_dna(input_dna_path)
+        self.calib_reader = dnacalib2.DNACalibDNAReader(reader)
 
         self.attrs = mhBehaviour.get_joint_attrs(self.calib_reader)
         self.attr_defaults = mhBehaviour.get_joint_defaults(self.calib_reader)
@@ -1159,16 +1160,12 @@ class DnaPosesWidget(QtWidgets.QWidget):
             return None
 
         # write data
-        stream = dna.FileStream(
-            self.path_manager.output_dna_path, dna.FileStream.AccessMode_Write, dna.FileStream.OpenMode_Binary
+        mhBehaviour.save_dna(
+            self.calib_reader,
+            self.path_manager.output_dna_path,
+            poses=self.poses,
+            poses_absolute=False
         )
-
-        writer = dna.BinaryStreamWriter(stream)
-        writer.setFrom(self.calib_reader)
-
-        mhBehaviour.set_all_poses(self.calib_reader, writer, self.poses, from_absolute=False)
-
-        writer.write()
 
         # confirm write
         if not dna.Status.isOk():
@@ -1425,11 +1422,11 @@ class DnaQCWidget(QtWidgets.QWidget):
                 return False
 
             LOG.info("Loading dna: {}".format(dna_path))
-            dna_obj = dna_viewer.DNA(dna_path)
-            reader = dnacalib.DNACalibDNAReader(dna_obj.reader)
+            reader = mhUtils.load_dna(dna_path)
+            calib_reader = dnacalib2.DNACalibDNAReader(reader)
 
-            poses = mhBehaviour.get_all_poses(reader)
-            psd_poses = mhBehaviour.get_psd_poses(reader, poses)
+            poses = mhBehaviour.get_all_poses(calib_reader)
+            psd_poses = mhBehaviour.get_psd_poses(calib_reader, poses)
 
             mapping = mhAnimUtils.map_expressions_to_controls(tongue=tongue, eyelashes=eyelashes, namespace=namespace)
 
@@ -1487,7 +1484,7 @@ class DnaModWidget(
         self.dna_assets_dir_widget.path = mhSrc.get_dna_data_dir()
 
         self.dna_files_dir_widget = mhWidgets.DirWidget("Dna Files Dir")
-        self.dna_files_dir_widget.path = os.path.join(mhSrc.get_dna_data_dir(), "dna_files")
+        # self.dna_files_dir_widget.path = os.path.join()
 
         self.input_file_widget = mhWidgets.PathOpenWidget("Input DNA")
         self.output_file_widget = mhWidgets.PathSaveWidget("Output DNA")

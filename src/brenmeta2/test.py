@@ -1,8 +1,8 @@
 """
 paths:
-C:\Program Files\Epic Games\MetaHumanForMaya\lib\mh_character_assembler\1.1.3\mh_character_assembler
-C:\Program Files\Epic Games\MetaHumanForMaya\lib\mh_assemble_lib\0.7.2\mh_assemble_lib
-C:\Program Files\Epic Games\MetaHumanForMaya\lib\mh_assemble_lib\0.7.2\mh_assemble_lib\impl\maya
+C:\Program Files\Epic Games\MetaHumanForMaya\MetaHumanForMaya\lib\mh_character_assembler\1.1.3\mh_character_assembler
+C:\Program Files\Epic Games\MetaHumanForMaya\MetaHumanForMaya\lib\mh_assemble_lib\0.9.2\mh_assemble_lib
+C:\Program Files\Epic Games\MetaHumanForMaya\MetaHumanForMaya\lib\PyDNACalib2\3.2.4\platform-windows\.sanitizers-off\python-3.11\lib
 
 
 """

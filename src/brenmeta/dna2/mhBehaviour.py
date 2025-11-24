@@ -1,13 +1,11 @@
 from maya import cmds
 
 import dna
-import dnacalib
 
 from brenmeta.core import mhCore
 from brenmeta.maya import mhMayaUtils
 
 LOG = mhCore.get_basic_logger(__name__)
-
 
 
 def find_expression_index(reader, expression, ignore_namespace=True):
@@ -133,7 +131,7 @@ def get_all_poses(reader, absolute=True):
 def set_all_poses(reader, writer, pose_data, from_absolute=True):
     # validate data
     if len(pose_data) != reader.getJointColumnCount():
-        raise mhCore.MHError("Joint column count ({}) != pose_data length ({})".format(
+        LOG.warning("Joint column count ({}) != pose_data length ({})".format(
             len(pose_data), reader.getJointColumnCount()
         ))
 
@@ -180,7 +178,6 @@ def set_all_poses(reader, writer, pose_data, from_absolute=True):
     return True
 
 
-
 def get_columns_to_blendshape_channels(reader):
     """Get list of blendshape channels associated with each joint column
     """
@@ -191,9 +188,14 @@ def get_columns_to_blendshape_channels(reader):
 
     blendshape_channel_inputs = reader.getBlendShapeChannelInputIndices()
 
-    columns_to_blendshapes = [None] * reader.getJointColumnCount()
+    # columns_to_blendshapes = [None] * reader.getJointColumnCount()
+    columns_to_blendshapes = [None] * (max(blendshape_channel_inputs) + 1)
 
     for blendshape_channel_name, joint_column in zip(blendshape_channel_names, blendshape_channel_inputs):
+        if joint_column >= reader.getJointColumnCount():
+            LOG.warning("Blendshape out of joint column range: {} {}".format(blendshape_channel_name, joint_column))
+            # continue
+
         columns_to_blendshapes[joint_column] = blendshape_channel_name
 
     return columns_to_blendshapes
@@ -265,3 +267,26 @@ def get_psd_poses(reader, poses):
                 psd_pose.input_psd_poses.append(input_psd_pose)
 
     return psd_poses
+
+
+def save_dna(reader, path, validate=True, as_json=False, poses=None, poses_absolute=False):
+    stream = dna.FileStream(path, dna.FileStream.AccessMode_Write, dna.FileStream.OpenMode_Binary)
+
+    if as_json:
+        writer = dna.JSONStreamWriter(stream)
+    else:
+        writer = dna.BinaryStreamWriter(stream)
+
+    writer.setFrom(reader)
+
+    if poses:
+        set_all_poses(reader, writer, poses, from_absolute=poses_absolute)
+
+    writer.write()
+
+    if validate:
+        if not dna.Status.isOk():
+            status = dna.Status.get()
+            raise RuntimeError("Error saving DNA: {}".format(status.message))
+
+    return True

@@ -13,6 +13,44 @@ from mh_assemble_lib.impl.maya.properties import MayaSceneOrient
 
 from brenmeta.core import mhCore
 
+def scale_dna(reader, scale):
+    scale_cmd = dnacalib2.ScaleCommand(scale, [0, 0, 0])
+    scale_cmd.run(reader)
+    return True
+
+
+def load_dna(path):
+    """
+    """
+    stream = dna.FileStream(path, dna.FileStream.AccessMode_Read, dna.FileStream.OpenMode_Binary)
+    reader = dna.BinaryStreamReader(stream, Layer.all.value)
+    reader.read()
+    if not dna.Status.isOk():
+        status = dna.Status.get()
+        raise RuntimeError("Error loading DNA: {}".format(status.message))
+    return reader
+
+
+def save_dna(reader, path, validate=True, as_json=False):
+    stream = dna.FileStream(path, dna.FileStream.AccessMode_Write, dna.FileStream.OpenMode_Binary)
+
+    if as_json:
+        writer = dna.JSONStreamWriter(stream)
+    else:
+        writer = dna.BinaryStreamWriter(stream)
+
+    writer.setFrom(reader)
+
+    writer.write()
+
+    if validate:
+        if not dna.Status.isOk():
+            status = dna.Status.get()
+            raise RuntimeError("Error saving DNA: {}".format(status.message))
+
+    return True
+
+
 def import_components(
         dna_path,
         assets_path,
@@ -23,7 +61,7 @@ def import_components(
         lod=None,
         scene_up="y",
 ):
-    dna_reader = DNAReader.read(dna_path, Layer.all)
+    dna_obj = DNAReader.read(dna_path, Layer.all)
 
     handler = MayaHandler()
 
@@ -39,14 +77,14 @@ def import_components(
 
     if lod is None:
         # add all LODs
-        for mesh_id in range(dna_reader.get_mesh_count()):
-            mesh_name = dna_reader.get_mesh_name(mesh_id)
+        for mesh_id in range(dna_obj.get_mesh_count()):
+            mesh_name = dna_obj.get_mesh_name(mesh_id)
             form.meshes.append(MeshForm(mesh_id, mesh_name))
     else:
-        mesh_ids = dna_reader.get_mesh_indices_for_lod(lod)
+        mesh_ids = dna_obj.get_mesh_indices_for_lod(lod)
 
         for mesh_id in mesh_ids:
-            mesh_name = dna_reader.get_mesh_name(mesh_id)
+            mesh_name = dna_obj.get_mesh_name(mesh_id)
             form.meshes.append(MeshForm(mesh_id, mesh_name))
 
     # set rig components to build
@@ -74,7 +112,7 @@ def import_components(
                 raise mhCore.MHError("Dependency file not found: {}".format(file_path))
 
     # build
-    handler.set_state(dna_reader, form)
+    handler.set_state(dna_obj, form)
     handler.build_mh()
 
     return True

@@ -3,6 +3,8 @@ import sys
 
 import logging
 
+from maya import cmds
+
 def ascend_path(path, levels):
     for _ in range(levels):
         path = os.path.dirname(path)
