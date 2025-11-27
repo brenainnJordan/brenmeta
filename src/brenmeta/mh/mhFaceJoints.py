@@ -1,3 +1,7 @@
+"""
+TODO options to blend regions
+"""
+
 import random
 
 from maya import cmds

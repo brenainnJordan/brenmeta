@@ -117,8 +117,11 @@ class DnaTransferWidget(QtWidgets.QWidget):
 
         self.input_dna_combo = QtWidgets.QComboBox()
 
-        self.scale_spin = mhWidgets.LabelledDoubleSpinBox("scale", label_width=80, spin_box_width=80, height=30,
-                                                          default=1.0)
+        self.scale_spin = mhWidgets.LabelledDoubleSpinBox(
+            "scale", label_width=80, spin_box_width=80, height=30, default=1.0
+        )
+
+        self.scale_spin.spin_box.setDecimals(4)
         self.scale_spin.spin_box.setMinimum(0.0)
         self.scale_spin.spin_box.setMaximum(100000.0)
 
@@ -1248,6 +1251,11 @@ class DnaPosesWidget(QtWidgets.QWidget):
             pose = poses[0]
 
         pose.update_from_scene()
+
+        if isinstance(pose, mhCore.PSDPose):
+            LOG.info("PSD pose data updated: {}".format(pose.pose.name))
+        else:
+            LOG.info("pose data updated: {}".format(pose.name))
 
         # mhBehaviour.update_pose_data_from_scene(
         #     self.calib_reader, self.poses, pose,

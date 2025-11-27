@@ -113,9 +113,13 @@ class DnaTransferWidget(QtWidgets.QWidget):
 
         self.input_dna_combo = QtWidgets.QComboBox()
 
-        self.scale_spin = mhWidgets.LabelledDoubleSpinBox("scale", label_width=80, spin_box_width=80, height=30, default=1.0)
+        self.scale_spin = mhWidgets.LabelledDoubleSpinBox(
+            "scale", label_width=80, spin_box_width=80, height=30, default=1.0
+        )
+
         self.scale_spin.spin_box.setMinimum(0.0)
         self.scale_spin.spin_box.setMaximum(100000.0)
+        self.scale_spin.spin_box.setDecimals(4)
 
         self.update_mesh_checkbox = QtWidgets.QCheckBox("update meshes")
         self.update_mesh_checkbox.setChecked(True)

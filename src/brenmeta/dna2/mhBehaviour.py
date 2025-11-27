@@ -79,7 +79,7 @@ def get_joint_defaults(reader):
     return joints_attr_defaults
 
 
-def get_all_poses(reader, absolute=True):
+def get_all_poses(reader, absolute=True, verbose=False):
     """
 
     """
@@ -110,6 +110,11 @@ def get_all_poses(reader, absolute=True):
         values = reader.getJointGroupValues(group_index)
 
         for column_index, input_index in enumerate(input_indices):
+            if input_index >= len(poses):
+                if verbose:
+                    LOG.warning("input index out of range: {}".format(input_index))
+                continue
+
             pose = poses[input_index]
 
             for row_index, attr in enumerate(group_attrs):
@@ -154,12 +159,19 @@ def set_all_poses(reader, writer, pose_data, from_absolute=True):
         group_values = []
 
         for input_index in input_indices:
-            pose = pose_data[input_index]
+            if input_index < len(pose_data):
+                pose = pose_data[input_index]
+            else:
+                LOG.warning("input index out of range: {}".format(input_index))
+                pose = None
 
             output_values = []
 
             for attr in group_attrs:
-                value = pose.deltas[attr]
+                if pose:
+                    value = pose.deltas[attr]
+                else:
+                    value = 0.0 # TODO use existing value
 
                 # if from_absolute and attr in joints_attr_defaults:
                 #     value -= joints_attr_defaults[attr]
@@ -188,13 +200,13 @@ def get_columns_to_blendshape_channels(reader):
 
     blendshape_channel_inputs = reader.getBlendShapeChannelInputIndices()
 
-    # columns_to_blendshapes = [None] * reader.getJointColumnCount()
-    columns_to_blendshapes = [None] * (max(blendshape_channel_inputs) + 1)
+    columns_to_blendshapes = [None] * reader.getJointColumnCount()
+    # columns_to_blendshapes = [None] * (max(blendshape_channel_inputs) + 1)
 
     for blendshape_channel_name, joint_column in zip(blendshape_channel_names, blendshape_channel_inputs):
         if joint_column >= reader.getJointColumnCount():
             LOG.warning("Blendshape out of joint column range: {} {}".format(blendshape_channel_name, joint_column))
-            # continue
+            continue
 
         columns_to_blendshapes[joint_column] = blendshape_channel_name
 
@@ -249,12 +261,21 @@ def get_psd_poses(reader, poses):
     for psd_index, psd_data in psd_indices.items():
         psd_pose = mhCore.PSDPose()
         psd_pose.pose = poses[psd_index]
+        psd_valid = True
 
         for pose_index, weight in psd_data:
+            if pose_index >= len(poses):
+                LOG.warning("psd input pose out of range: {} {}".format(psd_pose.pose.name, pose_index))
+                psd_valid = False
+                continue
+
             psd_pose.input_poses.append(poses[pose_index])
             psd_pose.input_weights.append(weight)
 
-        psd_poses[psd_index] = psd_pose
+        if psd_valid:
+            psd_poses[psd_index] = psd_pose
+        else:
+            LOG.warning("invalid psd pose: {}".format(psd_pose.pose.name))
 
     # add input psds for 3+ way combos
     for psd_pose in psd_poses.values():
