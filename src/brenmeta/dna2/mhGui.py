@@ -1357,6 +1357,33 @@ class DnaQCWidget(QtWidgets.QWidget):
         )
 
     def create_widgets(self):
+        # utils
+        self.utils_box = QtWidgets.QGroupBox("Utils")
+        self.utils_namespace_edit = mhWidgets.LabelledNamespaceLineEdit("Namespace")
+
+        self.reset_anim_btn = QtWidgets.QPushButton("reset anim")
+        self.reset_anim_btn.clicked.connect(self._reset_anim_clicked)
+
+        utils_lyt = QtWidgets.QVBoxLayout()
+        self.utils_box.setLayout(utils_lyt)
+
+        utils_lyt.addWidget(self.utils_namespace_edit)
+        utils_lyt.addWidget(self.reset_anim_btn)
+
+        # connect control boards
+        self.connect_box = QtWidgets.QGroupBox("Connect Control Boards")
+        self.connect_src_namespace_edit = mhWidgets.LabelledNamespaceLineEdit("Src Namespace")
+        self.connect_dst_namespace_edit = mhWidgets.LabelledNamespaceLineEdit("Dst Namespace")
+
+        self.connect_btn = QtWidgets.QPushButton("connect")
+        self.connect_btn.clicked.connect(self._connect_clicked)
+
+        connect_lyt = QtWidgets.QVBoxLayout()
+        self.connect_box.setLayout(connect_lyt)
+
+        connect_lyt.addWidget(self.connect_src_namespace_edit)
+        connect_lyt.addWidget(self.connect_dst_namespace_edit)
+        connect_lyt.addWidget(self.connect_btn)
 
         # Create tech ROM
         self.tech_rom_box = QtWidgets.QGroupBox("Technical ROM")
@@ -1368,7 +1395,7 @@ class DnaQCWidget(QtWidgets.QWidget):
         self.combos_checkbox = QtWidgets.QCheckBox("Combos")
         self.combine_lr_checkbox = QtWidgets.QCheckBox("Combine LR")
         self.annotate_checkbox = QtWidgets.QCheckBox("Annotate")
-        self.namespace_edit = mhWidgets.LabelledLineEdit("Namespace")
+        self.namespace_edit = mhWidgets.LabelledNamespaceLineEdit("Namespace")
 
         self.update_timeline_checkbox.setChecked(True)
         self.combos_checkbox.setChecked(True)
@@ -1395,6 +1422,8 @@ class DnaQCWidget(QtWidgets.QWidget):
         lyt = QtWidgets.QVBoxLayout()
         self.setLayout(lyt)
 
+        lyt.addWidget(self.utils_box)
+        lyt.addWidget(self.connect_box)
         lyt.addWidget(self.tech_rom_box)
         lyt.addStretch()
 
@@ -1402,6 +1431,15 @@ class DnaQCWidget(QtWidgets.QWidget):
         self.dna_combo.clear()
         self.dna_combo.addItems(self.path_manager.get_dna_files())
         return True
+
+    def _reset_anim_clicked(self):
+        namespace = self.utils_namespace_edit.line_edit.text()
+        mhAnimUtils.reset_control_board_anim(namespace=namespace)
+
+    def _connect_clicked(self):
+        src_namespace = self.connect_src_namespace_edit.line_edit.text()
+        dst_namespace = self.connect_dst_namespace_edit.line_edit.text()
+        mhAnimUtils.connect_control_boards(src_namespace, dst_namespace)
 
     def _create_rom_clicked(self):
         try:

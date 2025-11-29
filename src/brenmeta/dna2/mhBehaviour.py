@@ -287,6 +287,13 @@ def get_psd_poses(reader, poses):
             if all([pose in psd_pose.input_poses for pose in input_psd_pose.input_poses]):
                 psd_pose.input_psd_poses.append(input_psd_pose)
 
+    # check psd names
+    # if dna file does not have blendshapes to get names from
+    # this will give it a suitable name
+    for psd_pose in psd_poses.values():
+        if not psd_pose.pose.name:
+            psd_pose.update_name()
+
     return psd_poses
 
 

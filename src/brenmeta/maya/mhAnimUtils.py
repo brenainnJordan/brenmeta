@@ -104,6 +104,31 @@ def get_all_board_controls(namespace=None):
     return controls
 
 
+def connect_control_boards(src_namespace=None, dst_namespace=None):
+    if src_namespace == dst_namespace == None:
+        raise mhCore.MHError("src and dst namespaces cannot both be None")
+
+    src_controls = get_all_board_controls(namespace=src_namespace)
+
+    for src_control in src_controls:
+        if src_namespace:
+            control_name = src_control.split(":")[1]
+        else:
+            control_name = src_control
+
+        if dst_namespace:
+            dst_control = "{}:{}".format(dst_namespace, control_name)
+        else:
+            dst_control = control_name
+
+        cmds.connectAttr(
+            "{}.translate".format(src_control),
+            "{}.translate".format(dst_control),
+        )
+
+    return True
+
+
 def reset_control_board_anim(namespace=None):
     controls = get_all_board_controls(namespace=namespace)
     cmds.cutKey(controls, clear=True)
@@ -314,7 +339,11 @@ def animate_ctrl_rom(
         combo_groups=COMBO_GROUPS
 ):
 
-    mapping = map_expressions_to_controls(tongue=tongue, eyelashes=eyelashes, namespace=namespace)
+    mapping = map_expressions_to_controls(
+        tongue=tongue,
+        eyelashes=eyelashes,
+        namespace=namespace
+    )
 
     if combos:
         if combo_mapping:
@@ -342,6 +371,9 @@ def animate_ctrl_rom(
     annotation_data = {}
 
     for exp_attr, data in ungrouped_mapping:
+        if exp_attr is None:
+            continue
+
         LOG.info("Keying: {}".format(exp_attr))
 
         exp_frame = frame
@@ -415,6 +447,9 @@ def animate_ctrl_rom(
             next_frame = frame
 
             for exp_attr, pose_data in combo_data:
+                if exp_attr is None:
+                    continue
+
                 LOG.info("Keying: {}".format(exp_attr))
 
                 exp_frame = frame
@@ -500,6 +535,8 @@ def animate_ctrl_rom(
 
                 # animate combos
                 for exp_attr, pose_data in r_combo_data:
+                    if exp_attr is None:
+                        continue
 
                     if not exp_attr.endswith("R"):
                         LOG.warning("non-R expression in R combo: {}".format(exp_attr))

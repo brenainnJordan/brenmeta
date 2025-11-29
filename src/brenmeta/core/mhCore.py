@@ -253,3 +253,37 @@ class PSDPose(object):
         poses = sorted(poses, key=lambda p: p.index)
 
         return poses
+
+    def update_name(self, override=True):
+        if self.pose.name and not override:
+            raise MHError("PSDPose is already named: {}".format(self))
+
+        side = None
+
+        name_tokens = []
+
+        for pose in self.get_all_input_poses():
+            if not pose.name:
+                continue
+
+            if pose.name[-1] in "LR":
+                side = pose.name[-1]
+                pose_name = pose.name[:-1]
+            else:
+                pose_name = pose.name
+
+            name_tokens.append(pose_name)
+
+        if side:
+            name_tokens.append(side)
+
+        # for input_psd in self.input_psd_poses:
+        #     if not input_psd.pose.name:
+        #         input_psd.update_name(override=override)
+        #
+        #     if input_psd.pose.name:
+        #         input_pose_names.append(input_psd.pose.name)
+
+        self.pose.name = "_".join(name_tokens)
+
+        return self.pose.name

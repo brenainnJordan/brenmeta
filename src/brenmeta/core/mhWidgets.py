@@ -209,6 +209,51 @@ class NodeLineEdit(QtWidgets.QWidget):
 
         return True
 
+
+class LabelledNamespaceLineEdit(QtWidgets.QWidget):
+    def __init__(self, label, *args, **kwargs):
+        super(LabelledNamespaceLineEdit, self).__init__(*args, **kwargs)
+
+        self.lyt = QtWidgets.QHBoxLayout()
+        self.setLayout(self.lyt)
+
+        self.label = QtWidgets.QLabel(label)
+        self.label.setFixedWidth(100)
+
+        self.line_edit = QtWidgets.QLineEdit()
+
+        self.set_btn = QtWidgets.QPushButton("<<")
+        self.set_btn.setFixedWidth(30)
+
+        self.lyt.addWidget(self.label)
+        self.lyt.addWidget(self.line_edit)
+        self.lyt.addWidget(self.set_btn)
+
+        self.lyt.setContentsMargins(0, 0, 0, 0)
+        self.lyt.setSpacing(0)
+
+        self.set_btn.clicked.connect(self.set_clicked)
+
+    @property
+    def node(self):
+        return self.line_edit.text()
+
+    def set_clicked(self):
+        self.line_edit.setText("")
+
+        nodes = cmds.ls(sl=True)
+
+        if not nodes:
+            return
+
+        if ":" not in nodes[0]:
+            return
+
+        self.line_edit.setText(nodes[0].split(":")[0])
+
+        return
+
+
 class DnaPathManager(object):
     def __init__(self):
         self.input_path = None
