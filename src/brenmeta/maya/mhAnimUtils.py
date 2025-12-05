@@ -247,7 +247,7 @@ def map_psds_to_controls(expression_mapping, psd_poses):
     return psd_mapping
 
 
-def group_mapped_combos(mapping, combo_groups, namespace=None, debug=True):
+def group_mapped_combos(mapping, combo_groups):#, namespace=None, debug=True):
     """Group combos that have been mapped to control attributes by if they contain one of the attributes in combo_groups
 
     Prioritised by attr order defined by combo_groups
@@ -363,12 +363,12 @@ def animate_ctrl_rom(
     # organise combos
     if namespace:
         combo_groups = [
-            ("{}:{}".format(namespace, attr), value)
-            for attr, value in combo_groups
+            (shape, "{}:{}".format(namespace, attr), value)
+            for shape, attr, value in combo_groups
         ]
 
     grouped_mapping, ungrouped_mapping = group_mapped_combos(
-        mapping, combo_groups, namespace=namespace, debug=True
+        mapping, combo_groups, #namespace=namespace, debug=True
     )
 
     grouped_mapping, ungrouped_mapping = group_additional_combos(grouped_mapping, ungrouped_mapping)
@@ -441,9 +441,9 @@ def animate_ctrl_rom(
 
         for group, combo_ctrl_attr, combo_value in combo_groups:
             if combine_lr:
-                if "_L_" in combo_ctrl_attr:
+                if group.endswith("L"):
                     left_group_frames[group] = [frame]
-                elif "_R_" in combo_ctrl_attr:
+                elif group.endswith("R"):
                     continue
 
             combo_data = grouped_mapping[group]
@@ -515,7 +515,7 @@ def animate_ctrl_rom(
                 annotation_data[exp_frame] += "\n\n"
 
             # reset primary combo attr
-            if combine_lr and "_L_" in combo_ctrl_attr:
+            if combine_lr and group.endswith("L"):
                 left_group_frames[group].append(frame)
 
             cmds.setKeyframe(
@@ -533,6 +533,9 @@ def animate_ctrl_rom(
             combo_groups_dict = {group: (ctl_attr, ctl_value) for group, ctl_attr, ctl_value in combo_groups}
 
             for l_group, (l_frame, l_end_frame) in left_group_frames.items():
+                
+                l_combo_ctrl_attr, l_combo_value = combo_groups_dict[l_group]
+
                 r_group = l_group[:-1] + "R"
 
                 r_combo_ctrl_attr, r_combo_value = combo_groups_dict[r_group]
@@ -577,7 +580,7 @@ def animate_ctrl_rom(
                         annotation_data[exp_frame] += "    {}\n".format(attr)
 
                         # safeguard to ensure neither l or r combo controls get keyed during group
-                        if attr in [r_group, l_group]:
+                        if attr in [l_combo_ctrl_attr, r_combo_ctrl_attr]:
                             continue
 
                         # animate attr
