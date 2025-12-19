@@ -64,8 +64,10 @@ ADDITIONAL_COMBOS = [
 POSE_JOINTS = [
     "FACIAL_L_Eye",
     "FACIAL_L_EyeParallel",
+    "FACIAL_L_Pupil",
     "FACIAL_R_Eye",
     "FACIAL_R_EyeParallel",
+    "FACIAL_R_Pupil",
     "FACIAL_C_Jaw",
     "FACIAL_C_LowerLipRotation",
     "FACIAL_C_TeethUpper",
