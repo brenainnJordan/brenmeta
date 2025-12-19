@@ -67,6 +67,12 @@ def remove_module_from_sys(module):
     return True
 
 
+def validate_arg(arg_name, arg_value, expected_type):
+    if not isinstance(arg_value, expected_type):
+        raise MHError("{} arg should {} not {}".format(arg_name, expected_type, arg_value))
+    return True
+
+
 class Pose(object):
     def __init__(self, name=None, index=None, shape_name=None):
         self.index = index
@@ -258,32 +264,25 @@ class PSDPose(object):
         if self.pose.name and not override:
             raise MHError("PSDPose is already named: {}".format(self))
 
-        side = None
+        sides = set([])
 
-        name_tokens = []
+        name_tokens = set([])
 
         for pose in self.get_all_input_poses():
             if not pose.name:
                 continue
 
             if pose.name[-1] in "LR":
-                side = pose.name[-1]
+                sides.add(pose.name[-1])
                 pose_name = pose.name[:-1]
             else:
                 pose_name = pose.name
 
-            name_tokens.append(pose_name)
+            name_tokens.add(pose_name)
 
-        if side:
-            name_tokens.append(side)
+        self.pose.name = "_".join(sorted(name_tokens))
 
-        # for input_psd in self.input_psd_poses:
-        #     if not input_psd.pose.name:
-        #         input_psd.update_name(override=override)
-        #
-        #     if input_psd.pose.name:
-        #         input_pose_names.append(input_psd.pose.name)
-
-        self.pose.name = "_".join(name_tokens)
+        if sides:
+            self.pose.name = "{}_{}".format(self.pose.name, "".join(sorted(sides)))
 
         return self.pose.name

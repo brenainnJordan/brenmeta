@@ -533,7 +533,7 @@ def animate_ctrl_rom(
             combo_groups_dict = {group: (ctl_attr, ctl_value) for group, ctl_attr, ctl_value in combo_groups}
 
             for l_group, (l_frame, l_end_frame) in left_group_frames.items():
-                
+
                 l_combo_ctrl_attr, l_combo_value = combo_groups_dict[l_group]
 
                 r_group = l_group[:-1] + "R"

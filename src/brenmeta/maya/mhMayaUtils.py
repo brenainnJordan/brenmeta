@@ -9,7 +9,6 @@ from maya import cmds
 from brenmeta.core import mhCore
 
 
-
 def break_connections(attrs):
     if not isinstance(attrs, (list, tuple)):
         attrs = [attrs]
@@ -27,6 +26,63 @@ def break_connections(attrs):
     return True
 
 
+def parse_m_object(value, api_type=None, check_valid=True):
+    """Parse a given user value and return MObject
+
+    Checks api type if given.
+
+    :param value: str, OpenMaya.MObject, OpenMaya.MDagPath, OpenMaya.MFnBase subclass
+    :param api_type: None, MFn type enum (eg. OpenMaya.MFn.kTransform)
+    :return: OpenMaya.MObject
+    """
+
+    if api_type is not None:
+        if not isinstance(api_type, (list,tuple)):
+            api_type = [api_type]
+
+        for i, api_type_i in enumerate(api_type):
+            mhCore.validate_arg("api_type[{}]".format(i), api_type_i, int)
+
+    # get MObject
+    if isinstance(value, OpenMaya.MObject):
+        m_object = value
+
+    elif isinstance(value, OpenMaya.MDagPath):
+        m_object = value.node()
+
+    elif isinstance(value, OpenMaya.MFnBase):
+        m_object = value.object()
+
+    elif isinstance(value, str):
+        sel = OpenMaya.MSelectionList()
+
+        try:
+            sel.add(value)
+        except RuntimeError as err:
+            raise bmCore.BmError("{} ({})".format(str(err), value))
+
+        m_object = sel.getDependNode(0)
+
+    else:
+        raise mhCore.MHError("MObject value not recognized: {}".format(value))
+
+    # check type
+    if api_type is not None:
+        if not m_object.apiType() in api_type:
+            raise mhCore.MHError(
+                "MObject api type ({} {} {}) not expected value: {}".format(
+                    value, m_object.apiTypeStr, m_object.apiType(), api_type
+                )
+            )
+
+    # check valid
+    if check_valid:
+        if m_object.isNull():
+            raise bmCore.BmError("MObject invalid: {}".format(value))
+
+    return m_object
+
+
 def parse_dag_path(dag_path):
     if isinstance(dag_path, OpenMaya.MDagPath):
         return dag_path
@@ -40,6 +96,96 @@ def parse_dag_path(dag_path):
         return sel.getDagPath(0)
     else:
         raise mhCore.MHError("dag path not recognised: {}".format(dag_path))
+
+
+def parse_dag_path(value, api_type=None, check_valid=True):
+    """Parse a given user value and return MDagPath
+
+    Checks api type if given.
+
+    :param value: bpCore.BASESTRING, OpenMaya.MFnDagNode, OpenMaya.MDagPath
+    :param api_type: None, MFn type enum (eg. OpenMaya.MFn.kTransform)
+    :return: OpenMaya.MDagPath
+    """
+
+    api_type = mhCore.validate_arg("api_type", api_type, (bpCore.NONE_TYPE, int))
+
+    # get MDagPath
+    if isinstance(value, OpenMaya.MObject):
+        # attempt to instance an MFnDagNode
+        # this will error if MObject isn't a dag object
+        mfn = OpenMaya.MFnDagNode(value)
+        return mfn.getPath()
+
+    elif isinstance(value, OpenMaya.MDagPath):
+        m_dag_path = value
+
+    elif isinstance(value, OpenMaya.MFnDagNode):
+        # m_dag_path = value.dagPath()
+        # note ideally we would use dagPath()
+        # assuming that the Mfn object had been constructed properly
+        # (ie bound to a MDagPath object)
+        # but because we allow the user to construct their own MFn object
+        # we can't guarantee that it's bound to a MDagPath object
+        # so lets use getPath() instead.
+        # return MFnDagNode.dagPath()
+        return value.getPath()
+
+    elif isinstance(value, str):
+
+        sel = OpenMaya.MSelectionList()
+
+        try:
+            sel.add(value)
+        except RuntimeError as err:
+            raise mhCore.MHError("{} ({})".format(str(err), value))
+
+        try:
+            m_dag_path = sel.getDagPath(0)
+        except TypeError as err:
+            raise mhCore.MHError("{} ({})".format(str(err), value))
+
+    else:
+        raise mhCore.MHError("Dag path value not recognized: {}".format(value))
+
+    # check type
+    if api_type is not None:
+        if m_dag_path.apiType() != api_type:
+            raise mhCore.MHError(
+                "MDagPath api type ({} {}) not expected value: {}".format(
+                    m_dag_path.node().apiTypeStr, m_dag_path.apiType(), api_type
+                )
+            )
+
+    # check valid
+    if check_valid:
+        if not m_dag_path.isValid():
+            raise mhCore.MHError("MDagPath invalid: {}".format(value))
+
+        if m_dag_path.node().isNull():
+            raise mhCore.MHError("MObject invalid: {}".format(value))
+
+    return m_dag_path
+
+
+def get_all_component_list_elements(component_list):
+    """
+    Note we just append to the list instead of using a set
+    because we want to keep the component order
+    and sets are un-ordered
+
+    """
+    mhCore.validate_arg("component_list", component_list, OpenMaya.MFnComponentListData)
+
+    all_elements = []
+
+    for i in range(component_list.length()):
+        component = component_list.get(i)
+        component = OpenMaya.MFnSingleIndexedComponent(component)
+        elements = component.getElements()
+        all_elements += elements
+
+    return all_elements
 
 
 def get_points(mesh, space=OpenMaya.MSpace.kWorld, as_positions=False, as_vector=False):
@@ -253,6 +399,7 @@ def create_wrap(
             _wrap_nodes.append(wrap)
 
     return _wrap_nodes
+
 
 def edges_to_vertex_ids(mesh, edge_ids):
     mesh_dag = parse_dag_path(mesh)

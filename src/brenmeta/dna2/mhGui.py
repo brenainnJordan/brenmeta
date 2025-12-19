@@ -34,16 +34,30 @@ from brenmeta.mh import mhFaceMaterials
 from brenmeta.mh import mhFaceJoints
 from brenmeta.mh import mhFaceMeshes
 from brenmeta.maya import mhAnimUtils
+from brenmeta.maya import mhShapeBake
 
 LOG = mhCore.get_basic_logger(__name__)
 
 
-class DnaTransferWidget(QtWidgets.QWidget):
+class DnaTab(QtWidgets.QWidget):
 
-    def __init__(self, path_manager, *args, **kwargs):
-        super(DnaTransferWidget, self).__init__(*args, **kwargs)
-
+    def __init__(self, path_manager, parent=None):
+        super(DnaTab, self).__init__(parent=parent)
         self.path_manager = path_manager
+
+    def error(self, err):
+        QtWidgets.QMessageBox.critical(
+            self,
+            "Error",
+            str(err),
+            QtWidgets.QMessageBox.Ok
+        )
+
+
+class DnaTransferWidget(DnaTab):
+
+    def __init__(self, path_manager, parent=None):
+        super(DnaTransferWidget, self).__init__(path_manager, parent=parent)
 
         lyt = QtWidgets.QVBoxLayout()
         self.setLayout(lyt)
@@ -115,7 +129,7 @@ class DnaTransferWidget(QtWidgets.QWidget):
         update_dna_lyt = QtWidgets.QVBoxLayout()
         self.update_dna_group_box.setLayout(update_dna_lyt)
 
-        self.input_dna_combo = QtWidgets.QComboBox()
+        self.dna_file_combo = mhWidgets.DnaPathManagerWidget(path_manager,"dna file")
 
         self.scale_spin = mhWidgets.LabelledDoubleSpinBox(
             "scale", label_width=80, spin_box_width=80, height=30, default=1.0
@@ -142,7 +156,7 @@ class DnaTransferWidget(QtWidgets.QWidget):
         self.update_btn = QtWidgets.QPushButton("Update")
         self.update_btn.clicked.connect(self.update_dna)
 
-        update_dna_lyt.addWidget(self.input_dna_combo)
+        update_dna_lyt.addWidget(self.dna_file_combo)
         update_dna_lyt.addWidget(self.scale_spin)
         update_dna_lyt.addWidget(self.update_mesh_checkbox)
         update_dna_lyt.addWidget(self.update_joint_xforms_checkbox)
@@ -158,8 +172,7 @@ class DnaTransferWidget(QtWidgets.QWidget):
         lyt.addStretch()
 
     def update_assets(self):
-        self.input_dna_combo.clear()
-        self.input_dna_combo.addItems(self.path_manager.get_dna_files())
+        self.dna_file_combo.update_assets()
         return True
 
     def transfer(self):
@@ -219,41 +232,21 @@ class DnaTransferWidget(QtWidgets.QWidget):
             self.calculate_lods_checkbox.isChecked(),
             self.json_checkbox.isChecked(),
         ]):
-            QtWidgets.QMessageBox.critical(
-                self,
-                "Error",
-                "No update options checked",
-                QtWidgets.QMessageBox.Ok
-            )
-
-            return
+            self.error("No update options checked")
+            return False
 
         # get path
-        input_dna = str(self.input_dna_combo.currentText())
-
-        input_dna_path = self.path_manager.get_path(input_dna)
+        input_dna_path = self.dna_file_combo.get_path()
 
         # check we have an input path
         if not input_dna_path:
-            QtWidgets.QMessageBox.critical(
-                self,
-                "Error",
-                "No input DNA path given",
-                QtWidgets.QMessageBox.Ok
-            )
-
-            return
+            self.error("No input DNA path given")
+            return False
 
         # check we have an output path
         if not self.path_manager.output_dna_path:
-            QtWidgets.QMessageBox.critical(
-                self,
-                "Error",
-                "No output DNA path given",
-                QtWidgets.QMessageBox.Ok
-            )
-
-            return
+            self.error("No output DNA path given")
+            return False
 
         # confirm with user
         confirm = QtWidgets.QMessageBox.warning(
@@ -266,7 +259,7 @@ class DnaTransferWidget(QtWidgets.QWidget):
         )
 
         if confirm is QtWidgets.QMessageBox.Cancel:
-            return None
+            return False
 
         dna_obj = DNAReader.read(input_dna_path, Layer.all)
 
@@ -297,19 +290,15 @@ class DnaTransferWidget(QtWidgets.QWidget):
         status = dna.Status.get().message
 
         if not dna.Status.isOk():
-            QtWidgets.QMessageBox.critical(
-                self,
-                "Error",
-                status,
-                QtWidgets.QMessageBox.Ok
-            )
-        else:
-            QtWidgets.QMessageBox.information(
-                self,
-                "Success",
-                "Dna file exported:\n{}".format(self.path_manager.output_dna_path),
-                QtWidgets.QMessageBox.Ok
-            )
+            self.error(QtWidgets.QMessageBox.Ok)
+            return False
+
+        QtWidgets.QMessageBox.information(
+            self,
+            "Success",
+            "Dna file exported:\n{}".format(self.path_manager.output_dna_path),
+            QtWidgets.QMessageBox.Ok
+        )
 
         return True
 
@@ -325,14 +314,6 @@ class DnaTransferWidget(QtWidgets.QWidget):
             )
         except mhCore.MHError as err:
             self.error(err)
-
-    def error(self, err):
-        QtWidgets.QMessageBox.critical(
-            self,
-            "Error",
-            str(err),
-            QtWidgets.QMessageBox.Ok
-        )
 
 
 class DnaInspectWidget(QtWidgets.QMainWindow):
@@ -504,12 +485,10 @@ Mesh count: {mesh_count}
         self.centralWidget().setLayout(self.lyt)
 
 
-class DnaBuildWidget(QtWidgets.QWidget):
+class DnaBuildWidget(DnaTab):
 
-    def __init__(self, path_manager, *args, **kwargs):
-        super(DnaBuildWidget, self).__init__(*args, **kwargs)
-
-        self.path_manager = path_manager
+    def __init__(self, path_manager, parent=None):
+        super(DnaBuildWidget, self).__init__(path_manager, parent=parent)
 
         lyt = QtWidgets.QVBoxLayout()
         self.setLayout(lyt)
@@ -520,7 +499,7 @@ class DnaBuildWidget(QtWidgets.QWidget):
         build_lyt = QtWidgets.QVBoxLayout()
         self.build_group_box.setLayout(build_lyt)
 
-        self.build_combo = QtWidgets.QComboBox()
+        self.dna_file_combo = mhWidgets.DnaPathManagerWidget(path_manager, "dna file")
 
         # TODO more options
         # self.full_rig_checkbox = QtWidgets.QCheckBox("full rig")
@@ -549,7 +528,7 @@ class DnaBuildWidget(QtWidgets.QWidget):
         self.build_btn.setFixedHeight(30)
         self.build_btn.clicked.connect(self.build_rig)
 
-        build_lyt.addWidget(self.build_combo)
+        build_lyt.addWidget(self.dna_file_combo)
         build_lyt.addWidget(self.inspect_btn)
         build_lyt.addWidget(self.partial_rig_group_box)
         build_lyt.addWidget(self.build_btn)
@@ -627,12 +606,9 @@ class DnaBuildWidget(QtWidgets.QWidget):
         lyt.addWidget(self.materials_group_box)
         lyt.addStretch()
 
-        # update drop down boxes
-        self.update_assets()
 
     def update_assets(self):
-        self.build_combo.clear()
-        self.build_combo.addItems(self.path_manager.get_dna_files())
+        self.dna_file_combo.update_assets()
         return True
 
     def set_look(self):
@@ -773,13 +749,6 @@ class DnaBuildWidget(QtWidgets.QWidget):
 
         return True
 
-    def error(self, err):
-        QtWidgets.QMessageBox.critical(
-            self,
-            "Error",
-            str(err),
-            QtWidgets.QMessageBox.Ok
-        )
 
     def prefix_meshes(self):
         cmds.undoInfo(openChunk=True)
@@ -801,9 +770,9 @@ class DnaBuildWidget(QtWidgets.QWidget):
         return True
 
     def inspect_dna(self, lod=0):
-        build_mode = str(self.build_combo.currentText())
+        dna_path = self.dna_file_combo.get_path()
 
-        dna_path = self.path_manager.get_path(build_mode)
+        # dna_path = self.path_manager.get_path(build_mode)
 
         if not os.path.exists(dna_path):
             self.error("Dna path not found: {}".format(dna_path))
@@ -821,9 +790,10 @@ class DnaBuildWidget(QtWidgets.QWidget):
             self.error(err)
             return False
 
-        build_mode = str(self.build_combo.currentText())
+        # build_mode = str(self.dna_file_combo.currentText())
+        # dna_path = self.path_manager.get_path(build_mode)
 
-        dna_path = self.path_manager.get_path(build_mode)
+        dna_path = self.dna_file_combo.get_path()
 
         if not os.path.exists(dna_path):
             self.error("Dna path not found: {}".format(dna_path))
@@ -952,20 +922,18 @@ class DnaPosesModel(QtCore.QAbstractItemModel):
         return flags
 
 
-class DnaPosesWidget(QtWidgets.QWidget):
-    def __init__(self, path_manager, *args, **kwargs):
-        super(DnaPosesWidget, self).__init__(*args, **kwargs)
+class DnaPosesWidget(DnaTab):
+    def __init__(self, path_manager, parent=None):
+        super(DnaPosesWidget, self).__init__(path_manager, parent=parent)
 
         self.dna_obj = None
         self.calib_reader = None
         self.poses = None
 
-        self.path_manager = path_manager
-
         self.create_widgets()
 
     def create_widgets(self):
-        self.input_combo = QtWidgets.QComboBox()
+        self.dna_file_combo = mhWidgets.DnaPathManagerWidget(self.path_manager, "dna file")
 
         self.load_btn = QtWidgets.QPushButton("load poses")
         self.save_btn = QtWidgets.QPushButton("save output dna")
@@ -1046,7 +1014,7 @@ class DnaPosesWidget(QtWidgets.QWidget):
 
         # general layout
         self.input_lyt = QtWidgets.QHBoxLayout()
-        self.input_lyt.addWidget(self.input_combo)
+        self.input_lyt.addWidget(self.dna_file_combo)
         self.input_lyt.addWidget(self.load_btn)
 
         self.view_btn_lyt = QtWidgets.QVBoxLayout()
@@ -1076,13 +1044,11 @@ class DnaPosesWidget(QtWidgets.QWidget):
         self.view.selectionModel().selectionChanged.connect(self.selection_changed)
 
     def update_assets(self):
-        self.input_combo.clear()
-        self.input_combo.addItems(self.path_manager.get_dna_files())
+        self.dna_file_combo.update_assets()
         return True
 
     def load(self):
-        input_dna = self.input_combo.currentText()
-        input_dna_path = self.path_manager.get_path(input_dna)
+        input_dna_path = self.dna_file_combo.get_path()
 
         # check we have an input path
         if not input_dna_path:
@@ -1112,10 +1078,7 @@ class DnaPosesWidget(QtWidgets.QWidget):
 
         self.attrs = mhBehaviour.get_joint_attrs(self.calib_reader)
         self.attr_defaults = mhBehaviour.get_joint_defaults(self.calib_reader)
-        self.poses = mhBehaviour.get_all_poses(self.calib_reader, absolute=False)
-        # self.pose_names = mhBehaviour.get_pose_names(self.calib_reader)
-        # self.pose_names = [pose.get_display_name() for pose in self.poses]
-        # self.set_pose_names(self.pose_names)
+        self.poses = mhBehaviour.get_all_poses(self.calib_reader)
 
         self.model.set_poses(self.poses)
 
@@ -1167,7 +1130,6 @@ class DnaPosesWidget(QtWidgets.QWidget):
             self.calib_reader,
             self.path_manager.output_dna_path,
             poses=self.poses,
-            poses_absolute=False
         )
 
         # confirm write
@@ -1337,24 +1299,14 @@ class DnaPosesWidget(QtWidgets.QWidget):
         return True
 
 
-class DnaQCWidget(QtWidgets.QWidget):
-    def __init__(self, path_manager, *args, **kwargs):
-        super(DnaQCWidget, self).__init__(*args, **kwargs)
+class DnaQCWidget(DnaTab):
+    def __init__(self, path_manager, parent=None):
+        super(DnaQCWidget, self).__init__(path_manager, parent=parent)
 
         self.dna_obj = None
         self.calib_reader = None
 
-        self.path_manager = path_manager
-
         self.create_widgets()
-
-    def error(self, err):
-        QtWidgets.QMessageBox.critical(
-            self,
-            "Error",
-            str(err),
-            QtWidgets.QMessageBox.Ok
-        )
 
     def create_widgets(self):
         # utils
@@ -1388,7 +1340,7 @@ class DnaQCWidget(QtWidgets.QWidget):
         # Create tech ROM
         self.tech_rom_box = QtWidgets.QGroupBox("Technical ROM")
 
-        self.dna_combo = QtWidgets.QComboBox()
+        self.dna_file_combo = mhWidgets.DnaPathManagerWidget(self.path_manager, "dna file")
         self.start_spin = mhWidgets.LabelledSpinBox("Start Frame", default=0, maximum=10000)
         self.frame_interval = mhWidgets.LabelledSpinBox("Frame Interval", default=10, maximum=100)
         self.update_timeline_checkbox = QtWidgets.QCheckBox("Update Timeline")
@@ -1408,7 +1360,7 @@ class DnaQCWidget(QtWidgets.QWidget):
         tech_rom_lyt = QtWidgets.QVBoxLayout()
         self.tech_rom_box.setLayout(tech_rom_lyt)
 
-        tech_rom_lyt.addWidget(self.dna_combo)
+        tech_rom_lyt.addWidget(self.dna_file_combo)
         tech_rom_lyt.addWidget(self.start_spin)
         tech_rom_lyt.addWidget(self.frame_interval)
         tech_rom_lyt.addWidget(self.update_timeline_checkbox)
@@ -1428,8 +1380,7 @@ class DnaQCWidget(QtWidgets.QWidget):
         lyt.addStretch()
 
     def update_assets(self):
-        self.dna_combo.clear()
-        self.dna_combo.addItems(self.path_manager.get_dna_files())
+        self.dna_file_combo.update_assets()
         return True
 
     def _reset_anim_clicked(self):
@@ -1460,8 +1411,8 @@ class DnaQCWidget(QtWidgets.QWidget):
 
         if combos:
             # get combos from dna file and map to controls
-            dna_name = str(self.dna_combo.currentText())
-            dna_path = self.path_manager.get_path(dna_name)
+            dna_path = self.dna_file_combo.get_path()
+            # dna_path = self.path_manager.get_path(dna_name)
 
             if not os.path.exists(dna_path):
                 self.error("Dna path not found: {}".format(dna_path))
@@ -1501,6 +1452,309 @@ class DnaQCWidget(QtWidgets.QWidget):
 
         return True
 
+class DnaMergeWidget(DnaTab):
+    def __init__(self, path_manager, parent=None):
+        super(DnaMergeWidget, self).__init__(path_manager, parent=parent)
+
+        self.create_widgets()
+
+    def create_widgets(self):
+        # merge
+        self.merge_group_box = QtWidgets.QGroupBox("merge")
+
+        merge_group_lyt = QtWidgets.QVBoxLayout()
+        self.merge_group_box.setLayout(merge_group_lyt)
+
+        self.src_dna_file_combo = mhWidgets.DnaPathManagerWidget(self.path_manager, "src dna file")
+
+        self.dst_dna_file_combo = mhWidgets.DnaPathManagerWidget(self.path_manager, "dst dna file")
+        self.dst_dna_file_combo.combo.setCurrentText("output")
+
+        self.joint_xforms_checkbox = QtWidgets.QCheckBox("joint xforms")
+        self.vertex_positions_checkbox = QtWidgets.QCheckBox("vertex positions")
+        self.poses_checkbox = QtWidgets.QCheckBox("poses")
+        self.calculate_lods_checkbox = QtWidgets.QCheckBox("calculate lods")
+        self.json_checkbox = QtWidgets.QCheckBox("json")
+
+        merge_group_lyt.addWidget(self.src_dna_file_combo)
+        merge_group_lyt.addWidget(self.dst_dna_file_combo)
+
+        for checkbox in [
+            self.joint_xforms_checkbox,
+            self.vertex_positions_checkbox,
+            self.poses_checkbox,
+            self.calculate_lods_checkbox,
+        ]:
+            checkbox.setChecked(True)
+            merge_group_lyt.addWidget(checkbox)
+
+        merge_group_lyt.addWidget(self.json_checkbox)
+
+        self.merge_btn = QtWidgets.QPushButton("Merge")
+        self.merge_btn.clicked.connect(self._merge_clicked)
+
+        # create layout
+        lyt = QtWidgets.QVBoxLayout()
+        self.setLayout(lyt)
+
+        lyt.addWidget(self.merge_group_box)
+        lyt.addWidget(self.merge_btn)
+
+        lyt.addStretch()
+
+    def _merge_clicked(self):
+
+        # check that at least one box is checked
+        if not any([
+            self.joint_xforms_checkbox.isChecked(),
+        ]):
+            self.error("No update options checked")
+            return False
+
+        # get path
+        src_dna_path = self.src_dna_file_combo.get_path()
+        dst_dna_path = self.dst_dna_file_combo.get_path()
+
+        # check we have paths
+        if not src_dna_path:
+            self.error("No source DNA path given")
+            return False
+
+        if not dst_dna_path:
+            self.error("No destination DNA path given")
+            return False
+
+        # confirm with user
+        confirm = QtWidgets.QMessageBox.warning(
+            self,
+            "confirm",
+            "This will merge source dna file:\n\n{}\n\nInto destination dna file: \n\n{}\n\nThe save output dna file to:\n\n{}\n\nContinue?".format(
+                src_dna_path, dst_dna_path, self.path_manager.output_dna_path
+            ),
+            QtWidgets.QMessageBox.Ok | QtWidgets.QMessageBox.Cancel
+        )
+
+        if confirm is QtWidgets.QMessageBox.Cancel:
+            return False
+
+        src_dna_obj = DNAReader.read(src_dna_path, Layer.all)
+        src_calib_reader = dnacalib2.DNACalibDNAReader(src_dna_obj._reader)
+
+        dst_dna_obj = DNAReader.read(dst_dna_path, Layer.all)
+        dst_calib_reader = dnacalib2.DNACalibDNAReader(dst_dna_obj._reader)
+
+        if self.joint_xforms_checkbox.isChecked():
+            mhJoints.merge_joint_neutral_xforms(src_calib_reader, dst_calib_reader)
+
+        if self.vertex_positions_checkbox.isChecked():
+            mhMesh.merge_meshes_positions(src_dna_obj, src_calib_reader, dst_dna_obj, dst_calib_reader)
+
+        if self.calculate_lods_checkbox.isChecked():
+            mhMesh.calculate_lods(dst_dna_obj, dst_calib_reader)
+
+        if self.poses_checkbox.isChecked():
+            poses = mhBehaviour.get_all_poses(src_calib_reader)
+
+            mhBehaviour.save_dna(
+                dst_calib_reader,
+                self.path_manager.output_dna_path,
+                validate=True,
+                as_json=self.json_checkbox.isChecked(),
+                poses=poses,
+            )
+
+        else:
+            mhUtils.save_dna(
+                dst_calib_reader,
+                self.path_manager.output_dna_path,
+                validate=False,
+                as_json=self.json_checkbox.isChecked()
+            )
+
+        status = dna.Status.get().message
+
+        if not dna.Status.isOk():
+            self.error(QtWidgets.QMessageBox.Ok)
+            return False
+
+        QtWidgets.QMessageBox.information(
+            self,
+            "Success",
+            "Dna file exported:\n{}".format(self.path_manager.output_dna_path),
+            QtWidgets.QMessageBox.Ok
+        )
+
+        return True
+
+    def update_assets(self):
+        self.src_dna_file_combo.update_assets()
+        self.dst_dna_file_combo.update_assets()
+        return True
+
+
+
+class DnaShapeBakeWidget(DnaTab):
+    def __init__(self, path_manager, parent=None):
+        super(DnaShapeBakeWidget, self).__init__(path_manager, parent=parent)
+
+        self.create_widgets()
+
+    def create_widgets(self):
+
+        self.dna_file_combo = mhWidgets.DnaPathManagerWidget(self.path_manager, "dna file")
+
+        self.calculate_psd_deltas_checkbox = QtWidgets.QCheckBox("calculate psd deltas")
+        self.connect_shapes_checkbox = QtWidgets.QCheckBox("connect shapes")
+        self.optimise_checkbox = QtWidgets.QCheckBox("optimise")
+        self.delete_unused_joints_checkbox = QtWidgets.QCheckBox("delete unused joints")
+
+        self.calculate_psd_deltas_checkbox.setChecked(True)
+        self.connect_shapes_checkbox.setChecked(True)
+        self.optimise_checkbox.setChecked(True)
+        self.delete_unused_joints_checkbox.setChecked(True)
+
+        # in betweens
+        self.in_betweens_model = mhWidgets.TupleListModel()
+        self.in_betweens_model.set_tuple_list(mhShapeBake.DEFAULT_IN_BETWEENS)
+        self.in_betweens_model.headers = ["target", "in between count"]
+
+        self.in_betweens_widget = mhWidgets.TableGroup("In Betweens")
+        self.in_betweens_widget.view.setModel(self.in_betweens_model)
+        self.in_betweens_widget.view.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
+        self.in_betweens_widget.view.verticalHeader().setVisible(False)
+
+        # additional combos
+        # TODO support more than 2 combos
+        self.combos_model = mhWidgets.TupleListModel()
+        self.combos_model.set_tuple_list(mhShapeBake.ADDITIONAL_COMBOS)
+        self.combos_model.headers = ["target A", "target B"]
+
+        self.combos_widget = mhWidgets.TableGroup("Additional Combos")
+        self.combos_widget.view.setModel(self.combos_model)
+        self.combos_widget.view.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
+        self.combos_widget.view.verticalHeader().setVisible(False)
+
+        # pose joints
+        # TODO maya node list widget subclass of TableGroup or something similar
+        self.pose_joints_model = mhWidgets.ListModel()
+        self.pose_joints_model.set_list(mhShapeBake.POSE_JOINTS)
+
+        self.pose_joints_widget = mhWidgets.TableGroup("Pose Joints")
+        self.pose_joints_widget.view.setModel(self.pose_joints_model)
+        self.pose_joints_widget.view.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
+        self.pose_joints_widget.view.horizontalHeader().setVisible(False)
+        self.pose_joints_widget.view.verticalHeader().setVisible(False)
+
+        # keep
+        self.keep_model = mhWidgets.ListModel()
+        self.keep_model.set_list(mhShapeBake.KEEP_JOINTS)
+
+        self.keep_widget = mhWidgets.TableGroup("keep")
+        self.keep_widget.view.setModel(self.keep_model)
+        self.keep_widget.view.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
+        self.keep_widget.view.horizontalHeader().setVisible(False)
+        self.keep_widget.view.verticalHeader().setVisible(False)
+
+        # delete
+        self.delete_model = mhWidgets.ListModel()
+        self.delete_model.set_list(mhShapeBake.DELETE)
+
+        self.delete_widget = mhWidgets.TableGroup("Delete")
+        self.delete_widget.view.setModel(self.delete_model)
+        self.delete_widget.view.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
+        self.delete_widget.view.horizontalHeader().setVisible(False)
+        self.delete_widget.view.verticalHeader().setVisible(False)
+
+        # scroll
+        self.scroll_widget = QtWidgets.QWidget()
+        self.scroll_area = QtWidgets.QScrollArea()
+
+        self.scroll_area.setWidget(self.scroll_widget)
+        self.scroll_area.setWidgetResizable(True)
+
+        self.scroll_widget.setSizePolicy(
+            QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Minimum,
+        )
+
+        self.scroll_lyt = QtWidgets.QVBoxLayout()
+
+        self.scroll_widget.setLayout(self.scroll_lyt)
+        self.scroll_lyt.addWidget(self.in_betweens_widget)
+        self.scroll_lyt.addWidget(self.combos_widget)
+        self.scroll_lyt.addWidget(self.pose_joints_widget)
+        self.scroll_lyt.addWidget(self.keep_widget)
+        self.scroll_lyt.addWidget(self.delete_widget)
+
+        # bake btn
+        self.bake_btn = QtWidgets.QPushButton("Bake")
+        self.bake_btn.clicked.connect(self._bake_clicked)
+
+        # create layout
+        lyt = QtWidgets.QVBoxLayout()
+        self.setLayout(lyt)
+
+        lyt.addWidget(self.dna_file_combo)
+        lyt.addWidget(self.scroll_area)
+        # lyt.addWidget(self.in_betweens_widget)
+        # lyt.addWidget(self.combos_widget)
+        # lyt.addWidget(self.pose_joints_widget)
+        lyt.addWidget(self.calculate_psd_deltas_checkbox)
+        lyt.addWidget(self.connect_shapes_checkbox)
+        lyt.addWidget(self.optimise_checkbox)
+        lyt.addWidget(self.delete_unused_joints_checkbox)
+        lyt.addWidget(self.bake_btn)
+
+        # lyt.addStretch()
+
+    def _bake_clicked(self):
+
+        # get path
+        dna_path = self.dna_file_combo.get_path()
+
+        # check we have paths
+        if not dna_path:
+            self.error("No source DNA path given")
+            return False
+
+        # confirm with user
+        confirm = QtWidgets.QMessageBox.warning(
+            self,
+            "confirm",
+            "This will bake rig in the scene to shapes as defined by dna file:\n\n{}\n\nContinue?".format(
+                dna_path
+            ),
+            QtWidgets.QMessageBox.Ok | QtWidgets.QMessageBox.Cancel
+        )
+
+        if confirm is QtWidgets.QMessageBox.Cancel:
+            return False
+
+        mhShapeBake.bake_shapes_from_dna_v2(
+            dna_path,
+            mesh="head_lod0_mesh", # TODO widget
+            calculate_psd_deltas=self.calculate_psd_deltas_checkbox.isChecked(),
+            connect_shapes=self.connect_shapes_checkbox.isChecked(),
+            optimise=self.optimise_checkbox.isChecked(),
+            expressions_node="CTRL_expressions",
+            in_betweens={a:b for a, b in self.in_betweens_model.tuple_list},
+            pose_joints=self.pose_joints_model.list,
+            keep_joints=self.keep_model.list,
+            additional_combos=self.combos_model.tuple_list,
+        )
+
+        QtWidgets.QMessageBox.information(
+            self,
+            "Success",
+            "Shape bake complete",
+            QtWidgets.QMessageBox.Ok
+        )
+
+        return True
+
+    def update_assets(self):
+        self.dna_file_combo.update_assets()
+        return True
+
 
 class DnaModWidget(
     QtWidgets.QMainWindow
@@ -1530,7 +1784,6 @@ class DnaModWidget(
         self.dna_assets_dir_widget.path = mhSrc.get_dna_data_dir()
 
         self.dna_files_dir_widget = mhWidgets.DirWidget("Dna Files Dir")
-        # self.dna_files_dir_widget.path = os.path.join()
 
         self.input_file_widget = mhWidgets.PathOpenWidget("Input DNA")
         self.output_file_widget = mhWidgets.PathSaveWidget("Output DNA")
@@ -1551,12 +1804,16 @@ class DnaModWidget(
 
         self.build_widget = DnaBuildWidget(self.path_manager)
         self.transfer_widget = DnaTransferWidget(self.path_manager)
+        self.merge_widget = DnaMergeWidget(self.path_manager)
         self.poses_widget = DnaPosesWidget(self.path_manager)
+        self.shape_bake_widget = DnaShapeBakeWidget(self.path_manager)
         self.qc_widget = DnaQCWidget(self.path_manager)
 
         self.tabs.addTab(self.build_widget, "build")
         self.tabs.addTab(self.transfer_widget, "transfer")
+        self.tabs.addTab(self.merge_widget, "merge")
         self.tabs.addTab(self.poses_widget, "edit poses")
+        self.tabs.addTab(self.shape_bake_widget, "bake shapes")
         self.tabs.addTab(self.qc_widget, "QC")
 
         lyt.addWidget(self.tabs)
@@ -1573,6 +1830,7 @@ class DnaModWidget(
         self.build_widget.update_assets()
         self.transfer_widget.update_assets()
         self.poses_widget.update_assets()
+        self.shape_bake_widget.update_assets()
         self.qc_widget.update_assets()
 
         return True

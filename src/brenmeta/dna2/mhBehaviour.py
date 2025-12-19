@@ -79,7 +79,7 @@ def get_joint_defaults(reader):
     return joints_attr_defaults
 
 
-def get_all_poses(reader, absolute=True, verbose=False):
+def get_all_poses(reader, verbose=False):
     """
 
     """
@@ -125,15 +125,10 @@ def get_all_poses(reader, absolute=True, verbose=False):
                 pose.deltas[attr] = value
                 pose.defaults[attr] = joints_attr_defaults[attr]
 
-                # if absolute and attr in joints_attr_defaults:
-                #     value += joints_attr_defaults[attr]
-                #
-                # poses[input_index].values[attr] = value
-
     return poses
 
 
-def set_all_poses(reader, writer, pose_data, from_absolute=True):
+def set_all_poses(reader, writer, pose_data):
     # validate data
     if len(pose_data) != reader.getJointColumnCount():
         LOG.warning("Joint column count ({}) != pose_data length ({})".format(
@@ -172,9 +167,6 @@ def set_all_poses(reader, writer, pose_data, from_absolute=True):
                     value = pose.deltas[attr]
                 else:
                     value = 0.0 # TODO use existing value
-
-                # if from_absolute and attr in joints_attr_defaults:
-                #     value -= joints_attr_defaults[attr]
 
                 output_values.append(value)
 
@@ -250,7 +242,7 @@ def get_psd_indices(reader):
     return psd_indices
 
 
-def get_psd_poses(reader, poses):
+def get_psd_poses(reader, poses, override_name=True):
     """Get a list of PSDPose objects referencing given Pose objects
     """
     psd_indices = get_psd_indices(reader)
@@ -289,15 +281,17 @@ def get_psd_poses(reader, poses):
 
     # check psd names
     # if dna file does not have blendshapes to get names from
+    # or if we choose to override the existing name
+    # (for example because metahuman combo names aren't always consistent)
     # this will give it a suitable name
     for psd_pose in psd_poses.values():
-        if not psd_pose.pose.name:
+        if not psd_pose.pose.name or override_name:
             psd_pose.update_name()
 
     return psd_poses
 
 
-def save_dna(reader, path, validate=True, as_json=False, poses=None, poses_absolute=False):
+def save_dna(reader, path, validate=True, as_json=False, poses=None):
     stream = dna.FileStream(path, dna.FileStream.AccessMode_Write, dna.FileStream.OpenMode_Binary)
 
     if as_json:
@@ -308,7 +302,7 @@ def save_dna(reader, path, validate=True, as_json=False, poses=None, poses_absol
     writer.setFrom(reader)
 
     if poses:
-        set_all_poses(reader, writer, poses, from_absolute=poses_absolute)
+        set_all_poses(reader, writer, poses)
 
     writer.write()
 

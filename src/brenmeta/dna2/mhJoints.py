@@ -4,6 +4,9 @@ import dnacalib2
 from maya import cmds
 from maya.api import OpenMaya
 
+from brenmeta.core import mhCore
+
+LOG = mhCore.get_basic_logger(__name__)
 
 def get_joint_index(reader, joint_name):
     for i in range(reader.getJointCount()):
@@ -18,7 +21,7 @@ def reset_scene_joint_xforms(reader, err=False):
 
         if not cmds.objExists(joint):
             if err:
-                raise Exception("Joint not found: {}".format(joint))
+                raise mhCore.MHError("Joint not found: {}".format(joint))
 
         translation = reader.getNeutralJointTranslation(i)
 
@@ -40,7 +43,7 @@ def update_joint_neutral_xforms(calib_reader, verbose=False, err=False):
             msg = "Joint not found: {}".format(joint_name)
 
             if err:
-                raise Exception(msg)
+                raise mhCore.MHError(msg)
             else:
                 cmds.warning(msg)
 
@@ -48,7 +51,7 @@ def update_joint_neutral_xforms(calib_reader, verbose=False, err=False):
             rotation = calib_reader.getNeutralJointRotation(i)
         else:
             if verbose:
-                print("Updating joint: {}".format(joint_name))
+                LOG.info("Updating joint: {}".format(joint_name))
 
             translation = cmds.xform(joint_name, query=True, translation=True)
             rotation = cmds.joint(joint_name, query=True, orientation=True)
@@ -77,7 +80,7 @@ def update_joint_list(calib_reader, verbose=False):
 
         if not cmds.objExists(joint_name):
             if verbose:
-                print("Removing joint from dna: {}".format(joint_name))
+                LOG.info("Removing joint from dna: {}".format(joint_name))
 
             indices_to_remove.append(i)
 
@@ -88,5 +91,39 @@ def update_joint_list(calib_reader, verbose=False):
         commands.add(command)
 
     commands.run(calib_reader)
+
+    return True
+
+
+def merge_joint_neutral_xforms(src_calib_reader, dst_calib_reader):
+    joint_translations = []
+    joint_rotations = []
+
+    for dst_index in range(dst_calib_reader.getJointCount()):
+        joint_name = dst_calib_reader.getJointName(dst_index)
+
+        src_index = get_joint_index(src_calib_reader, joint_name)
+
+        if src_index is None:
+            LOG.warning("joint not found in src reader: {}".format(joint_name))
+
+            translation = dst_calib_reader.getNeutralJointTranslation(dst_index)
+            rotation = dst_calib_reader.getNeutralJointRotation(dst_index)
+        else:
+            LOG.info("Updating joint: {}".format(joint_name))
+
+            translation = src_calib_reader.getNeutralJointTranslation(src_index)
+            rotation = src_calib_reader.getNeutralJointRotation(src_index)
+
+        joint_translations.append(translation)
+        joint_rotations.append(rotation)
+
+    translations_cmd = dnacalib2.SetNeutralJointTranslationsCommand(joint_translations)
+    rotations_cmd = dnacalib2.SetNeutralJointRotationsCommand(joint_rotations)
+
+    commands = dnacalib2.CommandSequence()
+    commands.add(translations_cmd)
+    commands.add(rotations_cmd)
+    commands.run(dst_calib_reader)
 
     return True

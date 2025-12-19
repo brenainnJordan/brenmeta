@@ -7,6 +7,7 @@ from maya.api import OpenMaya
 from Qt import QtCore
 from Qt import QtWidgets
 
+from brenmeta.core import mhCore
 
 class LabelledSpinBox(QtWidgets.QWidget):
     SPIN_BOX_CLS = QtWidgets.QSpinBox
@@ -303,6 +304,42 @@ class DnaPathManager(object):
         return dna_path
 
 
+class DnaPathManagerWidget(QtWidgets.QGroupBox):
+    def __init__(self, path_manager, name, parent=None):
+        super(DnaPathManagerWidget, self).__init__(name, parent=parent)
+        self.path_manager = path_manager
+
+        self.combo = QtWidgets.QComboBox()
+        self.file_edit = None
+
+        self.setLayout(QtWidgets.QVBoxLayout())
+        self.layout().setContentsMargins(0,0,0,0)
+        self.layout().addWidget(self.combo)
+
+        self.update_assets()
+        self.combo.currentIndexChanged.connect(self._combo_changed)
+
+    def _combo_changed(self):
+        if self.combo.currentText() == "other" and self.layout().count() == 1:
+            self.file_edit = PathOpenWidget("dna file")
+            self.layout().addWidget(self.file_edit)
+        elif self.layout().count() == 2:
+            self.layout().removeWidget(self.file_edit)
+            self.file_edit = None
+
+    def update_assets(self):
+        self.combo.clear()
+        self.combo.addItems(self.path_manager.get_dna_files())
+        self.combo.addItem("other")
+        return True
+
+    def get_path(self):
+        if self.combo.currentText() == "other":
+            return self.file_edit.path
+        else:
+            return self.path_manager.get_path(self.combo.currentText())
+
+
 class DnaTransferMeshWidget(QtWidgets.QWidget):
     def __init__(self, label, src, dst, *args, **kwargs):
         super(DnaTransferMeshWidget, self).__init__(*args, **kwargs)
@@ -362,3 +399,241 @@ class RepathWidget(QtWidgets.QWidget):
         )
 
         return True
+
+
+class ListModel(QtCore.QAbstractTableModel):
+    """
+    A Qt model that exposes a list as an editable table.
+    """
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._list = None
+        self._list_type = None
+
+    @property
+    def list(self):
+        return self._list
+
+    def set_list(self, list_data):
+        self.beginResetModel()
+        # Infer type from first items
+        self._list_type = type(list_data[0])
+        self._list = list_data
+        self.endResetModel()
+
+    @property
+    def list_type(self):
+        return self._list_type
+
+    def rowCount(self, parent=QtCore.QModelIndex()):
+        return len(self.list)
+
+    def columnCount(self, parent=QtCore.QModelIndex()):
+        return 1
+
+    def data(self, index, role=QtCore.Qt.DisplayRole):
+        if not index.isValid() or not self.list:
+            return None
+
+        if role in (QtCore.Qt.DisplayRole, QtCore.Qt.EditRole):
+            return self.list[index.row()]
+
+        return None
+
+    def flags(self, index):
+        if not index.isValid():
+            return QtCore.Qt.NoItemFlags
+
+        return QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEnabled | QtCore.Qt.ItemIsEditable
+
+    def setData(self, index, value, role=QtCore.Qt.EditRole):
+        if role != QtCore.Qt.EditRole or not index.isValid() or not self.list:
+            return False
+
+        # type coercion
+        try:
+            value = self.list_type(value)
+        except Exception:
+            pass
+
+        self.list[index.row()] = value
+
+        self.dataChanged.emit(index, index, [QtCore.Qt.DisplayRole, QtCore.Qt.EditRole])
+        return True
+
+    def insertRows(self, row, count, parent=QtCore.QModelIndex()):
+        if not self.list:
+            return False
+
+        self.beginInsertRows(QtCore.QModelIndex(), row, row + count - 1)
+        for _ in range(count):
+            self.list.insert(row, self.list_type())
+        self.endInsertRows()
+
+        return True
+
+    def removeRows(self, row, count, parent=QtCore.QModelIndex()):
+        if not self.list:
+            return False
+
+        self.beginRemoveRows(QtCore.QModelIndex(), row, row + count - 1)
+        for _ in range(count):
+            del self.list[row]
+        self.endRemoveRows()
+        return True
+
+
+class TupleListModel(QtCore.QAbstractTableModel):
+    """
+    A Qt model that exposes a list of tuples as an editable table.
+    Each tuple becomes a row; each tuple element becomes a column.
+    """
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._tuple_list = None
+        self._headers = None
+        self._column_types = None
+        self._column_count = 0
+
+    @property
+    def tuple_list(self):
+        return self._tuple_list
+
+    def set_tuple_list(self, tuple_list):
+        self.beginResetModel()
+        # Infer column count and type from first tuple
+        self._column_count = len(tuple_list[0]) if tuple_list else 0
+        self._column_types = [type(i) for i in tuple_list[0]]
+        self._tuple_list = tuple_list
+        self.endResetModel()
+
+    @property
+    def column_types(self):
+        return self._column_types
+
+    @property
+    def headers(self):
+        return self._headers
+
+    @headers.setter
+    def headers(self, value):
+        mhCore.validate_arg("headers", value, list)
+        self.beginResetModel()
+        self._headers = value
+        self.endResetModel()
+
+    def rowCount(self, parent=QtCore.QModelIndex()):
+        return len(self.tuple_list)
+
+    def columnCount(self, parent=QtCore.QModelIndex()):
+        return self._column_count
+
+    def data(self, index, role=QtCore.Qt.DisplayRole):
+        if not index.isValid() or not self.tuple_list:
+            return None
+
+        row, col = index.row(), index.column()
+        value = self.tuple_list[row][col]
+
+        if role in (QtCore.Qt.DisplayRole, QtCore.Qt.EditRole):
+            return value
+
+        return None
+
+    def flags(self, index):
+        if not index.isValid():
+            return QtCore.Qt.NoItemFlags
+
+        return QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEnabled | QtCore.Qt.ItemIsEditable
+
+    def setData(self, index, value, role=QtCore.Qt.EditRole):
+        if role != QtCore.Qt.EditRole or not index.isValid() or not self.tuple_list:
+            return False
+
+        row, column = index.row(), index.column()
+        old_tuple = self.tuple_list[row]
+
+        # type coercion
+        try:
+            value = self.column_types[column](value)
+        except Exception:
+            pass
+
+        # Rebuild tuple (since tuples are immutable)
+        new_tuple = list(old_tuple)
+        new_tuple[column] = value
+        self.tuple_list[row] = tuple(new_tuple)
+
+        self.dataChanged.emit(index, index, [QtCore.Qt.DisplayRole, QtCore.Qt.EditRole])
+        return True
+
+    def insertRows(self, row, count, parent=QtCore.QModelIndex()):
+        if not self.tuple_list:
+            return False
+
+        self.beginInsertRows(QtCore.QModelIndex(), row, row + count - 1)
+        for _ in range(count):
+            self.tuple_list.insert(row, tuple(column_type() for column_type in self.column_types))
+        self.endInsertRows()
+
+        return True
+
+    def removeRows(self, row, count, parent=QtCore.QModelIndex()):
+        if not self.tuple_list:
+            return False
+
+        self.beginRemoveRows(QtCore.QModelIndex(), row, row + count - 1)
+        for _ in range(count):
+            del self.tuple_list[row]
+        self.endRemoveRows()
+        return True
+
+    def headerData(self, section, orientation, role=QtCore.Qt.DisplayRole):
+        if role != QtCore.Qt.DisplayRole:
+            return None
+
+        if orientation == QtCore.Qt.Horizontal:
+            if self.headers:
+                if section < len(self.headers):
+                    return self.headers[section]
+
+            return f"Col {section}"
+        else:
+            return f"{section}"
+
+
+class TableGroup(QtWidgets.QGroupBox):
+    # TODO import/export data
+    def __init__(self, parent=None):
+        super(TableGroup, self).__init__(parent)
+
+        self.view = QtWidgets.QTableView()
+
+        self.add_btn = QtWidgets.QPushButton("+")
+        self.add_btn.clicked.connect(self._add_clicked)
+
+        self.rem_btn = QtWidgets.QPushButton("-")
+        self.rem_btn.clicked.connect(self._rem_clicked)
+
+        self.btn_lyt = QtWidgets.QHBoxLayout()
+        self.btn_lyt.addWidget(self.add_btn)
+        self.btn_lyt.addWidget(self.rem_btn)
+        self.btn_lyt.addStretch()
+
+        self.setLayout(QtWidgets.QVBoxLayout())
+        self.layout().addWidget(self.view)
+        self.layout().addLayout(self.btn_lyt)
+
+    def _add_clicked(self):
+        if not self.view.model():
+            return
+
+        self.view.model().insertRows(self.view.model().rowCount(), 1)
+
+    def _rem_clicked(self):
+        if not self.view.model():
+            return
+
+        self.view.model().removeRows(self.view.currentIndex().row(),1)
