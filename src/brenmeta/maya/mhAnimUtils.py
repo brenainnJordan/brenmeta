@@ -3,31 +3,34 @@ from maya import cmds
 
 from brenmeta.core import mhCore
 from brenmeta.maya import mhMayaUtils
+from brenmeta.maya import mhBlendshape
 
 LOG = mhCore.get_basic_logger(__name__)
 
 ANNOTATION_NAME = "MH_annotation"
+SCULPT_ANNOTATION = "sculpt_annotation"
+ORIGINAL_ANNOTATION = "original_annotation"
 
 COMBO_GROUPS = [
-            ("browDownL", "CTRL_L_brow_down.translateY", 1.0),
-            ("browDownR", "CTRL_R_brow_down.translateY", 1.0),
-            ("jawOpen", "CTRL_C_jaw.translateY", 1.0),
-            ("jawLeft", "CTRL_C_jaw.translateX", -1.0),
-            ("jawRight", "CTRL_C_jaw.translateX", 1.0),
-            ("eyeBlinkL", "CTRL_L_eye_blink.translateY", 1.0),
-            ("eyeBlinkR", "CTRL_R_eye_blink.translateY", 1.0),
-            ("mouthCornerPullL", "CTRL_L_mouth_cornerPull.translateY", 1.0),
-            ("mouthCornerPullR", "CTRL_R_mouth_cornerPull.translateY", 1.0),
-            ("mouthStretchL", "CTRL_L_mouth_stretch.translateY", 1.0),
-            ("mouthStretchR", "CTRL_R_mouth_stretch.translateY", 1.0),
-            ("mouthUpperLipRaiseL", "CTRL_L_mouth_upperLipRaise.translateY", 1.0),
-            ("mouthUpperLipRaiseR", "CTRL_R_mouth_upperLipRaise.translateY", 1.0),
-            ("mouthDimpleL", "CTRL_L_mouth_dimple.translateY", 1.0),
-            ("mouthDimpleR", "CTRL_R_mouth_dimple.translateY", 1.0),
-        ]
+    ("browDownL", "CTRL_L_brow_down.translateY", 1.0),
+    ("browDownR", "CTRL_R_brow_down.translateY", 1.0),
+    ("jawOpen", "CTRL_C_jaw.translateY", 1.0),
+    ("jawLeft", "CTRL_C_jaw.translateX", -1.0),
+    ("jawRight", "CTRL_C_jaw.translateX", 1.0),
+    ("eyeBlinkL", "CTRL_L_eye_blink.translateY", 1.0),
+    ("eyeBlinkR", "CTRL_R_eye_blink.translateY", 1.0),
+    ("mouthCornerPullL", "CTRL_L_mouth_cornerPull.translateY", 1.0),
+    ("mouthCornerPullR", "CTRL_R_mouth_cornerPull.translateY", 1.0),
+    ("mouthStretchL", "CTRL_L_mouth_stretch.translateY", 1.0),
+    ("mouthStretchR", "CTRL_R_mouth_stretch.translateY", 1.0),
+    ("mouthUpperLipRaiseL", "CTRL_L_mouth_upperLipRaise.translateY", 1.0),
+    ("mouthUpperLipRaiseR", "CTRL_R_mouth_upperLipRaise.translateY", 1.0),
+    ("mouthDimpleL", "CTRL_L_mouth_dimple.translateY", 1.0),
+    ("mouthDimpleR", "CTRL_R_mouth_dimple.translateY", 1.0),
+]
 
 
-def create_type_text(name, text):
+def create_type_text(name, text, font_size=2):
     type_node = cmds.createNode("type", name="{}_type".format(name))
     transform = cmds.createNode("transform", name=name)
     shape = cmds.createNode("mesh", name="{}Shape".format(name), parent=transform)
@@ -47,6 +50,10 @@ def create_type_text(name, text):
         cmds.setAttr(
             "{}.textInput".format(type_node), "", type="string"
         )
+
+    cmds.setAttr(
+        "{}.fontSize".format(type_node), font_size
+    )
 
     return type_node, transform, shape
 
@@ -134,9 +141,10 @@ def reset_control_board_anim(namespace=None):
     cmds.cutKey(controls, clear=True)
 
     for control in controls:
-        cmds.xform(control, translation=(0,0,0))
+        cmds.xform(control, translation=(0, 0, 0))
 
     return True
+
 
 def map_expressions_to_controls(tongue=False, eyelashes=False, head_turn=False, namespace=None):
     """Parse expression set driven keys and return dict mapping to driver controls and values
@@ -225,7 +233,6 @@ def map_expressions_to_controls(tongue=False, eyelashes=False, head_turn=False, 
 
 
 def map_psds_to_controls(expression_mapping, psd_poses):
-
     expression_mapping = {data[0]: data[1] for data in expression_mapping}
 
     psd_mapping = []
@@ -247,7 +254,7 @@ def map_psds_to_controls(expression_mapping, psd_poses):
     return psd_mapping
 
 
-def group_mapped_combos(mapping, combo_groups):#, namespace=None, debug=True):
+def group_mapped_combos(mapping, combo_groups):  # , namespace=None, debug=True):
     """Group combos that have been mapped to control attributes by if they contain one of the attributes in combo_groups
 
     Prioritised by attr order defined by combo_groups
@@ -309,13 +316,13 @@ def group_additional_combos(grouped_mapping, ungrouped_mapping):
     return grouped_mapping, amended_ungrouped_mapping
 
 
-def animate_attr(attr, value, frame, interval):
-    node, attr = attr.split(".")
+def animate_attr(node, attr, value, frame, interval, hold, default=0.0):
+    # node, attr = attr.split(".")
 
     LOG.info("    {}.{} {}".format(node, attr, value))
 
     cmds.setKeyframe(
-        node, at=attr, t=frame, value=0, outTangentType="linear", inTangentType="linear",
+        node, at=attr, t=frame, value=default, outTangentType="linear", inTangentType="linear",
     )
 
     frame += interval
@@ -324,13 +331,69 @@ def animate_attr(attr, value, frame, interval):
         node, at=attr, t=frame, value=value, outTangentType="linear", inTangentType="linear",
     )
 
+    if hold:
+        frame += interval * hold
+
+        cmds.setKeyframe(
+            node, at=attr, t=frame, value=value, outTangentType="linear", inTangentType="linear",
+        )
+
     frame += interval
 
     cmds.setKeyframe(
-        node, at=attr, t=frame, value=0, outTangentType="linear", inTangentType="linear",
+        node, at=attr, t=frame, value=default, outTangentType="linear", inTangentType="linear",
     )
 
     return frame
+
+
+def animate_sculpt(sculpt, frame, interval, annotate=True):
+    """blend to sculpt, hold
+    """
+
+    bs_nodes = mhBlendshape.find_mesh_blendshape_nodes(sculpt)
+
+    if bs_nodes:
+        LOG.info("Keying sculpt: {}".format(sculpt))
+
+        for bs_node in bs_nodes:
+            cmds.setKeyframe(
+                bs_node, at="envelope", t=frame + (interval * 2),
+                value=0.0, outTangentType="linear", inTangentType="linear",
+            )
+
+            cmds.setKeyframe(
+                bs_node, at="envelope", t=frame + (interval * 3),
+                value=1.0, outTangentType="linear", inTangentType="linear",
+            )
+
+        if annotate:
+            animate_attr(
+                ORIGINAL_ANNOTATION, "visibility", 1.0, frame, interval, 1
+            )
+
+            animate_attr(
+                SCULPT_ANNOTATION, "visibility", 1.0, frame + (interval * 2), interval, 1
+            )
+
+        return 3
+    else:
+        return 0
+
+
+def reset_sculpts_anim(sculpts):
+    for sculpt in sculpts:
+        bs_nodes = mhBlendshape.find_mesh_blendshape_nodes(sculpt)
+
+        if not bs_nodes:
+            continue
+
+        cmds.cutKey(bs_nodes, clear=True)
+
+        for bs_node in bs_nodes:
+            cmds.setAttr("{}.envelope".format(bs_node), 1.0)
+
+    return True
 
 
 def animate_ctrl_rom(
@@ -345,9 +408,9 @@ def animate_ctrl_rom(
         annotate=True,
         namespace=None,
         combo_groups=COMBO_GROUPS,
+        sculpts=None,
         debug=True,
 ):
-
     mapping = map_expressions_to_controls(
         tongue=True,
         eyelashes=eyelashes,
@@ -360,6 +423,17 @@ def animate_ctrl_rom(
         else:
             raise mhCore.MHError("combo_mapping must be specified")
 
+    if sculpts:
+        # filter mapping if present in sculpts list
+        mapping = [
+            (exp_attr, data) for exp_attr, data in mapping if exp_attr in sculpts
+        ]
+
+    if sculpts and annotate:
+        # create sculpt annotations
+        create_type_text(SCULPT_ANNOTATION, "sculpt")
+        create_type_text(ORIGINAL_ANNOTATION, "original")
+
     # organise combos
     if namespace:
         combo_groups = [
@@ -368,7 +442,7 @@ def animate_ctrl_rom(
         ]
 
     grouped_mapping, ungrouped_mapping = group_mapped_combos(
-        mapping, combo_groups, #namespace=namespace, debug=True
+        mapping, combo_groups,  # namespace=namespace, debug=True
     )
 
     grouped_mapping, ungrouped_mapping = group_additional_combos(grouped_mapping, ungrouped_mapping)
@@ -403,7 +477,7 @@ def animate_ctrl_rom(
             # either store the exp frame for later if this is a left expression
             # or retrieve the left frame if it's a right expression
             if exp_attr.endswith("R"):
-                l_exp_attr = exp_attr[:-1]+"L"
+                l_exp_attr = exp_attr[:-1] + "L"
                 if l_exp_attr in left_frames:
                     exp_frame = left_frames[l_exp_attr]
 
@@ -416,15 +490,26 @@ def animate_ctrl_rom(
 
         annotation_data[exp_frame] += "{}\n".format(exp_attr)
 
+        # check if there's a sculpt for this exp
+        hold = 0
+
+        if sculpts:
+            if exp_attr in sculpts:
+                hold = animate_sculpt(
+                    exp_attr, exp_frame, interval, annotate=annotate
+                )
+
         # create keyframes and append annotation
         # TODO check keyable
         if isinstance(data, list):
             for attr, value in data:
-                next_frame = animate_attr(attr, value, exp_frame, interval)
+                node, attr = attr.split(".")
+                next_frame = animate_attr(node, attr, value, exp_frame, interval, hold)
                 annotation_data[exp_frame] += "    {}\n".format(attr)
         else:
             attr, value = data
-            next_frame = animate_attr(attr, value, exp_frame, interval)
+            node, attr = attr.split(".")
+            next_frame = animate_attr(node, attr, value, exp_frame, interval, hold)
             annotation_data[exp_frame] += "    {}\n".format(attr)
 
         # continue to next expression
@@ -440,6 +525,9 @@ def animate_ctrl_rom(
         left_group_frames = {}
 
         for group, combo_ctrl_attr, combo_value in combo_groups:
+            if group not in grouped_mapping:
+                continue
+
             if combine_lr:
                 if group.endswith("L"):
                     left_group_frames[group] = [frame]
@@ -481,7 +569,7 @@ def animate_ctrl_rom(
                 # that have both left and right grouped expressions
                 if combine_lr:
                     if exp_attr.endswith("R"):
-                        l_exp_attr = exp_attr[:-1]+"L"
+                        l_exp_attr = exp_attr[:-1] + "L"
                         if l_exp_attr in left_frames:
                             exp_frame = left_frames[l_exp_attr]
 
@@ -493,6 +581,16 @@ def animate_ctrl_rom(
 
                 annotation_data[exp_frame] += "{}\n".format(exp_attr)
 
+                # check if there's a sculpt for this exp
+                hold = 0
+
+                if sculpts:
+                    if exp_attr in sculpts:
+                        hold = animate_sculpt(
+                            exp_attr, exp_frame, interval, annotate=annotate
+                        )
+
+                # animate attrs
                 for attr, value in pose_data:
                     annotation_data[exp_frame] += "    {}\n".format(attr)
 
@@ -507,7 +605,8 @@ def animate_ctrl_rom(
                             continue
 
                     # animate attr
-                    next_frame = animate_attr(attr, value, exp_frame, interval)
+                    node, attr = attr.split(".")
+                    next_frame = animate_attr(node, attr, value, exp_frame, interval, hold)
 
                 if not (combine_lr and exp_attr.endswith("R")):
                     frame = next_frame
@@ -552,7 +651,8 @@ def animate_ctrl_rom(
                 l_frame += interval
 
                 cmds.setKeyframe(
-                    r_combo_ctrl, at=r_combo_attr, t=l_frame, value=r_combo_value, outTangentType="linear", inTangentType="linear",
+                    r_combo_ctrl, at=r_combo_attr, t=l_frame, value=r_combo_value, outTangentType="linear",
+                    inTangentType="linear",
                 )
 
                 l_frame += interval
@@ -576,6 +676,16 @@ def animate_ctrl_rom(
 
                     annotation_data[exp_frame] += "{}\n".format(exp_attr)
 
+                    # check if there's a sculpt for this exp
+                    hold = 0
+
+                    if sculpts:
+                        if exp_attr in sculpts:
+                            hold = animate_sculpt(
+                                exp_attr, exp_frame, interval, annotate=annotate
+                            )
+
+                    # animate attrs
                     for attr, value in pose_data:
                         annotation_data[exp_frame] += "    {}\n".format(attr)
 
@@ -584,17 +694,19 @@ def animate_ctrl_rom(
                             continue
 
                         # animate attr
-                        next_frame = animate_attr(attr, value, exp_frame, interval)
+                        node, attr = attr.split(".")
+                        next_frame = animate_attr(node, attr, value, exp_frame, interval, hold)
 
                 # reset primary combo attr
                 cmds.setKeyframe(
-                    r_combo_ctrl, at=r_combo_attr, t=l_end_frame, value=r_combo_value, outTangentType="linear", inTangentType="linear",
+                    r_combo_ctrl, at=r_combo_attr, t=l_end_frame, value=r_combo_value, outTangentType="linear",
+                    inTangentType="linear",
                 )
 
                 cmds.setKeyframe(
-                    r_combo_ctrl, at=r_combo_attr, t=l_end_frame + interval, value=0, outTangentType="linear", inTangentType="linear",
+                    r_combo_ctrl, at=r_combo_attr, t=l_end_frame + interval, value=0, outTangentType="linear",
+                    inTangentType="linear",
                 )
-
 
     if update_timeline:
         cmds.playbackOptions(animationStartTime=start_frame)

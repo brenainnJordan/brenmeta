@@ -1347,6 +1347,7 @@ class DnaQCWidget(DnaTab):
         self.combos_checkbox = QtWidgets.QCheckBox("Combos")
         self.combine_lr_checkbox = QtWidgets.QCheckBox("Combine LR")
         self.annotate_checkbox = QtWidgets.QCheckBox("Annotate")
+        self.selected_sculpts_checkbox = QtWidgets.QCheckBox("Selected Sculpts")
         self.namespace_edit = mhWidgets.LabelledNamespaceLineEdit("Namespace")
 
         self.update_timeline_checkbox.setChecked(True)
@@ -1354,7 +1355,7 @@ class DnaQCWidget(DnaTab):
         self.combine_lr_checkbox.setChecked(True)
         self.annotate_checkbox.setChecked(True)
 
-        self.create_btn = QtWidgets.QPushButton("Create ROM")
+        self.create_btn = QtWidgets.QPushButton("Create Tech ROM")
         self.create_btn.clicked.connect(self._create_rom_clicked)
 
         tech_rom_lyt = QtWidgets.QVBoxLayout()
@@ -1367,6 +1368,7 @@ class DnaQCWidget(DnaTab):
         tech_rom_lyt.addWidget(self.combos_checkbox)
         tech_rom_lyt.addWidget(self.combine_lr_checkbox)
         tech_rom_lyt.addWidget(self.annotate_checkbox)
+        tech_rom_lyt.addWidget(self.selected_sculpts_checkbox)
         tech_rom_lyt.addWidget(self.namespace_edit)
         tech_rom_lyt.addWidget(self.create_btn)
 
@@ -1404,15 +1406,20 @@ class DnaQCWidget(DnaTab):
         annotate = self.annotate_checkbox.isChecked()
         combine_lr = self.combine_lr_checkbox.isChecked()
         combos = self.combos_checkbox.isChecked()
+        selected_sculpts = self.selected_sculpts_checkbox.isChecked()
         start_frame = self.start_spin.spin_box.value()
         interval = self.frame_interval.spin_box.value()
         tongue = False
         eyelashes = False
 
+        if selected_sculpts:
+            sculpts = cmds.ls(sl=True, type="transform")
+        else:
+            sculpts = None
+
         if combos:
             # get combos from dna file and map to controls
             dna_path = self.dna_file_combo.get_path()
-            # dna_path = self.path_manager.get_path(dna_name)
 
             if not os.path.exists(dna_path):
                 self.error("Dna path not found: {}".format(dna_path))
@@ -1432,10 +1439,18 @@ class DnaQCWidget(DnaTab):
             combo_mapping = None
 
         # animate controls
-        if cmds.objExists(mhAnimUtils.ANNOTATION_NAME):
-            cmds.delete(mhAnimUtils.ANNOTATION_NAME)
+        for node in [
+            mhAnimUtils.ANNOTATION_NAME,
+            mhAnimUtils.ORIGINAL_ANNOTATION,
+            mhAnimUtils.SCULPT_ANNOTATION,
+        ]:
+            if cmds.objExists(node):
+                cmds.delete(node)
 
         mhAnimUtils.reset_control_board_anim(namespace=namespace)
+
+        if sculpts:
+            mhAnimUtils.reset_sculpts_anim(sculpts)
 
         mhAnimUtils.animate_ctrl_rom(
             combos=combos,
@@ -1448,9 +1463,11 @@ class DnaQCWidget(DnaTab):
             tongue=tongue,
             eyelashes=eyelashes,
             combo_mapping=combo_mapping,
+            sculpts=sculpts,
         )
 
         return True
+
 
 class DnaMergeWidget(DnaTab):
     def __init__(self, path_manager, parent=None):

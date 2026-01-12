@@ -293,6 +293,7 @@ def bake_shapes_from_poses(
         optimise=True,
         name="poseSystem",
         expressions_node="CTRL_expressions",
+        use_combo_network=False,
         in_betweens=DEFAULT_IN_BETWEENS,
         pose_joints=POSE_JOINTS,
         keep_joints=KEEP_JOINTS,
@@ -372,9 +373,12 @@ def bake_shapes_from_poses(
     # create combo logic
     LOG.info("Creating combo logic...")
 
-    combo_network_node = cmds.createNode(
-        "network", name="combo_network"
-    )
+    if use_combo_network:
+        combo_network_node = cmds.createNode(
+            "network", name="combo_network"
+        )
+    else:
+        combo_network_node = None
 
     for psd_pose in psd_poses.values():
         combo_node = cmds.createNode(
@@ -403,16 +407,21 @@ def bake_shapes_from_poses(
             cmds.delete(combo_node)
             continue
 
-        cmds.addAttr(
-            combo_network_node, longName=psd_pose.pose.name, defaultValue=0.0
-        )
+        if use_combo_network:
+            # map via combo network node
+            cmds.addAttr(
+                combo_network_node, longName=psd_pose.pose.name, defaultValue=0.0
+            )
 
-        cmds.connectAttr(
-            "{}.outputWeight".format(combo_node),
-            "{}.{}".format(combo_network_node, psd_pose.pose.name)
-        )
+            cmds.connectAttr(
+                "{}.outputWeight".format(combo_node),
+                "{}.{}".format(combo_network_node, psd_pose.pose.name)
+            )
 
-        driver_mapping[psd_pose.pose.name] = "{}.{}".format(combo_network_node, psd_pose.pose.name)
+            driver_mapping[psd_pose.pose.name] = "{}.{}".format(combo_network_node, psd_pose.pose.name)
+        else:
+            # map to combo node directly
+            driver_mapping[psd_pose.pose.name] = "{}.outputWeight".format(combo_node)
 
     # break joint connections
     LOG.info("Disconnecting joints...")

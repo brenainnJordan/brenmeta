@@ -508,3 +508,26 @@ def un_combine_deltas(bs_node, src_targets, target_weights, dst_target, optimise
     set_target_delta(bs_node, dst_target, delta, optimise=optimise, in_between=in_between)
 
     return True
+
+
+def find_mesh_blendshape_nodes(mesh):
+    """
+    We're not able to use the blendShape command to get the node name,
+    so we need to find all blendShape nodes that influence the given mesh.
+    """
+    bs_nodes = cmds.ls(type="blendShape")
+
+    if cmds.nodeType(mesh) == "mesh":
+        mesh_transform = cmds.listRelatives(mesh, parent=True)[0]
+    else:
+        mesh_transform = mesh
+        mesh = cmds.listRelatives(mesh, type="mesh")[0]
+
+    matching_bs_nodes = []
+
+    for bs_node in bs_nodes:
+        meshes = cmds.blendShape(bs_node, query=True, geometry=True)
+        if mesh in meshes or mesh_transform in meshes:
+            matching_bs_nodes.append(bs_node)
+
+    return matching_bs_nodes
