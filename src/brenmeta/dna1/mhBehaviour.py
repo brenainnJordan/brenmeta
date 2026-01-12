@@ -236,7 +236,7 @@ def get_psd_indices(reader):
     return psd_indices
 
 
-def get_psd_poses(reader, poses):
+def get_psd_poses(reader, poses, update_names=True):
     """Get a list of PSDPose objects referencing given Pose objects
     """
     psd_indices = get_psd_indices(reader)
@@ -263,5 +263,9 @@ def get_psd_poses(reader, poses):
             # check if input_psd_pose has inputs that contribute to this psd
             if all([pose in psd_pose.input_poses for pose in input_psd_pose.input_poses]):
                 psd_pose.input_psd_poses.append(input_psd_pose)
+
+    if update_names:
+        for psd_pose in psd_poses:
+            psd_pose.update_name()
 
     return psd_poses

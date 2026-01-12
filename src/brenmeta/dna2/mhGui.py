@@ -1079,6 +1079,7 @@ class DnaPosesWidget(DnaTab):
         self.attrs = mhBehaviour.get_joint_attrs(self.calib_reader)
         self.attr_defaults = mhBehaviour.get_joint_defaults(self.calib_reader)
         self.poses = mhBehaviour.get_all_poses(self.calib_reader)
+        self.psd_poses = mhBehaviour.get_psd_poses(self.calib_reader, self.poses)
 
         self.model.set_poses(self.poses)
 

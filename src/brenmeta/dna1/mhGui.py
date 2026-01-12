@@ -1114,7 +1114,7 @@ class DnaPosesWidget(QtWidgets.QWidget):
                 QtWidgets.QMessageBox.Ok
             )
 
-            return
+            return None
 
         # confirm
         confirm = QtWidgets.QMessageBox.warning(
@@ -1134,9 +1134,7 @@ class DnaPosesWidget(QtWidgets.QWidget):
         self.attrs = mhBehaviour.get_joint_attrs(self.calib_reader)
         self.attr_defaults = mhBehaviour.get_joint_defaults(self.calib_reader)
         self.poses = mhBehaviour.get_all_poses(self.calib_reader, absolute=False)
-        # self.pose_names = mhBehaviour.get_pose_names(self.calib_reader)
-        # self.pose_names = [pose.get_display_name() for pose in self.poses]
-        # self.set_pose_names(self.pose_names)
+        self.psd_poses = mhBehaviour.get_psd_poses(self.calib_reader, self.poses)
 
         self.model.set_poses(self.poses)
 

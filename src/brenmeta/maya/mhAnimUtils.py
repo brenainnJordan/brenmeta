@@ -1,4 +1,6 @@
 import json
+from http.cookiejar import unmatched
+
 from maya import cmds
 
 from brenmeta.core import mhCore
@@ -428,6 +430,14 @@ def animate_ctrl_rom(
         mapping = [
             (exp_attr, data) for exp_attr, data in mapping if exp_attr in sculpts
         ]
+
+        matched_sculpts = [exp_attr for exp_attr, data in mapping]
+        unmatched_sculpts = [sculpt for sculpt in sculpts if sculpt not in matched_sculpts]
+
+        if unmatched_sculpts:
+            LOG.warning(
+                "Some given sculpts were not matched to poses: {}".format(unmatched_sculpts)
+            )
 
     if sculpts and annotate:
         # create sculpt annotations
