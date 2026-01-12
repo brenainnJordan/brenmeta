@@ -266,7 +266,7 @@ class PSDPose(object):
 
         sides = set([])
 
-        name_tokens = set([])
+        name_tokens = []
 
         for pose in self.get_all_input_poses():
             if not pose.name:
@@ -278,9 +278,10 @@ class PSDPose(object):
             else:
                 pose_name = pose.name
 
-            name_tokens.add(pose_name)
+            if pose_name not in name_tokens:
+                name_tokens.append(pose_name)
 
-        self.pose.name = "_".join(sorted(name_tokens))
+        self.pose.name = "_".join(name_tokens)
 
         if sides:
             self.pose.name = "{}_{}".format(self.pose.name, "".join(sorted(sides)))
