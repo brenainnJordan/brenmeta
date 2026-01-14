@@ -34,7 +34,9 @@ from brenmeta.mh import mhFaceMaterials
 from brenmeta.mh import mhFaceJoints
 from brenmeta.mh import mhFaceMeshes
 from brenmeta.maya import mhAnimUtils
+from brenmeta.maya import mhMayaUtils
 from brenmeta.maya import mhShapeBake
+from brenmeta.maya import mhBlendshape
 
 LOG = mhCore.get_basic_logger(__name__)
 
@@ -1312,31 +1314,26 @@ class DnaQCWidget(DnaTab):
     def create_widgets(self):
         # utils
         self.utils_box = QtWidgets.QGroupBox("Utils")
-        self.utils_namespace_edit = mhWidgets.LabelledNamespaceLineEdit("Namespace")
+        self.namespace_edit = mhWidgets.LabelledNamespaceLineEdit("Namespace")
+        self.src_namespace_edit = mhWidgets.LabelledNamespaceLineEdit("Src Namespace")
 
         self.reset_anim_btn = QtWidgets.QPushButton("reset anim")
         self.reset_anim_btn.clicked.connect(self._reset_anim_clicked)
 
+        self.connect_btn = QtWidgets.QPushButton("connect control boards")
+        self.connect_btn.clicked.connect(self._connect_clicked)
+
+        self.disconnect_btn = QtWidgets.QPushButton("disconnect control boards")
+        self.disconnect_btn.clicked.connect(self._disconnect_clicked)
+
         utils_lyt = QtWidgets.QVBoxLayout()
         self.utils_box.setLayout(utils_lyt)
 
-        utils_lyt.addWidget(self.utils_namespace_edit)
+        utils_lyt.addWidget(self.namespace_edit)
+        utils_lyt.addWidget(self.src_namespace_edit)
         utils_lyt.addWidget(self.reset_anim_btn)
-
-        # connect control boards
-        self.connect_box = QtWidgets.QGroupBox("Connect Control Boards")
-        self.connect_src_namespace_edit = mhWidgets.LabelledNamespaceLineEdit("Src Namespace")
-        self.connect_dst_namespace_edit = mhWidgets.LabelledNamespaceLineEdit("Dst Namespace")
-
-        self.connect_btn = QtWidgets.QPushButton("connect")
-        self.connect_btn.clicked.connect(self._connect_clicked)
-
-        connect_lyt = QtWidgets.QVBoxLayout()
-        self.connect_box.setLayout(connect_lyt)
-
-        connect_lyt.addWidget(self.connect_src_namespace_edit)
-        connect_lyt.addWidget(self.connect_dst_namespace_edit)
-        connect_lyt.addWidget(self.connect_btn)
+        utils_lyt.addWidget(self.connect_btn)
+        utils_lyt.addWidget(self.disconnect_btn)
 
         # Create tech ROM
         self.tech_rom_box = QtWidgets.QGroupBox("Technical ROM")
@@ -1349,7 +1346,6 @@ class DnaQCWidget(DnaTab):
         self.combine_lr_checkbox = QtWidgets.QCheckBox("Combine LR")
         self.annotate_checkbox = QtWidgets.QCheckBox("Annotate")
         self.selected_sculpts_checkbox = QtWidgets.QCheckBox("Selected Sculpts")
-        self.namespace_edit = mhWidgets.LabelledNamespaceLineEdit("Namespace")
 
         self.update_timeline_checkbox.setChecked(True)
         self.combos_checkbox.setChecked(True)
@@ -1370,15 +1366,31 @@ class DnaQCWidget(DnaTab):
         tech_rom_lyt.addWidget(self.combine_lr_checkbox)
         tech_rom_lyt.addWidget(self.annotate_checkbox)
         tech_rom_lyt.addWidget(self.selected_sculpts_checkbox)
-        tech_rom_lyt.addWidget(self.namespace_edit)
         tech_rom_lyt.addWidget(self.create_btn)
+
+        # Create eye ROM
+        # TODO
+        self.eye_rom_box = QtWidgets.QGroupBox("eyenical ROM")
+
+        self.eye_start_spin = mhWidgets.LabelledSpinBox("Start Frame", default=0, maximum=10000)
+        self.eye_frame_interval = mhWidgets.LabelledSpinBox("Frame Interval", default=10, maximum=100)
+        self.eye_update_timeline_checkbox = QtWidgets.QCheckBox("Update Timeline")
+
+        self.eye_update_timeline_checkbox.setChecked(True)
+
+        self.eye_create_btn = QtWidgets.QPushButton("Create eye ROM")
+        self.eye_create_btn.clicked.connect(self._create_rom_clicked)
+
+        eye_rom_lyt = QtWidgets.QVBoxLayout()
+        self.eye_rom_box.setLayout(eye_rom_lyt)
+
+        eye_rom_lyt.addWidget(self.eye_create_btn)
 
         # main layout
         lyt = QtWidgets.QVBoxLayout()
         self.setLayout(lyt)
 
         lyt.addWidget(self.utils_box)
-        lyt.addWidget(self.connect_box)
         lyt.addWidget(self.tech_rom_box)
         lyt.addStretch()
 
@@ -1387,13 +1399,18 @@ class DnaQCWidget(DnaTab):
         return True
 
     def _reset_anim_clicked(self):
-        namespace = self.utils_namespace_edit.line_edit.text()
+        namespace = self.namespace_edit.line_edit.text()
         mhAnimUtils.reset_control_board_anim(namespace=namespace)
 
     def _connect_clicked(self):
-        src_namespace = self.connect_src_namespace_edit.line_edit.text()
-        dst_namespace = self.connect_dst_namespace_edit.line_edit.text()
+        src_namespace = self.src_namespace_edit.line_edit.text()
+        dst_namespace = self.namespace_edit.line_edit.text()
         mhAnimUtils.connect_control_boards(src_namespace, dst_namespace)
+
+    def _disconnect_clicked(self):
+        src_namespace = self.src_namespace_edit.line_edit.text()
+        dst_namespace = self.namespace_edit.line_edit.text()
+        mhAnimUtils.disconnect_control_boards(src_namespace, dst_namespace)
 
     def _create_rom_clicked(self):
         try:
@@ -1707,6 +1724,10 @@ class DnaShapeBakeWidget(DnaTab):
         self.bake_btn = QtWidgets.QPushButton("Bake")
         self.bake_btn.clicked.connect(self._bake_clicked)
 
+        # reconnect btn TODO
+        self.reconnect_btn = QtWidgets.QPushButton("Reconnect")
+        self.reconnect_btn.clicked.connect(self._reconnect_clicked)
+
         # create layout
         lyt = QtWidgets.QVBoxLayout()
         self.setLayout(lyt)
@@ -1769,8 +1790,117 @@ class DnaShapeBakeWidget(DnaTab):
 
         return True
 
+    def _reconnect_clicked(self):
+        pass
+
     def update_assets(self):
         self.dna_file_combo.update_assets()
+        return True
+
+
+class DnaSculptWidget(DnaTab):
+    def __init__(self, path_manager, parent=None):
+        super(DnaSculptWidget, self).__init__(path_manager, parent=parent)
+
+        self.create_widgets()
+
+    def create_widgets(self):
+        # IO
+        self.io_box = QtWidgets.QGroupBox("IO")
+
+        # export objs
+        self.export_objs_btn = QtWidgets.QPushButton("export objs")
+        self.export_objs_btn.clicked.connect(self._export_objs_clicked)
+
+        # import objs (with prefix)
+        self.import_prefix = mhWidgets.LabelledLineEdit("import prefix")
+        self.import_objs_btn = QtWidgets.QPushButton("import objs")
+        self.import_objs_btn.clicked.connect(self._import_objs_clicked)
+
+        # ingest sculpts
+        self.ingest_sculpts_btn = QtWidgets.QPushButton("ingest sculpts")
+        self.ingest_sculpts_btn.clicked.connect(self._ingest_sculpts_clicked)
+
+        # TODO reassemble
+
+        # IO lyt
+        io_lyt = QtWidgets.QVBoxLayout()
+        self.io_box.setLayout(io_lyt)
+
+        io_lyt.addWidget(self.export_objs_btn)
+        io_lyt.addWidget(self.import_prefix)
+        io_lyt.addWidget(self.import_objs_btn)
+        io_lyt.addWidget(self.ingest_sculpts_btn)
+
+        # main layout
+        lyt = QtWidgets.QVBoxLayout()
+        self.setLayout(lyt)
+
+        lyt.addWidget(self.io_box)
+        lyt.addStretch()
+
+    def _export_objs_clicked(self):
+        meshes = cmds.ls(sl=True, type="transform")
+
+        if not meshes:
+            self.error("Please selected meshes to export")
+            return False
+
+        path = QtWidgets.QFileDialog.getExistingDirectory(
+            self,
+            "Export Folder",
+            None,
+        )
+
+        if not path:
+            return False
+
+        mhMayaUtils.export_meshes_to_objs(
+            meshes, path
+        )
+
+        return True
+
+    def _import_objs_clicked(self):
+        path = QtWidgets.QFileDialog.getExistingDirectory(
+            self,
+            "Import Folder",
+            None,
+        )
+
+        if not path:
+            return False
+
+        mhMayaUtils.import_objs(path, prefix=self.import_prefix.text)
+
+        return True
+
+    def _ingest_sculpts_clicked(self):
+        sculpts = cmds.ls(sl=True, type="transform")
+
+        if not sculpts:
+            self.error("Please selected sculpts to ingest")
+            return False
+
+        prefix = self.import_prefix.text
+
+        if prefix:
+            prefix += "_"
+
+        sorted_sculpts = mhBlendshape.sort_sculpts(sculpts)
+
+        for token_count in sorted(sorted_sculpts.keys()):
+            for sculpt in sorted_sculpts[token_count]:
+                target = sculpt[len(prefix):]
+
+                mhBlendshape.apply_sculpt(
+                    bs_node,
+                    target,
+                    sculpt,
+                    rebuild=True,
+                    group=None
+                )
+
         return True
 
 
@@ -1818,6 +1948,7 @@ class DnaModWidget(
 
         lyt.addWidget(self.config_group_box)
 
+        # tabs
         self.tabs = QtWidgets.QTabWidget()
 
         self.build_widget = DnaBuildWidget(self.path_manager)
@@ -1825,6 +1956,7 @@ class DnaModWidget(
         self.merge_widget = DnaMergeWidget(self.path_manager)
         self.poses_widget = DnaPosesWidget(self.path_manager)
         self.shape_bake_widget = DnaShapeBakeWidget(self.path_manager)
+        self.sculpt_widget = DnaSculptWidget(self.path_manager)
         self.qc_widget = DnaQCWidget(self.path_manager)
 
         self.tabs.addTab(self.build_widget, "build")
@@ -1832,6 +1964,7 @@ class DnaModWidget(
         self.tabs.addTab(self.merge_widget, "merge")
         self.tabs.addTab(self.poses_widget, "edit poses")
         self.tabs.addTab(self.shape_bake_widget, "bake shapes")
+        self.tabs.addTab(self.sculpt_widget, "sculpt")
         self.tabs.addTab(self.qc_widget, "QC")
 
         lyt.addWidget(self.tabs)

@@ -2,12 +2,14 @@
 """
 
 import json
+import os
 
 from maya.api import OpenMaya
 from maya import cmds
 
 from brenmeta.core import mhCore
 
+LOG = mhCore.get_basic_logger(__name__)
 
 def break_connections(attrs):
     if not isinstance(attrs, (list, tuple)):
@@ -204,6 +206,23 @@ def get_points(mesh, space=OpenMaya.MSpace.kWorld, as_positions=False, as_vector
 
     else:
         return m_points
+
+
+def get_orig_mesh(deformer, as_name=True):
+    deformer_m_object = bmMObjectUtils.parse_m_object(
+        deformer,
+        # api_type=OpenMaya.MFn.kBlendShape
+    )
+
+    deformer_fn = OpenMayaAnim.MFnGeometryFilter(deformer_m_object)
+
+    mesh_object = deformer_fn.getInputGeometry()[0]
+
+    if as_name:
+        mesh_fn = OpenMaya.MFnMesh(mesh_object)
+        return mesh_fn.name()
+    else:
+        return mesh_object
 
 
 def get_average_position(positions):
@@ -440,3 +459,83 @@ def get_furthest_intersection(mesh_fn, ray_start, ray_vector, both_directions=Fa
     result[0] = OpenMaya.MPoint(list(result[0]))
 
     return result
+
+
+def export_meshes_to_objs(meshes, directory, prefix="", suffix="", overwrite=False, verbose=True):
+    """
+    TODO metadata file
+    """
+    for mesh in meshes:
+        if "|" in mesh:
+            mesh_name = mesh.split("|")[-1]
+        else:
+            mesh_name = str(mesh)
+
+        file_path = os.path.join(
+            directory,
+            "{}{}{}.obj".format(prefix, mesh_name, suffix)
+        )
+
+        if os.path.exists(file_path) and not overwrite:
+            raise Exception("File already exists: {}".format(file_path))
+
+        if verbose:
+            LOG.info("Exporting mesh: {} - {}".format(mesh, file_path))
+
+        cmds.select(mesh)
+
+        cmds.file(
+            file_path,
+            force=True,
+            options="groups=1;ptgroups=1;materials=0;smoothing=1;normals=1",
+            typ="OBJexport",
+            exportSelected=True
+        )
+
+    cmds.select(meshes)
+
+    if verbose:
+        LOG.info("All meshes exported to: {}".format(directory))
+
+    return True
+
+
+def import_objs(directory, prefix=None, verbose=True):
+
+    # get obj files
+    contents = os.listdir(directory)
+
+    file_paths = []
+
+    for item in contents:
+        path = os.path.join(directory, item)
+
+        if not os.path.isfile(path):
+            continue
+
+        if not path.lower().endswith(".obj"):
+            continue
+
+        file_paths.append(path)
+
+    # import objs
+    if prefix:
+        file_kwargs = {
+            "renameAll": True,
+            "renamingPrefix": prefix,
+        }
+    else:
+        file_kwargs = {}
+
+    for file_path in file_paths:
+        if verbose:
+            LOG.info("Importing file: {}".format(file_path))
+
+        result = cmds.file(
+            file_path,
+            i=True,
+            type="OBJ",
+            **file_kwargs
+        )
+
+    return True

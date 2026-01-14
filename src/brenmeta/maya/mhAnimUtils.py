@@ -137,6 +137,30 @@ def connect_control_boards(src_namespace=None, dst_namespace=None):
 
     return True
 
+def disconnect_control_boards(src_namespace=None, dst_namespace=None):
+    if src_namespace == dst_namespace == None:
+        raise mhCore.MHError("src and dst namespaces cannot both be None")
+
+    src_controls = get_all_board_controls(namespace=src_namespace)
+
+    for src_control in src_controls:
+        if src_namespace:
+            control_name = src_control.split(":")[1]
+        else:
+            control_name = src_control
+
+        if dst_namespace:
+            dst_control = "{}:{}".format(dst_namespace, control_name)
+        else:
+            dst_control = control_name
+
+        # TODO check connected
+        cmds.disconnectAttr(
+            "{}.translate".format(src_control),
+            "{}.translate".format(dst_control),
+        )
+
+    return True
 
 def reset_control_board_anim(namespace=None):
     controls = get_all_board_controls(namespace=namespace)
