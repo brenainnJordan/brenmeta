@@ -5,6 +5,7 @@ import json
 import os
 
 from maya.api import OpenMaya
+from maya.api import OpenMayaAnim
 from maya import cmds
 
 from brenmeta.core import mhCore
@@ -61,7 +62,7 @@ def parse_m_object(value, api_type=None, check_valid=True):
         try:
             sel.add(value)
         except RuntimeError as err:
-            raise bmCore.BmError("{} ({})".format(str(err), value))
+            raise mhCore.MHError("{} ({})".format(str(err), value))
 
         m_object = sel.getDependNode(0)
 
@@ -80,7 +81,7 @@ def parse_m_object(value, api_type=None, check_valid=True):
     # check valid
     if check_valid:
         if m_object.isNull():
-            raise bmCore.BmError("MObject invalid: {}".format(value))
+            raise mhCore.MHError("MObject invalid: {}".format(value))
 
     return m_object
 
@@ -105,12 +106,12 @@ def parse_dag_path(value, api_type=None, check_valid=True):
 
     Checks api type if given.
 
-    :param value: bpCore.BASESTRING, OpenMaya.MFnDagNode, OpenMaya.MDagPath
+    :param value: str, OpenMaya.MFnDagNode, OpenMaya.MDagPath
     :param api_type: None, MFn type enum (eg. OpenMaya.MFn.kTransform)
     :return: OpenMaya.MDagPath
     """
 
-    api_type = mhCore.validate_arg("api_type", api_type, (bpCore.NONE_TYPE, int))
+    mhCore.validate_arg("api_type", api_type, int, can_be_none=True)
 
     # get MDagPath
     if isinstance(value, OpenMaya.MObject):
@@ -209,7 +210,7 @@ def get_points(mesh, space=OpenMaya.MSpace.kWorld, as_positions=False, as_vector
 
 
 def get_orig_mesh(deformer, as_name=True):
-    deformer_m_object = bmMObjectUtils.parse_m_object(
+    deformer_m_object = parse_m_object(
         deformer,
         # api_type=OpenMaya.MFn.kBlendShape
     )

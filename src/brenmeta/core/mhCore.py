@@ -67,9 +67,16 @@ def remove_module_from_sys(module):
     return True
 
 
-def validate_arg(arg_name, arg_value, expected_type):
+def validate_arg(arg_name, arg_value, expected_type, can_be_none=False):
+    if arg_value is None:
+        if can_be_none:
+            return True
+        else:
+            raise MHError("{} arg cannot be None".format(arg_name))
+
     if not isinstance(arg_value, expected_type):
         raise MHError("{} arg should {} not {}".format(arg_name, expected_type, arg_value))
+
     return True
 
 

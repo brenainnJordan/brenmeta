@@ -47,15 +47,19 @@ class LabelledDoubleSpinBox(LabelledSpinBox):
 
 class LabelledLineEdit(QtWidgets.QWidget):
 
-    def __init__(self, label, *args, **kwargs):
-        super(LabelledLineEdit, self).__init__(*args, **kwargs)
+    def __init__(self, label, default=None, parent=None):
+        super(LabelledLineEdit, self).__init__(parent=parent)
 
         self.lyt = QtWidgets.QHBoxLayout()
         self.setLayout(self.lyt)
 
         self.label = QtWidgets.QLabel(label)
         self.label.setFixedWidth(100)
+
         self.line_edit = QtWidgets.QLineEdit()
+
+        if default:
+            self.line_edit.setText(default)
 
         self.lyt.addWidget(self.label)
         self.lyt.addWidget(self.line_edit)
@@ -174,25 +178,31 @@ class PathSaveWidget(PathWidgetBase):
 
 
 class NodeLineEdit(QtWidgets.QWidget):
-    def __init__(self, default, *args, **kwargs):
-        super(NodeLineEdit, self).__init__(*args, **kwargs)
+    def __init__(self, default=None, label=None, parent=None):
+        super(NodeLineEdit, self).__init__(parent=parent)
 
         self.lyt = QtWidgets.QHBoxLayout()
         self.setLayout(self.lyt)
 
-        self.line_edit = QtWidgets.QLineEdit(default)
+        self.line_edit = QtWidgets.QLineEdit()
+
+        if default:
+            self.line_edit.setText(default)
 
         self.set_btn = QtWidgets.QPushButton("<<")
         self.set_btn.setFixedWidth(30)
+
+        if label:
+            self.label = QtWidgets.QLabel(label)
+            self.lyt.addWidget(self.label)
+        else:
+            self.label = None
 
         self.lyt.addWidget(self.line_edit)
         self.lyt.addWidget(self.set_btn)
 
         self.lyt.setContentsMargins(0, 0, 0, 0)
         self.lyt.setSpacing(0)
-
-        # self.line_edit.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
-        # self.set_btn.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
 
         self.set_btn.clicked.connect(self.set_clicked)
 
@@ -354,8 +364,8 @@ class DnaTransferMeshWidget(QtWidgets.QWidget):
         self.checkbox.setCheckState(QtCore.Qt.Checked)
         self.checkbox.setFixedWidth(80)
 
-        self.src = NodeLineEdit(src)
-        self.dst = NodeLineEdit(dst)
+        self.src = NodeLineEdit(default=src)
+        self.dst = NodeLineEdit(default=dst)
 
         lyt.addWidget(self.checkbox)
         lyt.addWidget(self.src)

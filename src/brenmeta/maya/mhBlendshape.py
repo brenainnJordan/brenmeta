@@ -54,10 +54,6 @@ def get_m_mesh(bs_node, index=0):
 
 
 def get_blendshape_weight_aliases(bs_node, as_dict=False):
-    bmNodeUtils.validate_node_arg(
-        "bs_node", bs_node, node_type="blendShape", exists=True,
-        err_suffix="Cannot get blendshape weight aliases"
-    )
 
     weight_indices = cmds.getAttr("{}.weight".format(bs_node), multiIndices=True)
 
@@ -95,11 +91,11 @@ def get_blendshape_target_index(bs_node, target_name):
         if target_name == alias:
             return i
 
-    raise bmCore.BmError("No target found: {}".format(target_name))
+    return None
 
 
 def parse_target_arg(bs_node, target):
-    if isinstance(target, bpCore.BASESTRING):
+    if isinstance(target, str):
         target_index = get_blendshape_target_index(bs_node, target)
     else:
         # TODO check
@@ -278,7 +274,7 @@ class BlendshapeTargetPlugs(object):
 
         self.input_target_item = self.input_target_group_indexed.child(0)
 
-        # a reference shouldn't be kept to this as it could change
+        # note that a reference isn't kept to this as it can change
         item_indices = self.get_item_indices()
 
         if item_indices:
@@ -324,45 +320,46 @@ class BlendshapeTargetPlugs(object):
 
         # this is the corresponding components to our optimized points data
         self.components = self.input_target_item_indexed.child(4)
-        # else:
-        #     LOG.info( "WARNING target has no input items")
-        #     self.input_target_item_indexed = None
-        #     self.input_geom = None
-        #     self.points = None
-        #     self.components = None
-        #     # test
-        #     LOG.info( "TEST")
-        #     self.input_target_item_indexed = self.input_target_item.elementByLogicalIndex(
-        #         6000
-        #     )
-        #
-        #     self.input_geom = self.input_target_item_indexed.child(0)
-        #     LOG.info( self.input_geom)
 
     def get_item_indices(self):
         return self.input_target_item.getExistingArrayAttributeIndices()
 
-    def get_data(self):
+    def get_data(self, verbose=True):
         """get point and component data
 
         this is basically our optimized point delta data
         we only get back points that actually have a delta
         then we can get the corresponding components
-
+        TODO catch when this returns None in other utils
         """
 
-        point_data_m_object = self.points.asMObject()
-        point_data = OpenMaya.MFnPointArrayData(point_data_m_object)
+        if self.points.isDefaultValue():
+            if verbose:
+                LOG.info("# WARNING # input_components_target_plug isDefaultValue: {}".format(self.target_alias))
+            point_data = None
+        else:
+            point_data_m_object = self.points.asMObject()
+            point_data = OpenMaya.MFnPointArrayData(point_data_m_object)
 
         # get components
         if self.components.isDefaultValue():
-            LOG.info("# WARNING # input_components_target_plug isDefaultValue")
+            if verbose:
+                LOG.info("# WARNING # input_components_target_plug isDefaultValue: {}".format(self.target_alias))
             component_list = None
         else:
             components_data_m_object = self.components.asMObject()
             component_list = OpenMaya.MFnComponentListData(components_data_m_object)
 
         return point_data, component_list
+
+    def get_inbetween_indices(self):
+        return list(self.get_item_indices())[:-1]
+
+    def get_inbetween_values(self):
+        indices = self.get_inbetween_indices()
+        values = [(i - 5000) / 1000.0 for i in indices]
+        return values, indices
+
 
 
 def get_blendshape_target_data(bs_node, target, in_between=None):
@@ -579,10 +576,104 @@ def un_combine_deltas(bs_node, src_targets, target_weights, dst_target, optimise
     return True
 
 
-def apply_sculpt_delta(bs_node, target, sculpt_delta, rebuild=True, group=None, verbose=True):
+# def apply_sculpt_delta(bs_node, target, sculpt_delta, rebuild=True, group=None, verbose=True):
+#     target_plugs = BlendshapeTargetPlugs(bs_node, target)
+#     inbetween_values, inbetween_indices = target_plugs.get_inbetween_values()
+#     target_index = target_plugs.target
+#
+#     if rebuild:
+#         # rebuild target and apply split sculpt as a blendshape
+#         rebuild_result = cmds.sculptTarget(bs_node, edit=True, regenerate=True, target=target_index)
+#
+#         if rebuild_result:
+#             target_mesh = rebuild_result[0]
+#
+#             if group:
+#                 cmds.parent(target_mesh, group)
+#
+#             target_bs_node = cmds.deformer(
+#                 target_mesh, type="blendShape", name="{}_blendShape".format(target_mesh)
+#             )[0]
+#
+#             create_empty_target(
+#                 target_mesh, target_bs_node, "sculpt", default=1.0
+#             )
+#         else:
+#             # target already rebuilt
+#             target_mesh = get_blendshape_weight_alias(bs_node, target_index)
+#             target_bs_node = "{}_blendShape".format(target_mesh)
+#
+#         set_target_delta(target_bs_node, 0, sculpt_delta)
+#
+#     else:
+#         # apply split delta directly
+#         delta += sculpt_delta
+#         set_target_delta(bs_node, target_index, delta)
+#
+#     # distribute delta to in-betweens
+#     for in_between, inbetween_value in enumerate(inbetween_values):
+#         if verbose:
+#             LOG.info("   in-between: {}".format(inbetween_value))
+#
+#         ib_target_mesh = "{}_{}".format(
+#             target_plugs.target_alias,
+#             str(inbetween_value).replace(".", "_")
+#         )
+#
+#         inbetween_delta = sculpt_delta * inbetween_value
+#
+#         if rebuild:
+#             # rebuild target and apply split sculpt as a blendshape
+#             rebuild_result = cmds.sculptTarget(
+#                 bs_node, edit=True, regenerate=True, target=target_index, inbetweenWeight=inbetween_value
+#             )
+#
+#             target_bs_node = "{}_blendShape".format(ib_target_mesh)
+#
+#             if rebuild_result:
+#                 ib_target_mesh = cmds.rename(rebuild_result[0], ib_target_mesh)
+#
+#                 if group:
+#                     cmds.parent(ib_target_mesh, group)
+#
+#                 target_bs_node = cmds.deformer(
+#                     ib_target_mesh, type="blendShape", name="{}_blendShape".format(ib_target_mesh)
+#                 )[0]
+#
+#                 create_empty_target(
+#                     ib_target_mesh, target_bs_node, "sculpt", default=1.0
+#                 )
+#
+#             set_target_delta(target_bs_node, 0, inbetween_delta)
+#
+#         else:
+#             # apply split delta directly
+#             set_target_delta(bs_node, target_index, delta + inbetween_delta, in_between=in_between)
+#
+#     return True
+
+
+def apply_sculpt(bs_node, sculpt, sculpt_prefix, rebuild=True, group=None, verbose=True):
+
+    target = sculpt[len(sculpt_prefix):]
+
     target_plugs = BlendshapeTargetPlugs(bs_node, target)
     inbetween_values, inbetween_indices = target_plugs.get_inbetween_values()
     target_index = target_plugs.target
+
+    delta = get_target_delta(bs_node, target, as_numpy=True)
+
+    base_mesh = mhMayaUtils.get_orig_mesh(bs_node)
+    base_points = mhMayaUtils.get_points(base_mesh, as_positions=True)
+    sculpt_points = mhMayaUtils.get_points(sculpt, as_positions=True)
+
+    sculpt_points = numpy.array(sculpt_points)
+    base_points = numpy.array(base_points)
+
+    sculpt_delta = sculpt_points - base_points - delta
+
+    # apply_sculpt_delta(bs_node, target, sculpt_delta, rebuild=rebuild, group=group)
+
 
     if rebuild:
         # rebuild target and apply split sculpt as a blendshape
@@ -618,53 +709,55 @@ def apply_sculpt_delta(bs_node, target, sculpt_delta, rebuild=True, group=None, 
         if verbose:
             LOG.info("   in-between: {}".format(inbetween_value))
 
+        ib_target_mesh = "{}_{}".format(
+            target_plugs.target_alias,
+            str(inbetween_value).replace(".", "_")
+        )
+
+        ib_sculpt = "{}{}".format(sculpt_prefix, ib_target_mesh)
+
+        if cmds.objExists(ib_sculpt):
+            # use in between sculpt delta
+            LOG.info("    in-between sculpt: {}".format(ib_sculpt))
+
+            ib_sculpt_points = mhMayaUtils.get_points(ib_sculpt, as_positions=True)
+            ib_sculpt_points = numpy.array(ib_sculpt_points)
+
+            ib_delta = get_target_delta(bs_node, target, as_numpy=True, in_between=in_between)
+
+            inbetween_delta = ib_sculpt_points - base_points - ib_delta
+
+        else:
+            # distribute main delta to in between
+            inbetween_delta = sculpt_delta * inbetween_value
+
         if rebuild:
             # rebuild target and apply split sculpt as a blendshape
             rebuild_result = cmds.sculptTarget(
                 bs_node, edit=True, regenerate=True, target=target_index, inbetweenWeight=inbetween_value
             )
 
-            target_mesh = "{}_{}".format(target_plugs.target_alias, str(inbetween_value).replace(".", "_"))
-            target_bs_node = "{}_blendShape".format(target_mesh)
+            target_bs_node = "{}_blendShape".format(ib_target_mesh)
 
             if rebuild_result:
-                target_mesh = cmds.rename(rebuild_result[0], target_mesh)
+                ib_target_mesh = cmds.rename(rebuild_result[0], ib_target_mesh)
 
                 if group:
-                    cmds.parent(target_mesh, group)
+                    cmds.parent(ib_target_mesh, group)
 
                 target_bs_node = cmds.deformer(
-                    target_mesh, type="blendShape", name="{}_blendShape".format(target_mesh)
+                    ib_target_mesh, type="blendShape", name="{}_blendShape".format(ib_target_mesh)
                 )[0]
 
                 create_empty_target(
-                    target_mesh, target_bs_node, "sculpt", default=1.0
+                    ib_target_mesh, target_bs_node, "sculpt", default=1.0
                 )
 
-            inbetween_delta = sculpt_delta * inbetween_value
             set_target_delta(target_bs_node, 0, inbetween_delta)
 
         else:
             # apply split delta directly
-            inbetween_delta = sculpt_delta * inbetween_value
             set_target_delta(bs_node, target_index, delta + inbetween_delta, in_between=in_between)
-
-    return True
-
-
-def apply_sculpt(bs_node, target, sculpt, rebuild=True, group=None):
-    delta = get_target_delta(bs_node, target, as_numpy=True)
-
-    base_mesh = mhMayaUtils.get_orig_mesh(bs_node)
-    base_points = mhMayaUtils.get_points(base_mesh)
-    sculpt_points = mhMayaUtils.get_points(sculpt)
-
-    sculpt_points = numpy.array(sculpt_points)
-    base_points = numpy.array(base_points)
-
-    sculpt_delta = sculpt_points - base_points - delta
-
-    apply_sculpt_delta(bs_node, target, sculpt_delta, rebuild=rebuild, group=group)
 
     return True
 
@@ -674,8 +767,7 @@ def sort_sculpts(sculpts):
     sorted_sculpts = {}
 
     for sculpt in sculpts:
-        target = sculpt[len(prefix):]
-        target_tokens = target.split("_")
+        target_tokens = sculpt.split("_")
         token_count = len(target_tokens)
 
         if token_count in sorted_sculpts:
@@ -684,3 +776,32 @@ def sort_sculpts(sculpts):
             sorted_sculpts[token_count] = [sculpt]
 
     return sorted_sculpts
+
+
+def apply_sculpts(bs_node, sculpts, sculpt_prefix, rebuild=True):
+    group = "targets"
+
+    if not cmds.objExists(group):
+        cmds.createNode("transform", name=group)
+
+    sorted_sculpts = sort_sculpts(sculpts)
+
+    for token_count in sorted(sorted_sculpts.keys()):
+        for sculpt in sorted_sculpts[token_count]:
+            target = sculpt[len(sculpt_prefix):]
+
+            if get_blendshape_target_index(bs_node, target) is None:
+                LOG.warning("Target not found: {} -> {}.{}".format(sculpt, bs_node, target))
+                continue
+
+            LOG.info("Applying sculpt: {} -> {}.{}".format(sculpt, bs_node, target))
+
+            apply_sculpt(
+                bs_node,
+                sculpt,
+                sculpt_prefix,
+                rebuild=rebuild,
+                group=group
+            )
+
+    return True

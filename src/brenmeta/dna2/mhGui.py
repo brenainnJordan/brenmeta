@@ -1635,18 +1635,89 @@ class DnaShapeBakeWidget(DnaTab):
         self.create_widgets()
 
     def create_widgets(self):
+        self.create_build_widgets()
+        self.create_settings_widget()
+
+        self.tabs = QtWidgets.QTabWidget()
+
+        self.tabs.addTab(self.settings_tab, "settings")
+        self.tabs.addTab(self.build_tab, "build")
+
+        self.setLayout(QtWidgets.QVBoxLayout())
+        self.layout().addWidget(self.tabs)
+
+
+    def create_build_widgets(self):
 
         self.dna_file_combo = mhWidgets.DnaPathManagerWidget(self.path_manager, "dna file")
+
+        # bake group box
+        self.bake_group_box = QtWidgets.QGroupBox("bake")
+
+        bake_lyt = QtWidgets.QVBoxLayout()
+        self.bake_group_box.setLayout(bake_lyt)
 
         self.calculate_psd_deltas_checkbox = QtWidgets.QCheckBox("calculate psd deltas")
         self.connect_shapes_checkbox = QtWidgets.QCheckBox("connect shapes")
         self.optimise_checkbox = QtWidgets.QCheckBox("optimise")
         self.delete_unused_joints_checkbox = QtWidgets.QCheckBox("delete unused joints")
+        self.use_combo_network_checkbox = QtWidgets.QCheckBox("use combo network")
 
         self.calculate_psd_deltas_checkbox.setChecked(True)
         self.connect_shapes_checkbox.setChecked(True)
         self.optimise_checkbox.setChecked(True)
         self.delete_unused_joints_checkbox.setChecked(True)
+
+        # bake btn
+        self.bake_btn = QtWidgets.QPushButton("Bake")
+        self.bake_btn.clicked.connect(self._bake_clicked)
+
+        bake_lyt.addWidget(self.calculate_psd_deltas_checkbox)
+        bake_lyt.addWidget(self.connect_shapes_checkbox)
+        bake_lyt.addWidget(self.optimise_checkbox)
+        bake_lyt.addWidget(self.delete_unused_joints_checkbox)
+        bake_lyt.addWidget(self.bake_btn)
+
+        # reconnect group box
+        self.reconnect_group_box = QtWidgets.QGroupBox("reconnect")
+
+        reconnect_lyt = QtWidgets.QVBoxLayout()
+        self.reconnect_group_box.setLayout(reconnect_lyt)
+
+        # add missing
+        self.add_missing_targets_checkbox = QtWidgets.QCheckBox("add missing targets")
+        self.reconnect_combo_network_checkbox = QtWidgets.QCheckBox("reconnect combo network")
+
+        self.bs_node_widget = mhWidgets.NodeLineEdit(
+            default="head_lod0_mesh_blendShape",
+            label="blendShape"
+        )
+
+        self.add_missing_targets_checkbox.setChecked(True)
+        self.reconnect_combo_network_checkbox.setChecked(True)
+
+        # reconnect btn
+        self.reconnect_btn = QtWidgets.QPushButton("Reconnect")
+        self.reconnect_btn.clicked.connect(self._reconnect_shapes_clicked)
+
+        reconnect_lyt.addWidget(self.bs_node_widget)
+        reconnect_lyt.addWidget(self.add_missing_targets_checkbox)
+        reconnect_lyt.addWidget(self.reconnect_combo_network_checkbox)
+        reconnect_lyt.addWidget(self.reconnect_btn)
+
+        # create layout
+        self.build_tab = QtWidgets.QWidget()
+
+        lyt = QtWidgets.QVBoxLayout()
+        self.build_tab.setLayout(lyt)
+
+        lyt.addWidget(self.dna_file_combo)
+        lyt.addWidget(self.bake_group_box)
+        lyt.addWidget(self.reconnect_group_box)
+        lyt.addStretch()
+
+
+    def create_settings_widget(self):
 
         # in betweens
         self.in_betweens_model = mhWidgets.TupleListModel()
@@ -1720,30 +1791,13 @@ class DnaShapeBakeWidget(DnaTab):
         self.scroll_lyt.addWidget(self.keep_widget)
         self.scroll_lyt.addWidget(self.delete_widget)
 
-        # bake btn
-        self.bake_btn = QtWidgets.QPushButton("Bake")
-        self.bake_btn.clicked.connect(self._bake_clicked)
-
-        # reconnect btn TODO
-        self.reconnect_btn = QtWidgets.QPushButton("Reconnect")
-        self.reconnect_btn.clicked.connect(self._reconnect_clicked)
-
         # create layout
+        self.settings_tab = QtWidgets.QWidget()
+
         lyt = QtWidgets.QVBoxLayout()
-        self.setLayout(lyt)
+        self.settings_tab.setLayout(lyt)
 
-        lyt.addWidget(self.dna_file_combo)
         lyt.addWidget(self.scroll_area)
-        # lyt.addWidget(self.in_betweens_widget)
-        # lyt.addWidget(self.combos_widget)
-        # lyt.addWidget(self.pose_joints_widget)
-        lyt.addWidget(self.calculate_psd_deltas_checkbox)
-        lyt.addWidget(self.connect_shapes_checkbox)
-        lyt.addWidget(self.optimise_checkbox)
-        lyt.addWidget(self.delete_unused_joints_checkbox)
-        lyt.addWidget(self.bake_btn)
-
-        # lyt.addStretch()
 
     def _bake_clicked(self):
 
@@ -1771,7 +1825,7 @@ class DnaShapeBakeWidget(DnaTab):
         mhShapeBake.bake_shapes_from_dna_v2(
             dna_path,
             mesh="head_lod0_mesh", # TODO widget
-            calculate_psd_deltas=self.calculate_psd_deltas_checkbox.isChecked(),
+            calculate_psds=self.calculate_psd_deltas_checkbox.isChecked(),
             connect_shapes=self.connect_shapes_checkbox.isChecked(),
             optimise=self.optimise_checkbox.isChecked(),
             expressions_node="CTRL_expressions",
@@ -1779,6 +1833,7 @@ class DnaShapeBakeWidget(DnaTab):
             pose_joints=self.pose_joints_model.list,
             keep_joints=self.keep_model.list,
             additional_combos=self.combos_model.tuple_list,
+            use_combo_network=False,
         )
 
         QtWidgets.QMessageBox.information(
@@ -1790,8 +1845,57 @@ class DnaShapeBakeWidget(DnaTab):
 
         return True
 
-    def _reconnect_clicked(self):
-        pass
+    def _reconnect_shapes_clicked(self):
+
+        # get path
+        dna_path = self.dna_file_combo.get_path()
+
+        # check we have paths
+        if not dna_path:
+            self.error("No source DNA path given")
+            return False
+
+        # confirm with user
+        confirm = QtWidgets.QMessageBox.warning(
+            self,
+            "confirm",
+            "This will reconnect shapes in the scene as defined by dna file:\n\n{}\n\nContinue?".format(
+                dna_path
+            ),
+            QtWidgets.QMessageBox.Ok | QtWidgets.QMessageBox.Cancel
+        )
+
+        if confirm is QtWidgets.QMessageBox.Cancel:
+            return False
+
+        # load dna data
+        LOG.info("Loading dna: {}".format(dna_path))
+
+        dna_obj = DNAReader.read(dna_path, Layer.all)
+
+        LOG.info("Getting reader...")
+        calib_reader = dnacalib2.DNACalibDNAReader(dna_obj._reader)
+
+        # get pose data
+        LOG.info("Getting pose data...")
+
+        poses = mhBehaviour.get_all_poses(calib_reader)
+        psd_poses = mhBehaviour.get_psd_poses(calib_reader, poses)
+        joints_attr_defaults = mhBehaviour.get_joint_defaults(calib_reader)
+
+        # TODO test!
+        mhShapeBake.reconnect_shapes(
+            poses,
+            psd_poses,
+            self.bs_node_widget.node,
+            joints_attr_defaults,
+            expressions_node="CTRL_expressions",
+            additional_combos=self.combos_model.tuple_list,
+            use_combo_network=self.reconnect_combo_network_checkbox.isChecked(),
+            add_missing_targets=self.add_missing_targets_checkbox.isChecked(),
+        )
+
+        return True
 
     def update_assets(self):
         self.dna_file_combo.update_assets()
@@ -1805,6 +1909,7 @@ class DnaSculptWidget(DnaTab):
         self.create_widgets()
 
     def create_widgets(self):
+
         # IO
         self.io_box = QtWidgets.QGroupBox("IO")
 
@@ -1813,11 +1918,16 @@ class DnaSculptWidget(DnaTab):
         self.export_objs_btn.clicked.connect(self._export_objs_clicked)
 
         # import objs (with prefix)
-        self.import_prefix = mhWidgets.LabelledLineEdit("import prefix")
+        self.import_prefix = mhWidgets.LabelledLineEdit("import prefix", default="sculpt")
         self.import_objs_btn = QtWidgets.QPushButton("import objs")
         self.import_objs_btn.clicked.connect(self._import_objs_clicked)
 
         # ingest sculpts
+        self.bs_node_widget = mhWidgets.NodeLineEdit(
+            default="head_lod0_mesh_blendShape",
+            label="blendShape"
+        )
+
         self.ingest_sculpts_btn = QtWidgets.QPushButton("ingest sculpts")
         self.ingest_sculpts_btn.clicked.connect(self._ingest_sculpts_clicked)
 
@@ -1830,6 +1940,7 @@ class DnaSculptWidget(DnaTab):
         io_lyt.addWidget(self.export_objs_btn)
         io_lyt.addWidget(self.import_prefix)
         io_lyt.addWidget(self.import_objs_btn)
+        io_lyt.addWidget(self.bs_node_widget)
         io_lyt.addWidget(self.ingest_sculpts_btn)
 
         # main layout
@@ -1887,19 +1998,18 @@ class DnaSculptWidget(DnaTab):
         if prefix:
             prefix += "_"
 
-        sorted_sculpts = mhBlendshape.sort_sculpts(sculpts)
+        bs_node = self.bs_node_widget.node
 
-        for token_count in sorted(sorted_sculpts.keys()):
-            for sculpt in sorted_sculpts[token_count]:
-                target = sculpt[len(prefix):]
+        if not cmds.objExists(bs_node):
+            self.error("blendshape node not found: {}".format(bs_node))
+            return False
 
-                mhBlendshape.apply_sculpt(
-                    bs_node,
-                    target,
-                    sculpt,
-                    rebuild=True,
-                    group=None
-                )
+        mhBlendshape.apply_sculpts(
+            bs_node,
+            sculpts,
+            prefix,
+            rebuild=True,
+        )
 
         return True
 
