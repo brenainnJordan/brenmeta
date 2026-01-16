@@ -458,6 +458,8 @@ def animate_ctrl_rom(
         matched_sculpts = [exp_attr for exp_attr, data in mapping]
         unmatched_sculpts = [sculpt for sculpt in sculpts if sculpt not in matched_sculpts]
 
+        LOG.info("Sculpts matched to poses: {}".format(matched_sculpts))
+
         if unmatched_sculpts:
             LOG.warning(
                 "Some given sculpts were not matched to poses: {}".format(unmatched_sculpts)
@@ -490,6 +492,17 @@ def animate_ctrl_rom(
 
             for exp_attr, data in data:
                 LOG.info("    {}: {}".format(exp_attr, data))
+
+        if ungrouped_mapping:
+            LOG.info("Ungrouped mappings:")
+
+            for group, data in ungrouped_mapping.items():
+                LOG.info("  {}".format(group))
+
+                for exp_attr, data in data:
+                    LOG.info("    {}: {}".format(exp_attr, data))
+        else:
+            LOG.info("No ungrouped mappings")
 
     # create animation
     frame = start_frame
@@ -671,7 +684,16 @@ def animate_ctrl_rom(
 
                 r_group = l_group[:-1] + "R"
 
+                if r_group not in combo_groups_dict:
+                    LOG.warning("No right combo group found: {}".format(r_group))
+                    continue
+
                 r_combo_ctrl_attr, r_combo_value = combo_groups_dict[r_group]
+
+                if r_group not in grouped_mapping:
+                    LOG.warning("No right grouped mapping found: {}".format(r_group))
+                    continue
+                
                 r_combo_data = grouped_mapping[r_group]
                 r_combo_ctrl, r_combo_attr = r_combo_ctrl_attr.split(".")
 

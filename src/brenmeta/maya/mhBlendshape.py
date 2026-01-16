@@ -400,7 +400,7 @@ def get_target_delta(bs_node, target, in_between=None, as_numpy=False):
         delta = numpy.tile([0.0, 0.0, 0.0], (point_count, 1))
 
         if not len(point_data):
-            return None
+            return delta
 
         delta[point_ids] = numpy.array(point_data)[:, :-1]
 

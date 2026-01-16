@@ -1343,12 +1343,14 @@ class DnaQCWidget(DnaTab):
         self.frame_interval = mhWidgets.LabelledSpinBox("Frame Interval", default=10, maximum=100)
         self.update_timeline_checkbox = QtWidgets.QCheckBox("Update Timeline")
         self.combos_checkbox = QtWidgets.QCheckBox("Combos")
+        self.additional_combos_checkbox = QtWidgets.QCheckBox("Additional Combos")
         self.combine_lr_checkbox = QtWidgets.QCheckBox("Combine LR")
         self.annotate_checkbox = QtWidgets.QCheckBox("Annotate")
         self.selected_sculpts_checkbox = QtWidgets.QCheckBox("Selected Sculpts")
 
         self.update_timeline_checkbox.setChecked(True)
         self.combos_checkbox.setChecked(True)
+        self.additional_combos_checkbox.setChecked(True)
         self.combine_lr_checkbox.setChecked(True)
         self.annotate_checkbox.setChecked(True)
 
@@ -1424,6 +1426,7 @@ class DnaQCWidget(DnaTab):
         annotate = self.annotate_checkbox.isChecked()
         combine_lr = self.combine_lr_checkbox.isChecked()
         combos = self.combos_checkbox.isChecked()
+        additional_combos = self.additional_combos_checkbox.isChecked()
         selected_sculpts = self.selected_sculpts_checkbox.isChecked()
         start_frame = self.start_spin.spin_box.value()
         interval = self.frame_interval.spin_box.value()
@@ -1449,6 +1452,17 @@ class DnaQCWidget(DnaTab):
 
             poses = mhBehaviour.get_all_poses(calib_reader)
             psd_poses = mhBehaviour.get_psd_poses(calib_reader, poses)
+            joints_attr_defaults = mhBehaviour.get_joint_defaults(calib_reader)
+
+            if additional_combos:
+                LOG.info("Adding additional combos...")
+                # get additional combos from mhShapeBake global attr for now
+                # TODO refactor tool to make this more global
+                from brenmeta.maya import mhShapeBake
+
+                mhCore.add_additional_combo_poses(
+                    poses, psd_poses, mhShapeBake.ADDITIONAL_COMBOS, joints_attr_defaults
+                )
 
             mapping = mhAnimUtils.map_expressions_to_controls(tongue=tongue, eyelashes=eyelashes, namespace=namespace)
 
@@ -1880,7 +1894,7 @@ class DnaShapeBakeWidget(DnaTab):
         LOG.info("Getting pose data...")
 
         poses = mhBehaviour.get_all_poses(calib_reader)
-        psd_poses = mhBehaviour.get_psd_poses(calib_reader, poses)
+        psd_poses = mhBehaviour.get_psd_poses(calib_reader, poses, override_name=True)
         joints_attr_defaults = mhBehaviour.get_joint_defaults(calib_reader)
 
         # TODO test!

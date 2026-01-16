@@ -294,3 +294,32 @@ class PSDPose(object):
             self.pose.name = "{}_{}".format(self.pose.name, "".join(sorted(sides)))
 
         return self.pose.name
+
+
+def add_additional_combo_poses(poses, psd_poses, additional_combos, joints_attr_defaults):
+    """Create PSDPose for each additional combo and map input poses
+    TODO make joints_attr_defaults optional
+    """
+    pose_dict = {
+        pose.name: pose for pose in poses
+    }
+
+    pose_count = len(poses)
+
+    for i, pose_names in enumerate(additional_combos):
+        combo = mhCore.PSDPose()
+
+        combo.pose = mhCore.Pose()
+        combo.pose.name = "_".join(pose_names)
+        combo.pose.index = pose_count + i
+        combo.pose.defaults = joints_attr_defaults
+
+        combo.input_poses = [pose_dict[pose_name] for pose_name in pose_names]
+        combo.input_weights = [1.0] * len(pose_names)
+
+        psd_poses[combo.pose.index] = combo
+        poses.append(combo.pose)
+
+        combo.update_name(override=True)
+
+    return poses, psd_poses
