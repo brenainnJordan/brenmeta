@@ -512,11 +512,8 @@ def animate_ctrl_rom(
         if ungrouped_mapping:
             LOG.info("Ungrouped mappings:")
 
-            for group, data in ungrouped_mapping:
-                LOG.info("  {}".format(group))
-
-                for exp_attr, data in data:
-                    LOG.info("    {}: {}".format(exp_attr, data))
+            for exp_attr, data in ungrouped_mapping:
+                LOG.info("    {}: {}".format(exp_attr, data))
         else:
             LOG.info("No ungrouped mappings")
 
