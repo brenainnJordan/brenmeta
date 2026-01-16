@@ -307,9 +307,9 @@ def add_additional_combo_poses(poses, psd_poses, additional_combos, joints_attr_
     pose_count = len(poses)
 
     for i, pose_names in enumerate(additional_combos):
-        combo = mhCore.PSDPose()
+        combo = PSDPose()
 
-        combo.pose = mhCore.Pose()
+        combo.pose = Pose()
         combo.pose.name = "_".join(pose_names)
         combo.pose.index = pose_count + i
         combo.pose.defaults = joints_attr_defaults

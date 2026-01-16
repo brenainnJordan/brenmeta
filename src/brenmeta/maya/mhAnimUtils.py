@@ -693,7 +693,7 @@ def animate_ctrl_rom(
                 if r_group not in grouped_mapping:
                     LOG.warning("No right grouped mapping found: {}".format(r_group))
                     continue
-                
+
                 r_combo_data = grouped_mapping[r_group]
                 r_combo_ctrl, r_combo_attr = r_combo_ctrl_attr.split(".")
 

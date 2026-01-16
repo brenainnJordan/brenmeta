@@ -1365,6 +1365,7 @@ class DnaQCWidget(DnaTab):
         tech_rom_lyt.addWidget(self.frame_interval)
         tech_rom_lyt.addWidget(self.update_timeline_checkbox)
         tech_rom_lyt.addWidget(self.combos_checkbox)
+        tech_rom_lyt.addWidget(self.additional_combos_checkbox)
         tech_rom_lyt.addWidget(self.combine_lr_checkbox)
         tech_rom_lyt.addWidget(self.annotate_checkbox)
         tech_rom_lyt.addWidget(self.selected_sculpts_checkbox)
@@ -1372,7 +1373,7 @@ class DnaQCWidget(DnaTab):
 
         # Create eye ROM
         # TODO
-        self.eye_rom_box = QtWidgets.QGroupBox("eyenical ROM")
+        self.eye_rom_box = QtWidgets.QGroupBox("eye technical ROM")
 
         self.eye_start_spin = mhWidgets.LabelledSpinBox("Start Frame", default=0, maximum=10000)
         self.eye_frame_interval = mhWidgets.LabelledSpinBox("Frame Interval", default=10, maximum=100)
