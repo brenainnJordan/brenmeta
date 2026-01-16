@@ -1,30 +1,9 @@
 # brenmeta
-metahuman tools
+metahuman dna modification tool
 
+While Epic Games does provide a Maya metahuman modification tool,
+it can be quite restrictive in how much you can modify.
 
-# Notes on commands:
-
-# SetVertexPositionsCommand
-used to change vertex positions values.
-
-SetVertexPositionsCommand(meshIndex, positions, operation)
-SetVertexPositionsCommand(meshIndex, xs, ys, zs, operation)
-SetVertexPositionsCommand(meshIndex, positions, masks, operation)
-SetVertexPositionsCommand(meshIndex, xs, ys, zs, masks, operation)
-
-# SetBlendShapeTargetDeltasCommand
-used to change blend shape target deltas.
-
-SetBlendShapeTargetDeltasCommand(meshIndex, blendShapeTargetIndex, deltas, vertexIndices, operation)
-SetBlendShapeTargetDeltasCommand(meshIndex, blendShapeTargetIndex, xs, ys, zs, vertexIndices, operation)
-SetBlendShapeTargetDeltasCommand(meshIndex, blendShapeTargetIndex, deltas, vertexIndices, masks, operation)
-SetBlendShapeTargetDeltasCommand(meshIndex, blendShapeTargetIndex, xs, ys, zs, vertexIndices, masks, operation)
-
-
-# ScaleCommand
-used to scale neutral joints, vertex positions and joint and blendshape deltas by a factor.
-
-Note: Only translation attributes of neutral joints and joint deltas are scaled.
-
-ScaleCommand(float scale, Vector3 origin)
-
+This tool is a more of a sandbox, that allows you to modify
+a metahuman face rig to a greater degree, and create more
+unique and interesting characters rigs.
