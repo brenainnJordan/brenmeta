@@ -77,7 +77,10 @@ ADDITIONAL_COMBOS = [
     ("jawOpen", "tongueBendDown"),
     ("jawOpen", "tongueTipUp"),
     ("jawOpen", "tonguePress"),
-    # brows/eyelids
+    # other brow
+    ("browLateralL", "browRaiseInL"),
+    ("browLateralR", "browRaiseInR"),
+    # brows + blink
     ("browDownL", "eyeBlinkL"),
     ("browDownR", "eyeBlinkR"),
     ("browLateralL", "eyeBlinkL"),
@@ -86,11 +89,47 @@ ADDITIONAL_COMBOS = [
     ("browRaiseInR", "eyeBlinkR"),
     ("browRaiseOuterL", "eyeBlinkL"),
     ("browRaiseOuterR", "eyeBlinkR"),
-    # brow cheek raise
+    # brow + cheek raise
     ("browDownL", "eyeCheekRaiseL"),
     ("browDownR", "eyeCheekRaiseR"),
     ("browLateralL", "eyeCheekRaiseL"),
     ("browLateralR", "eyeCheekRaiseR"),
+    # brows down + eye directions
+    ("browDownL", "eyeLookLeftL"),
+    ("browDownL", "eyeLookRightL"),
+    ("browDownL", "eyeLookUpL"),
+    ("browDownL", "eyeLookDownL"),
+    ("browDownR", "eyeLookLeftR"),
+    ("browDownR", "eyeLookRightR"),
+    ("browDownR", "eyeLookUpR"),
+    ("browDownR", "eyeLookDownR"),
+    # brow lateral + eye directions
+    ("browLateralL", "eyeLookLeftL"),
+    ("browLateralL", "eyeLookRightL"),
+    ("browLateralL", "eyeLookUpL"),
+    ("browLateralL", "eyeLookDownL"),
+    ("browLateralR", "eyeLookLeftR"),
+    ("browLateralR", "eyeLookRightR"),
+    ("browLateralR", "eyeLookUpR"),
+    ("browLateralR", "eyeLookDownR"),
+    # brow raise in + eye directions
+    ("browRaiseInL", "eyeLookLeftL"),
+    ("browRaiseInL", "eyeLookRightL"),
+    ("browRaiseInL", "eyeLookUpL"),
+    ("browRaiseInL", "eyeLookDownL"),
+    ("browRaiseInR", "eyeLookLeftR"),
+    ("browRaiseInR", "eyeLookRightR"),
+    ("browRaiseInR", "eyeLookUpR"),
+    ("browRaiseInR", "eyeLookDownR"),
+    # brow raise out + eye directions
+    ("browRaiseOutL", "eyeLookLeftL"),
+    ("browRaiseOutL", "eyeLookRightL"),
+    ("browRaiseOutL", "eyeLookUpL"),
+    ("browRaiseOutL", "eyeLookDownL"),
+    ("browRaiseOutR", "eyeLookLeftR"),
+    ("browRaiseOutR", "eyeLookRightR"),
+    ("browRaiseOutR", "eyeLookUpR"),
+    ("browRaiseOutR", "eyeLookDownR"),
 ]
 
 POSE_JOINTS = [
