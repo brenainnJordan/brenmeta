@@ -95,6 +95,9 @@ ADDITIONAL_COMBOS = [
     # ("browRaiseInR", "eyeBlinkR"),
     # ("browRaiseOuterL", "eyeBlinkL"),
     # ("browRaiseOuterR", "eyeBlinkR"),
+    # cheek raise + blink
+    ("eyeCheekRaiseL", "eyeBlinkL"),
+    ("eyeCheekRaiseR", "eyeBlinkR"),
     # brow + cheek raise
     ("browDownL", "eyeCheekRaiseL"),
     ("browDownR", "eyeCheekRaiseR"),
