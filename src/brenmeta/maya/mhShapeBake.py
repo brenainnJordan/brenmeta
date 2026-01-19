@@ -122,14 +122,14 @@ ADDITIONAL_COMBOS = [
     ("browRaiseInR", "eyeLookUpR"),
     ("browRaiseInR", "eyeLookDownR"),
     # brow raise out + eye directions
-    ("browRaiseOutL", "eyeLookLeftL"),
-    ("browRaiseOutL", "eyeLookRightL"),
-    ("browRaiseOutL", "eyeLookUpL"),
-    ("browRaiseOutL", "eyeLookDownL"),
-    ("browRaiseOutR", "eyeLookLeftR"),
-    ("browRaiseOutR", "eyeLookRightR"),
-    ("browRaiseOutR", "eyeLookUpR"),
-    ("browRaiseOutR", "eyeLookDownR"),
+    ("browRaiseOuterL", "eyeLookLeftL"),
+    ("browRaiseOuterL", "eyeLookRightL"),
+    ("browRaiseOuterL", "eyeLookUpL"),
+    ("browRaiseOuterL", "eyeLookDownL"),
+    ("browRaiseOuterR", "eyeLookLeftR"),
+    ("browRaiseOuterR", "eyeLookRightR"),
+    ("browRaiseOuterR", "eyeLookUpR"),
+    ("browRaiseOuterR", "eyeLookDownR"),
 ]
 
 POSE_JOINTS = [
