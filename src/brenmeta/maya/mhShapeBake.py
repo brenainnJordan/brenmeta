@@ -85,10 +85,11 @@ ADDITIONAL_COMBOS = [
     ("browDownR", "eyeBlinkR"),
     ("browLateralL", "eyeBlinkL"),
     ("browLateralR", "eyeBlinkR"),
-    ("browRaiseInL", "eyeBlinkL"),
-    ("browRaiseInR", "eyeBlinkR"),
-    ("browRaiseOuterL", "eyeBlinkL"),
-    ("browRaiseOuterR", "eyeBlinkR"),
+    # these combos are already present in the MH rig
+    # ("browRaiseInL", "eyeBlinkL"),
+    # ("browRaiseInR", "eyeBlinkR"),
+    # ("browRaiseOuterL", "eyeBlinkL"),
+    # ("browRaiseOuterR", "eyeBlinkR"),
     # brow + cheek raise
     ("browDownL", "eyeCheekRaiseL"),
     ("browDownR", "eyeCheekRaiseR"),
@@ -116,20 +117,20 @@ ADDITIONAL_COMBOS = [
     ("browRaiseInL", "eyeLookLeftL"),
     ("browRaiseInL", "eyeLookRightL"),
     ("browRaiseInL", "eyeLookUpL"),
-    ("browRaiseInL", "eyeLookDownL"),
+    # ("browRaiseInL", "eyeLookDownL"), # already present
     ("browRaiseInR", "eyeLookLeftR"),
     ("browRaiseInR", "eyeLookRightR"),
     ("browRaiseInR", "eyeLookUpR"),
-    ("browRaiseInR", "eyeLookDownR"),
+    # ("browRaiseInR", "eyeLookDownR"), # already present
     # brow raise out + eye directions
     ("browRaiseOuterL", "eyeLookLeftL"),
     ("browRaiseOuterL", "eyeLookRightL"),
     ("browRaiseOuterL", "eyeLookUpL"),
-    ("browRaiseOuterL", "eyeLookDownL"),
+    # ("browRaiseOuterL", "eyeLookDownL"), # already present
     ("browRaiseOuterR", "eyeLookLeftR"),
     ("browRaiseOuterR", "eyeLookRightR"),
     ("browRaiseOuterR", "eyeLookUpR"),
-    ("browRaiseOuterR", "eyeLookDownR"),
+    # ("browRaiseOuterR", "eyeLookDownR"), # already present
 ]
 
 POSE_JOINTS = [
