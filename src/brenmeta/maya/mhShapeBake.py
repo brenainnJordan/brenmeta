@@ -62,6 +62,11 @@ DEFAULT_IN_BETWEENS = [
 
 DEFAULT_IN_BETWEENS_DICT = {a: b for a, b in DEFAULT_IN_BETWEENS}
 
+ADDITIONAL_SHAPES = [
+    "eyeSquintL",
+    "eyeSquintR",
+]
+
 ADDITIONAL_COMBOS = [
     # jawOpen
     ("jawOpen", "teethFwdD"),
@@ -378,7 +383,6 @@ def break_joint_connections(root_joints=ROOT_JOINTS):
 
 
 def create_combo_logic(poses, psd_poses, expressions_node, use_combo_network=True):
-
     # get expressions
     expressions = cmds.listAttr(expressions_node, userDefined=True)
 
@@ -542,7 +546,6 @@ def create_joint_poses(poses, pose_joints, driver_mapping):
 
 
 def bake_shapes_from_poses(mesh, poses, psd_poses, in_betweens, detailed_verbose=True):
-
     base_mesh = cmds.duplicate(mesh, name="{}_baked".format(mesh))[0]
 
     bs_node = cmds.deformer(
@@ -798,17 +801,24 @@ def convert_rig(
 
 
 def reconnect_shapes(
-    poses,
-    psd_poses,
-    bs_node,
-    joints_attr_defaults,
-    expressions_node="CTRL_expressions",
-    additional_combos=ADDITIONAL_COMBOS,
-    use_combo_network=False,
-    add_missing_targets=True,
+        poses,
+        psd_poses,
+        bs_node,
+        joints_attr_defaults,
+        expressions_node="CTRL_expressions",
+        additional_shapes=ADDITIONAL_SHAPES,
+        additional_combos=ADDITIONAL_COMBOS,
+        use_combo_network=False,
+        add_missing_targets=True,
 ):
     """TODO support multiple blendshape nodes
     """
+    # create additional poses
+    if additional_shapes:
+        mhCore.add_additional_shapes(
+            poses, additional_shapes, joints_attr_defaults
+        )
+
     # create additional combos
     if additional_combos:
         LOG.info("Adding additional combos...")

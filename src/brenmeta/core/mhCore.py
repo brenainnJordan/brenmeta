@@ -24,10 +24,12 @@ import logging
 
 from maya import cmds
 
+
 def ascend_path(path, levels):
     for _ in range(levels):
         path = os.path.dirname(path)
     return path
+
 
 SRC_DIR = os.path.dirname(__file__)
 ROOT_DIR = ascend_path(SRC_DIR, 3)
@@ -313,6 +315,20 @@ class PSDPose(object):
             self.pose.name = "{}_{}".format(self.pose.name, "".join(sorted(sides)))
 
         return self.pose.name
+
+
+def add_additional_shapes(poses, additional_shapes, joints_attr_defaults):
+    pose_count = len(poses)
+
+    for i, pose_name in enumerate(additional_shapes):
+        pose = Pose()
+        pose.name = pose_name
+        pose.index = pose_count + i
+        pose.defaults = joints_attr_defaults
+
+        poses.append(combo.pose)
+
+    return poses
 
 
 def add_additional_combo_poses(poses, psd_poses, additional_combos, joints_attr_defaults):
