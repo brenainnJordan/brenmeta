@@ -326,7 +326,7 @@ def add_additional_shapes(poses, additional_shapes, joints_attr_defaults):
         pose.index = pose_count + i
         pose.defaults = joints_attr_defaults
 
-        poses.append(combo.pose)
+        poses.append(pose)
 
     return poses
 
