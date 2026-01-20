@@ -1750,6 +1750,7 @@ class DnaShapeBakeWidget(DnaTab):
 
 
     def create_settings_widget(self):
+        # TODO replace this with JSON data and dialogs to edit data
 
         # in betweens
         self.in_betweens_model = mhWidgets.TupleListModel()
@@ -1864,7 +1865,7 @@ class DnaShapeBakeWidget(DnaTab):
             in_betweens={a:b for a, b in self.in_betweens_model.tuple_list},
             pose_joints=self.pose_joints_model.list,
             keep_joints=self.keep_model.list,
-            additional_combos=self.combos_model.tuple_list,
+            # additional_combos=self.combos_model.tuple_list, # TODO
             use_combo_network=False,
         )
 
@@ -1922,7 +1923,7 @@ class DnaShapeBakeWidget(DnaTab):
             self.bs_node_widget.node,
             joints_attr_defaults,
             expressions_node="CTRL_expressions",
-            additional_combos=self.combos_model.tuple_list,
+            # additional_combos=self.combos_model.tuple_list, # TODO
             use_combo_network=self.reconnect_combo_network_checkbox.isChecked(),
             add_missing_targets=self.add_missing_targets_checkbox.isChecked(),
         )

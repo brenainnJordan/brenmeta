@@ -18,6 +18,7 @@
 """General reusable widgets"""
 
 import os
+import json
 
 from maya import cmds
 from maya import OpenMayaUI
@@ -25,6 +26,7 @@ from maya.api import OpenMaya
 
 from Qt import QtCore
 from Qt import QtWidgets
+from Qt import QtGui
 
 from brenmeta.core import mhCore
 
@@ -666,3 +668,120 @@ class TableGroup(QtWidgets.QGroupBox):
             return
 
         self.view.model().removeRows(self.view.currentIndex().row(),1)
+
+
+class JsonHighlighter(QtGui.QSyntaxHighlighter):
+    """copilot code TODO test!
+    """
+    def __init__(self, parent=None):
+        super(JsonHighlighter, self).__init__(parent)
+
+        def fmt(color, bold=False):
+            f = QtGui.QTextCharFormat()
+            f.setForeground(QtGui.QColor(color))
+            if bold:
+                f.setFontWeight(QtGui.QFont.Bold)
+            return f
+
+        self.rules = []
+
+        # Keys
+        self.rules.append((
+            QtCore.QRegularExpression(r'"([^"\\]|\\.)*"\s*(?=:)'),
+            fmt("#7aa2f7", True)
+        ))
+
+        # Strings
+        self.rules.append((
+            QtCore.QRegularExpression(r'\"([^\"\\]|\\.)*\"'),
+            fmt("#9ece6a")
+        ))
+
+        # Numbers
+        self.rules.append((
+            QtCore.QRegularExpression(r'\b-?(0|[1-9]\d*)(\.\d+)?([eE][+-]?\d+)?\b'),
+            fmt("#e0af68")
+        ))
+
+        # Booleans & null
+        self.rules.append((
+            QtCore.QRegularExpression(r'\b(true|false|null)\b'),
+            fmt("#bb9af7", True)
+        ))
+
+        # Braces / brackets
+        self.rules.append((
+            QtCore.QRegularExpression(r'[{}\[\]]'),
+            fmt("#c0caf5", True)
+        ))
+
+    def highlightBlock(self, text):
+        for pattern, format in self.rules:
+            it = pattern.globalMatch(text)
+            while it.hasNext():
+                m = it.next()
+                self.setFormat(m.capturedStart(), m.capturedLength(), format)
+
+
+class JsonEditorDialog(QtWidgets.QDialog):
+    """copilot code TODO test!
+    """
+    def __init__(self, parent=None):
+        super(JsonEditorDialog, self).__init__(parent)
+
+        self.setWindowTitle("Edit JSON")
+        self.resize(600, 500)
+
+        layout = QtWidgets.QVBoxLayout(self)
+
+        # Editor
+        self.editor = QtWidgets.QPlainTextEdit()
+        self.editor.setFont(QtGui.QFont("Consolas", 11))
+        self.editor.textChanged.connect(self.validate_json)
+
+        self.highlighter = JsonHighlighter(self.editor.document())
+
+        # Error label
+        self.error_label = QtWidgets.QLabel("")
+        self.error_label.setStyleSheet("color: #f7768e;")
+        self.error_label.setVisible(False)
+
+        # Buttons
+        btns = QtWidgets.QDialogButtonBox(
+            QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel
+        )
+        btns.accepted.connect(self.accept_if_valid)
+        btns.rejected.connect(self.reject)
+
+        layout.addWidget(self.editor)
+        layout.addWidget(self.error_label)
+        layout.addWidget(btns)
+
+    # --- API -------------------------------------------------------------
+
+    def load_json(self, data):
+        self.editor.setPlainText(json.dumps(data, indent=4))
+
+    def get_json(self):
+        return json.loads(self.editor.toPlainText())
+
+    # --- Validation ------------------------------------------------------
+
+    def validate_json(self):
+        text = self.editor.toPlainText()
+        try:
+            json.loads(text)
+            self.error_label.setVisible(False)
+            return True
+        except Exception as e:
+            self.error_label.setText(str(e))
+            self.error_label.setVisible(True)
+            return False
+
+    def accept_if_valid(self):
+        if self.validate_json():
+            self.accept()
+        else:
+            # Keep dialog open, highlight error
+            QtWidgets.QApplication.beep()
+

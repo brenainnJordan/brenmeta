@@ -178,6 +178,38 @@ ADDITIONAL_COMBOS = [
     ("noseWrinkleUpperR", "eyeLookUpR"),
     ("noseWrinkleUpperR", "eyeLookDownR"),
 
+    ## ** 2nd order combos **
+
+    # brows down + eye directions + blink
+    ("browDownL", "eyeLookLeftL", "eyeBlinkL"),
+    ("browDownL", "eyeLookRightL", "eyeBlinkL"),
+    ("browDownL", "eyeLookUpL", "eyeBlinkL"),
+    ("browDownL", "eyeLookDownL", "eyeBlinkL"),
+    ("browDownR", "eyeLookLeftR", "eyeBlinkR"),
+    ("browDownR", "eyeLookRightR", "eyeBlinkR"),
+    ("browDownR", "eyeLookUpR", "eyeBlinkR"),
+    ("browDownR", "eyeLookDownR", "eyeBlinkR"),
+
+    # brow lateral + eye directions + blink
+    ("browLateralL", "eyeLookLeftL", "eyeBlinkL"),
+    ("browLateralL", "eyeLookRightL", "eyeBlinkL"),
+    ("browLateralL", "eyeLookUpL", "eyeBlinkL"),
+    ("browLateralL", "eyeLookDownL", "eyeBlinkL"),
+    ("browLateralR", "eyeLookLeftR", "eyeBlinkR"),
+    ("browLateralR", "eyeLookRightR", "eyeBlinkR"),
+    ("browLateralR", "eyeLookUpR", "eyeBlinkR"),
+    ("browLateralR", "eyeLookDownR", "eyeBlinkR"),
+
+    # eyeSquint + eye directions
+    ("eyeSquintL", "eyeLookLeftL", "eyeBlinkL"),
+    ("eyeSquintL", "eyeLookRightL", "eyeBlinkL"),
+    ("eyeSquintL", "eyeLookUpL", "eyeBlinkL"),
+    ("eyeSquintL", "eyeLookDownL", "eyeBlinkL"),
+    ("eyeSquintR", "eyeLookLeftR", "eyeBlinkR"),
+    ("eyeSquintR", "eyeLookRightR", "eyeBlinkR"),
+    ("eyeSquintR", "eyeLookUpR", "eyeBlinkR"),
+    ("eyeSquintR", "eyeLookDownR", "eyeBlinkR"),
+
 ]
 
 POSE_JOINTS = [
