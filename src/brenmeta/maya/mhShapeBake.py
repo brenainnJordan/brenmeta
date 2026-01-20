@@ -210,6 +210,16 @@ ADDITIONAL_COMBOS = [
     ("eyeSquintR", "eyeLookUpR", "eyeBlinkR"),
     ("eyeSquintR", "eyeLookDownR", "eyeBlinkR"),
 
+    # eyeCheekRaise + eye directions
+    ("eyeCheekRaiseL", "eyeLookLeftL", "eyeBlinkL"),
+    ("eyeCheekRaiseL", "eyeLookRightL", "eyeBlinkL"),
+    ("eyeCheekRaiseL", "eyeLookUpL", "eyeBlinkL"),
+    ("eyeCheekRaiseL", "eyeLookDownL", "eyeBlinkL"),
+    ("eyeCheekRaiseR", "eyeLookLeftR", "eyeBlinkR"),
+    ("eyeCheekRaiseR", "eyeLookRightR", "eyeBlinkR"),
+    ("eyeCheekRaiseR", "eyeLookUpR", "eyeBlinkR"),
+    ("eyeCheekRaiseR", "eyeLookDownR", "eyeBlinkR"),
+
 ]
 
 POSE_JOINTS = [

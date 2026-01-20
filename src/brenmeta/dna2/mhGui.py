@@ -1478,6 +1478,10 @@ class DnaQCWidget(DnaTab):
                 # TODO refactor tool to make this more global
                 from brenmeta.maya import mhShapeBake
 
+                mhCore.add_additional_shapes(
+                    poses, mhShapeBake.ADDITIONAL_SHAPES, joints_attr_defaults
+                )
+                
                 mhCore.add_additional_combo_poses(
                     poses, psd_poses, mhShapeBake.ADDITIONAL_COMBOS, joints_attr_defaults
                 )
