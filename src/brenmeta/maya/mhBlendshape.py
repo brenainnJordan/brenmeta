@@ -418,7 +418,7 @@ def get_target_delta(bs_node, target, in_between=None, as_numpy=False):
         delta = numpy.tile([0.0, 0.0, 0.0], (point_count, 1))
 
         if point_data:
-            point_ids = bmComponentUtils.get_all_component_list_elements(component_list)
+            point_ids = mhMayaUtils.get_all_component_list_elements(component_list)
             delta[point_ids] = numpy.array(point_data)[:, :-1]
 
         return delta
@@ -427,7 +427,7 @@ def get_target_delta(bs_node, target, in_between=None, as_numpy=False):
         delta = OpenMaya.MPointArray(point_count, OpenMaya.MPoint())
 
         if point_data:
-            point_ids = bmComponentUtils.get_all_component_list_elements(component_list)
+            point_ids = mhMayaUtils.get_all_component_list_elements(component_list)
             for point_id, point in zip(point_ids, point_data):
                 delta[point_id] = point
 
