@@ -128,6 +128,114 @@
         "eyeLookDownR",
         "eyeBlinkR"
       ]
+    ],
+    "browLateralL": [
+      [
+        "eyeLookLeftL",
+        "eyeBlinkL"
+      ],
+      [
+        "eyeLookRightL",
+        "eyeBlinkL"
+      ],
+      [
+        "eyeLookUpL",
+        "eyeBlinkL"
+      ],
+      [
+        "eyeLookDownL",
+        "eyeBlinkL"
+      ]
+    ],
+    "browLateralR": [
+      [
+        "eyeLookLeftR",
+        "eyeBlinkR"
+      ],
+      [
+        "eyeLookRightR",
+        "eyeBlinkR"
+      ],
+      [
+        "eyeLookUpR",
+        "eyeBlinkR"
+      ],
+      [
+        "eyeLookDownR",
+        "eyeBlinkR"
+      ]
+    ],
+    "eyeSquintL": [
+      [
+        "eyeLookLeftL",
+        "eyeBlinkL"
+      ],
+      [
+        "eyeLookRightL",
+        "eyeBlinkL"
+      ],
+      [
+        "eyeLookUpL",
+        "eyeBlinkL"
+      ],
+      [
+        "eyeLookDownL",
+        "eyeBlinkL"
+      ]
+    ],
+    "eyeSquintR": [
+      [
+        "eyeLookLeftR",
+        "eyeBlinkR"
+      ],
+      [
+        "eyeLookRightR",
+        "eyeBlinkR"
+      ],
+      [
+        "eyeLookUpR",
+        "eyeBlinkR"
+      ],
+      [
+        "eyeLookDownR",
+        "eyeBlinkR"
+      ]
+    ],
+    "eyeCheekRaiseL": [
+      [
+        "eyeLookLeftL",
+        "eyeBlinkL"
+      ],
+      [
+        "eyeLookRightL",
+        "eyeBlinkL"
+      ],
+      [
+        "eyeLookUpL",
+        "eyeBlinkL"
+      ],
+      [
+        "eyeLookDownL",
+        "eyeBlinkL"
+      ]
+    ],
+    "eyeCheekRaiseR": [
+      [
+        "eyeLookLeftR",
+        "eyeBlinkR"
+      ],
+      [
+        "eyeLookRightR",
+        "eyeBlinkR"
+      ],
+      [
+        "eyeLookUpR",
+        "eyeBlinkR"
+      ],
+      [
+        "eyeLookDownR",
+        "eyeBlinkR"
+      ]
     ]
   },
   "third_order": {

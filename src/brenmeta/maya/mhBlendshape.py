@@ -410,24 +410,26 @@ def get_target_delta(bs_node, target, in_between=None, as_numpy=False):
     point_count = mesh_fn.numVertices
 
     # get data
-    point_data, component_list = get_blendshape_target_data(bs_node, target, in_between=in_between)
-    point_ids = mhMayaUtils.get_all_component_list_elements(component_list)
+    plugs = BlendshapeTargetPlugs(bs_node, target, in_between=in_between)
+
+    point_data, component_list = plugs.get_data()
 
     if as_numpy:
         delta = numpy.tile([0.0, 0.0, 0.0], (point_count, 1))
 
-        if not len(point_data):
-            return delta
-
-        delta[point_ids] = numpy.array(point_data)[:, :-1]
+        if point_data:
+            point_ids = bmComponentUtils.get_all_component_list_elements(component_list)
+            delta[point_ids] = numpy.array(point_data)[:, :-1]
 
         return delta
     else:
 
         delta = OpenMaya.MPointArray(point_count, OpenMaya.MPoint())
 
-        for point_id, point in zip(point_ids, point_data):
-            delta[point_id] = point
+        if point_data:
+            point_ids = bmComponentUtils.get_all_component_list_elements(component_list)
+            for point_id, point in zip(point_ids, point_data):
+                delta[point_id] = point
 
         return delta
 
