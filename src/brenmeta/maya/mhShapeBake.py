@@ -281,6 +281,8 @@ ROOT_JOINTS = [
     "FACIAL_C_FacialRoot",
 ]
 
+COMBO_NET = "combo_network"
+
 
 def delete_redundant_joints(keep_joints=KEEP_JOINTS, pose_joints=POSE_JOINTS):
     joints = cmds.ls(type="joint")
@@ -535,6 +537,7 @@ def create_combo_logic(poses, psd_poses, expressions_node, use_combo_network=Tru
 
 
 def create_joint_poses(poses, pose_joints, driver_mapping):
+    # TODO investigate why combos aren't connecting
     # get attr poses
     # dict where key is every attr for all joints we want to still have driven
     # and value is all poses that drive that attr
@@ -847,6 +850,10 @@ def convert_rig(
             bs_node, psd_poses, in_betweens, detailed_verbose=True, optimise=optimise
         )
 
+    # delete original mesh
+    cmds.delete(mesh)
+    cmds.rename(base_mesh, mesh)
+
     # create combo logic
     driver_mapping = create_combo_logic(
         poses, psd_poses, expressions_node,
@@ -873,9 +880,6 @@ def convert_rig(
         pose_joints=pose_joints, keep_joints=keep_joints
     )
 
-    cmds.delete(mesh)
-    cmds.rename(base_mesh, mesh)
-
     if delete:
         cmds.delete(delete)
 
@@ -884,14 +888,61 @@ def convert_rig(
     return True
 
 
-def reconnect_shapes(
+def disconnect(
+        bs_nodes,
+        disconnect_targets=True,
+        disconnect_joints=True,
+        delete_combo_network=True,
+        verbose=True
+):
+    # disconnect blendshapes
+    if disconnect_targets:
+        for bs_node in bs_nodes:
+            if verbose:
+                LOG.info("Disconnecting blendshape targets: {}".format(bs_node))
+
+            targets = mhBlendshape.get_blendshape_weight_aliases(bs_node)
+
+            for target in targets:
+                target_attr = "{}.{}".format(bs_node, target)
+
+                cons = cmds.listConnections(
+                    target_attr, source=True, destination=False, plugs=True
+                )
+
+                if cons:
+                    cmds.disconnectAttr(cons[0], target_attr)
+
+    # disconnect joints and delete networks
+    if disconnect_joints:
+        if verbose:
+            LOG.info("Disconnecting joints")
+
+        pose_nets = cmds.ls("*_poses", type="network")
+        cmds.delete(pose_nets)
+
+    if delete_combo_network:
+        # delete combo network
+        if cmds.objExists(COMBO_NET):
+            if verbose:
+                LOG.info("deleting node: {}".format(COMBO_NET))
+
+            cmds.delete(COMBO_NET)
+
+    return True
+
+
+def reconnect(
         poses,
         psd_poses,
         bs_node,
         joints_attr_defaults,
+        pose_joints=POSE_JOINTS,
         expressions_node="CTRL_expressions",
         additional_shapes=ADDITIONAL_SHAPES,
         additional_combos=ADDITIONAL_COMBOS,
+        reconnect_joints=True,
+        reconnect_targets=True,
         use_combo_network=False,
         add_missing_targets=True,
 ):
@@ -911,35 +962,42 @@ def reconnect_shapes(
             poses, psd_poses, additional_combos, joints_attr_defaults
         )
 
-    # delete old combo network
-    if cmds.objExists("combo_network"):
-        cmds.delete("combo_network")
-
     # create combo logic
+    LOG.info("Creating combo logic")
+
     driver_mapping = create_combo_logic(
         poses, psd_poses, expressions_node,
         use_combo_network=use_combo_network
     )
 
     # connect expression attrs
-    LOG.info("Connecting expression attrs...")
 
-    base_mesh = cmds.blendShape(bs_node, query=True, geometry=True)[0]
+    if reconnect_targets or add_missing_targets:
+        LOG.info("Connecting expression attrs...")
 
-    for pose_name, driver_attr in driver_mapping.items():
-        if mhBlendshape.get_blendshape_target_index(bs_node, pose_name) is None:
-            if add_missing_targets:
-                LOG.info("Adding target: {}".format(pose_name))
+        base_mesh = cmds.blendShape(bs_node, query=True, geometry=True)[0]
 
-                mhBlendshape.create_empty_target(
-                    base_mesh, bs_node, pose_name, default=0.0
+        for pose_name, driver_attr in driver_mapping.items():
+            if mhBlendshape.get_blendshape_target_index(bs_node, pose_name) is None:
+                if add_missing_targets:
+                    LOG.info("Adding target: {}.{}".format(bs_node, pose_name))
+
+                    mhBlendshape.create_empty_target(
+                        base_mesh, bs_node, pose_name, default=0.0
+                    )
+                else:
+                    LOG.info("Missing target: {}.{}".format(bs_node, pose_name))
+                    continue
+
+            if reconnect_targets:
+                cmds.connectAttr(
+                    driver_attr,
+                    "{}.{}".format(bs_node, pose_name)
                 )
-            else:
-                continue
 
-        cmds.connectAttr(
-            driver_attr,
-            "{}.{}".format(bs_node, pose_name)
-        )
+    if reconnect_joints:
+        LOG.info("Reconnecting joints")
+        # connecting joints
+        create_joint_poses(poses, pose_joints, driver_mapping)
 
     return True
