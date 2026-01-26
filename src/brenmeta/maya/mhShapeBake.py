@@ -18,7 +18,9 @@
 """
 Convert pose system to pure blendshapes
 """
+
 import time
+import json
 
 from maya.api import OpenMaya
 from maya import cmds
@@ -30,261 +32,53 @@ from brenmeta.core import mhCore
 
 LOG = mhCore.get_basic_logger(__name__)
 
-DEFAULT_IN_BETWEENS = [
-    ("eyeBlinkL", 3),
-    ("eyeBlinkR", 3),
-    ("eyeLookLeftL", 1),
-    ("eyeLookLeftR", 1),
-    ("eyeLookRightL", 1),
-    ("eyeLookRightR", 1),
-    ("eyeLookUpL", 1),
-    ("eyeLookUpR", 1),
-    ("eyeLookDownL", 1),
-    ("eyeLookDownR", 1),
-    ("mouthLeft", 2),
-    ("mouthRight", 2),
-    ("mouthUpperLipBiteL", 1),
-    ("mouthUpperLipBiteR", 1),
-    ("mouthLowerLipBiteL", 1),
-    ("mouthLowerLipBiteR", 1),
-    ("tongueRoll", 2),
-    # jaw and combos should share same number of in-betweens
-    ("jawOpen", 3),
-    ("mouthLipsTogetherUL", 3),
-    ("mouthLipsTogetherUR", 3),
-    ("mouthLipsTogetherDL", 3),
-    ("mouthLipsTogetherDR", 3),
-    ("MlipsTogether_Jopen_UL", 3),
-    ("MlipsTogether_Jopen_UR", 3),
-    ("MlipsTogether_Jopen_DL", 3),
-    ("MlipsTogether_Jopen_DR", 3),
-]
-
-DEFAULT_IN_BETWEENS_DICT = {a: b for a, b in DEFAULT_IN_BETWEENS}
-
-ADDITIONAL_SHAPES = [
-    "eyeSquintL",
-    "eyeSquintR",
-]
-
-ADDITIONAL_COMBOS = [
-    # jawOpen
-    ("jawOpen", "teethFwdD"),
-    ("jawOpen", "teethBackD"),
-    ("jawOpen", "teethUpD"),
-    ("jawOpen", "teethDownD"),
-    # ("jawOpen", "teethLeftD"),
-    # ("jawOpen", "teethRightD"),
-    ("jawOpen", "tongueUp"),
-    ("jawOpen", "tongueDown"),
-    ("jawOpen", "tongueOut"),
-    ("jawOpen", "tongueBendUp"),
-    ("jawOpen", "tongueBendDown"),
-    ("jawOpen", "tongueTipUp"),
-    ("jawOpen", "tonguePress"),
-
-    # other brow
-    ("browLateralL", "browRaiseInL"),
-    ("browLateralR", "browRaiseInR"),
-
-    # brows + blink
-    ("browDownL", "eyeBlinkL"),
-    ("browDownR", "eyeBlinkR"),
-    ("browLateralL", "eyeBlinkL"),
-    ("browLateralR", "eyeBlinkR"),
-    # these combos are already present in the MH rig
-    # ("browRaiseInL", "eyeBlinkL"),
-    # ("browRaiseInR", "eyeBlinkR"),
-    # ("browRaiseOuterL", "eyeBlinkL"),
-    # ("browRaiseOuterR", "eyeBlinkR"),
-
-    # eyeBlink + eyeSquint
-    ("eyeSquintL", "eyeBlinkL"),
-    ("eyeSquintR", "eyeBlinkR"),
-
-    # brow + cheek raise
-    ("browDownL", "eyeCheekRaiseL"),
-    ("browDownR", "eyeCheekRaiseR"),
-    ("browLateralL", "eyeCheekRaiseL"),
-    ("browLateralR", "eyeCheekRaiseR"),
-
-    # brows down + eye directions
-    ("browDownL", "eyeLookLeftL"),
-    ("browDownL", "eyeLookRightL"),
-    ("browDownL", "eyeLookUpL"),
-    ("browDownL", "eyeLookDownL"),
-    ("browDownR", "eyeLookLeftR"),
-    ("browDownR", "eyeLookRightR"),
-    ("browDownR", "eyeLookUpR"),
-    ("browDownR", "eyeLookDownR"),
-
-    # brow lateral + eye directions
-    ("browLateralL", "eyeLookLeftL"),
-    ("browLateralL", "eyeLookRightL"),
-    ("browLateralL", "eyeLookUpL"),
-    ("browLateralL", "eyeLookDownL"),
-    ("browLateralR", "eyeLookLeftR"),
-    ("browLateralR", "eyeLookRightR"),
-    ("browLateralR", "eyeLookUpR"),
-    ("browLateralR", "eyeLookDownR"),
-
-    # brow raise in + eye directions
-    ("browRaiseInL", "eyeLookLeftL"),
-    ("browRaiseInL", "eyeLookRightL"),
-    ("browRaiseInL", "eyeLookUpL"),
-    # ("browRaiseInL", "eyeLookDownL"), # already present
-    ("browRaiseInR", "eyeLookLeftR"),
-    ("browRaiseInR", "eyeLookRightR"),
-    ("browRaiseInR", "eyeLookUpR"),
-    # ("browRaiseInR", "eyeLookDownR"), # already present
-
-    # brow raise out + eye directions
-    ("browRaiseOuterL", "eyeLookLeftL"),
-    ("browRaiseOuterL", "eyeLookRightL"),
-    ("browRaiseOuterL", "eyeLookUpL"),
-    # ("browRaiseOuterL", "eyeLookDownL"), # already present
-    ("browRaiseOuterR", "eyeLookLeftR"),
-    ("browRaiseOuterR", "eyeLookRightR"),
-    ("browRaiseOuterR", "eyeLookUpR"),
-    # ("browRaiseOuterR", "eyeLookDownR"), # already present
-
-    # eyeCheekRaise + eye directions
-    ("eyeCheekRaiseL", "eyeLookLeftL"),
-    ("eyeCheekRaiseL", "eyeLookRightL"),
-    ("eyeCheekRaiseL", "eyeLookUpL"),
-    ("eyeCheekRaiseL", "eyeLookDownL"),
-    ("eyeCheekRaiseR", "eyeLookLeftR"),
-    ("eyeCheekRaiseR", "eyeLookRightR"),
-    ("eyeCheekRaiseR", "eyeLookUpR"),
-    ("eyeCheekRaiseR", "eyeLookDownR"),
-
-    # eyeSquint + eye directions
-    ("eyeSquintL", "eyeLookLeftL"),
-    ("eyeSquintL", "eyeLookRightL"),
-    ("eyeSquintL", "eyeLookUpL"),
-    ("eyeSquintL", "eyeLookDownL"),
-    ("eyeSquintR", "eyeLookLeftR"),
-    ("eyeSquintR", "eyeLookRightR"),
-    ("eyeSquintR", "eyeLookUpR"),
-    ("eyeSquintR", "eyeLookDownR"),
-
-    # noseWrinkleUpper + eye directions
-    ("noseWrinkleUpperL", "eyeLookLeftL"),
-    ("noseWrinkleUpperL", "eyeLookRightL"),
-    ("noseWrinkleUpperL", "eyeLookUpL"),
-    ("noseWrinkleUpperL", "eyeLookDownL"),
-    ("noseWrinkleUpperR", "eyeLookLeftR"),
-    ("noseWrinkleUpperR", "eyeLookRightR"),
-    ("noseWrinkleUpperR", "eyeLookUpR"),
-    ("noseWrinkleUpperR", "eyeLookDownR"),
-
-    ## ** 2nd order combos **
-
-    # brows down + eye directions + blink
-    ("browDownL", "eyeLookLeftL", "eyeBlinkL"),
-    ("browDownL", "eyeLookRightL", "eyeBlinkL"),
-    ("browDownL", "eyeLookUpL", "eyeBlinkL"),
-    ("browDownL", "eyeLookDownL", "eyeBlinkL"),
-    ("browDownR", "eyeLookLeftR", "eyeBlinkR"),
-    ("browDownR", "eyeLookRightR", "eyeBlinkR"),
-    ("browDownR", "eyeLookUpR", "eyeBlinkR"),
-    ("browDownR", "eyeLookDownR", "eyeBlinkR"),
-
-    # brow lateral + eye directions + blink
-    ("browLateralL", "eyeLookLeftL", "eyeBlinkL"),
-    ("browLateralL", "eyeLookRightL", "eyeBlinkL"),
-    ("browLateralL", "eyeLookUpL", "eyeBlinkL"),
-    ("browLateralL", "eyeLookDownL", "eyeBlinkL"),
-    ("browLateralR", "eyeLookLeftR", "eyeBlinkR"),
-    ("browLateralR", "eyeLookRightR", "eyeBlinkR"),
-    ("browLateralR", "eyeLookUpR", "eyeBlinkR"),
-    ("browLateralR", "eyeLookDownR", "eyeBlinkR"),
-
-    # eyeSquint + eye directions
-    ("eyeSquintL", "eyeLookLeftL", "eyeBlinkL"),
-    ("eyeSquintL", "eyeLookRightL", "eyeBlinkL"),
-    ("eyeSquintL", "eyeLookUpL", "eyeBlinkL"),
-    ("eyeSquintL", "eyeLookDownL", "eyeBlinkL"),
-    ("eyeSquintR", "eyeLookLeftR", "eyeBlinkR"),
-    ("eyeSquintR", "eyeLookRightR", "eyeBlinkR"),
-    ("eyeSquintR", "eyeLookUpR", "eyeBlinkR"),
-    ("eyeSquintR", "eyeLookDownR", "eyeBlinkR"),
-
-    # eyeCheekRaise + eye directions
-    ("eyeCheekRaiseL", "eyeLookLeftL", "eyeBlinkL"),
-    ("eyeCheekRaiseL", "eyeLookRightL", "eyeBlinkL"),
-    ("eyeCheekRaiseL", "eyeLookUpL", "eyeBlinkL"),
-    ("eyeCheekRaiseL", "eyeLookDownL", "eyeBlinkL"),
-    ("eyeCheekRaiseR", "eyeLookLeftR", "eyeBlinkR"),
-    ("eyeCheekRaiseR", "eyeLookRightR", "eyeBlinkR"),
-    ("eyeCheekRaiseR", "eyeLookUpR", "eyeBlinkR"),
-    ("eyeCheekRaiseR", "eyeLookDownR", "eyeBlinkR"),
-
-]
-
-POSE_JOINTS = [
-    "FACIAL_L_Eye",
-    "FACIAL_L_EyeParallel",
-    "FACIAL_L_Pupil",
-    "FACIAL_R_Eye",
-    "FACIAL_R_EyeParallel",
-    "FACIAL_R_Pupil",
-    "FACIAL_C_Jaw",
-    "FACIAL_C_LowerLipRotation",
-    "FACIAL_C_TeethUpper",
-    "FACIAL_C_TeethLower",
-    # tongue
-    "FACIAL_C_Tongue1",
-    "FACIAL_C_Tongue2",
-    "FACIAL_C_Tongue3",
-    "FACIAL_C_Tongue4",
-    "FACIAL_L_TongueSide1",
-    "FACIAL_R_TongueSide1",
-    "FACIAL_L_TongueSide2",
-    "FACIAL_R_TongueSide2",
-    "FACIAL_L_TongueSide3",
-    "FACIAL_R_TongueSide3",
-    "FACIAL_L_TongueSide4",
-    "FACIAL_R_TongueSide4",
-    "FACIAL_C_TongueUpper1",
-    "FACIAL_C_TongueUpper2",
-    "FACIAL_C_TongueUpper3",
-    "FACIAL_C_TongueLower3",
-]
-
-KEEP_JOINTS = [
-    "FACIAL_C_FacialRoot",
-    "head",
-    "neck_02",
-    "neck_01",
-    "spine_05",
-    "spine_04",
-]
-
-DELETE = [
-    "eyelashes_lod0_mesh",
-    "eyeEdge_lod0_mesh",
-    "cartilage_lod0_mesh",
-    "eyeshell_lod0_mesh",
-    "head_lod1_grp",
-    "head_lod2_grp",
-    "head_lod3_grp",
-    "head_lod4_grp",
-    "head_lod5_grp",
-    "head_lod6_grp",
-    "head_lod7_grp",
-]
-
-ROOT_JOINTS = [
-    "FACIAL_C_Neck2Root",
-    "FACIAL_C_Neck1Root",
-    "FACIAL_C_FacialRoot",
-]
-
 COMBO_NET = "combo_network"
 
 
-def delete_redundant_joints(keep_joints=KEEP_JOINTS, pose_joints=POSE_JOINTS):
+class BakeConfig(object):
+    def __init__(self):
+        self.shapes = None
+        self.in_betweens = None
+        self.combos = None
+        self.pose_joints = None
+        self.keep_joints = None
+        self.delete = None
+        self.root_joints = None
+
+    @classmethod
+    def load(cls, file_path):
+        config = cls()
+
+        data = None
+
+        with open(file_path, 'r') as f:
+            if f:
+                data = json.load(f)
+
+        if not data:
+            raise mhCore.MHError(
+                "Failed to load config: {}".format(file_path)
+            )
+
+        config.shapes = data["shapes"]
+        config.in_betweens = data["in_betweens"]
+        config.pose_joints = data["pose_joints"]
+        config.keep_joints = data["keep_joints"]
+        config.delete = data["delete"]
+        config.root_joints = data["root_joints"]
+
+        config.combos = [
+            combo for combo_data in data["combos"]
+            for combo in combo_data["combos"]
+            if combo_data["enabled"]
+        ]
+
+        print("test", config.combos)
+
+        return config
+
+
+def delete_redundant_joints(keep_joints, pose_joints):
     joints = cmds.ls(type="joint")
     joints = [i for i in joints if i not in keep_joints + pose_joints]
     cmds.delete(joints)
@@ -292,16 +86,17 @@ def delete_redundant_joints(keep_joints=KEEP_JOINTS, pose_joints=POSE_JOINTS):
 
 def bake_shapes_from_dna_v1(
         dna_file,
+        bake_config_file,
         name="poseSystem",
         expressions_node="CTRL_expressions",
-        in_betweens=DEFAULT_IN_BETWEENS_DICT,
+        # in_betweens=DEFAULT_IN_BETWEENS,
         mesh="head_lod0_mesh",
         calculate_psds=True,
         connect_shapes=True,
         optimise=True,
-        pose_joints=POSE_JOINTS,
-        keep_joints=KEEP_JOINTS,
-        additional_combos=ADDITIONAL_COMBOS,
+        # pose_joints=POSE_JOINTS,
+        # keep_joints=KEEP_JOINTS,
+        # additional_combos=ADDITIONAL_COMBOS,
         detailed_verbose=False
 ):
     """
@@ -348,20 +143,21 @@ bmMhFaceShapeBake.bake_shapes(
     psd_poses = mhBehaviour.get_psd_poses(calib_reader, poses)
     joints_attr_defaults = mhBehaviour.get_joint_defaults(calib_reader)
 
-    convert_rig(
+    bake_rig(
         poses,
         psd_poses,
         joints_attr_defaults,
+        bake_config_file,
         mesh=mesh,
         calculate_psds=calculate_psds,
         connect_shapes=connect_shapes,
         optimise=optimise,
         name=name,
         expressions_node=expressions_node,
-        in_betweens=in_betweens,
-        pose_joints=pose_joints,
-        keep_joints=keep_joints,
-        additional_combos=additional_combos,
+        # in_betweens=in_betweens,
+        # pose_joints=pose_joints,
+        # keep_joints=keep_joints,
+        # additional_combos=additional_combos,
         detailed_verbose=detailed_verbose
     )
 
@@ -371,15 +167,16 @@ bmMhFaceShapeBake.bake_shapes(
 def bake_shapes_from_dna_v2(
         dna_file,
         # name="poseSystem",
+        bake_config_file,
         expressions_node="CTRL_expressions",
-        in_betweens=DEFAULT_IN_BETWEENS_DICT,
+        # in_betweens=DEFAULT_IN_BETWEENS,
         mesh="head_lod0_mesh",
         calculate_psds=True,
         connect_shapes=True,
         optimise=True,
-        pose_joints=POSE_JOINTS,
-        keep_joints=KEEP_JOINTS,
-        additional_combos=ADDITIONAL_COMBOS,
+        # pose_joints=POSE_JOINTS,
+        # keep_joints=KEEP_JOINTS,
+        # additional_combos=ADDITIONAL_COMBOS,
         use_combo_network=False,
         detailed_verbose=False
 ):
@@ -427,20 +224,21 @@ bmMhFaceShapeBake.bake_shapes_from_dna_v2(
     psd_poses = mhBehaviour.get_psd_poses(calib_reader, poses)
     joints_attr_defaults = mhBehaviour.get_joint_defaults(calib_reader)
 
-    convert_rig(
+    bake_rig(
         poses,
         psd_poses,
         joints_attr_defaults,
+        bake_config_file,
         mesh=mesh,
         calculate_psds=calculate_psds,
         connect_shapes=connect_shapes,
         optimise=optimise,
         # name=name,
         expressions_node=expressions_node,
-        in_betweens=in_betweens,
-        pose_joints=pose_joints,
-        keep_joints=keep_joints,
-        additional_combos=additional_combos,
+        # in_betweens=in_betweens,
+        # pose_joints=pose_joints,
+        # keep_joints=keep_joints,
+        # additional_combos=additional_combos,
         use_combo_network=use_combo_network,
         detailed_verbose=detailed_verbose,
     )
@@ -454,7 +252,7 @@ bmMhFaceShapeBake.bake_shapes_from_dna_v2(
     return True
 
 
-def break_joint_connections(root_joints=ROOT_JOINTS):
+def break_joint_connections(root_joints):
     transforms = []
 
     for root_joint in root_joints:
@@ -795,10 +593,11 @@ def calculate_psd_deltas(bs_node, psd_poses, in_betweens, detailed_verbose=True,
     return True
 
 
-def convert_rig(
+def bake_rig(
         poses,
         psd_poses,
         joints_attr_defaults,
+        config_file_path,
         mesh="head_lod0_mesh",
         calculate_psds=True,
         connect_shapes=True,
@@ -806,35 +605,45 @@ def convert_rig(
         # name="poseSystem",
         expressions_node="CTRL_expressions",
         use_combo_network=False,
-        in_betweens=DEFAULT_IN_BETWEENS,
-        pose_joints=POSE_JOINTS,
-        keep_joints=KEEP_JOINTS,
-        additional_combos=ADDITIONAL_COMBOS,
-        delete=DELETE,
+        # in_betweens=DEFAULT_IN_BETWEENS,
+        # pose_joints=POSE_JOINTS,
+        # keep_joints=KEEP_JOINTS,
+        # additional_combos=ADDITIONAL_COMBOS,
+        # delete=DELETE,
         detailed_verbose=False
 ):
     """
     TODO support more than one mesh
+    TODO additional shapes
     """
 
+    # load config
+    bake_config = BakeConfig.load(config_file_path)
+
+    # create additional poses
+    if bake_config.shapes:
+        mhCore.add_additional_shapes(
+            poses, bake_config.shapes, joints_attr_defaults
+        )
+
     # create additional combos
-    if additional_combos:
+    if bake_config.combos:
         LOG.info("Adding additional combos...")
 
         mhCore.add_additional_combo_poses(
-            poses, psd_poses, additional_combos, joints_attr_defaults
+            poses, psd_poses, bake_config.combos, joints_attr_defaults
         )
 
     # break joint connections
     LOG.info("Disconnecting joints...")
 
-    break_joint_connections()
+    break_joint_connections(bake_config.root_joints)
 
     # create base mesh and blendshape node
     LOG.info("Baking shapes...")
 
     base_mesh, bs_node, target_group = bake_shapes_from_poses(
-        mesh, poses, psd_poses, in_betweens, detailed_verbose=detailed_verbose
+        mesh, poses, psd_poses, bake_config.in_betweens, detailed_verbose=detailed_verbose
     )
 
     # delete targets so we can edit the deltas
@@ -847,7 +656,7 @@ def convert_rig(
         LOG.info("Calculating PSD deltas...")
 
         calculate_psd_deltas(
-            bs_node, psd_poses, in_betweens, detailed_verbose=True, optimise=optimise
+            bs_node, psd_poses, bake_config.in_betweens, detailed_verbose=True, optimise=optimise
         )
 
     # delete original mesh
@@ -873,15 +682,16 @@ def convert_rig(
     # create joint pose nodes
     LOG.info("Creating joint poses...")
 
-    create_joint_poses(poses, pose_joints, driver_mapping)
+    create_joint_poses(poses, bake_config.pose_joints, driver_mapping)
 
     # cleanup
     delete_redundant_joints(
-        pose_joints=pose_joints, keep_joints=keep_joints
+        bake_config.pose_joints,
+        bake_config.keep_joints
     )
 
-    if delete:
-        cmds.delete(delete)
+    if bake_config.delete:
+        cmds.delete(bake_config.delete)
 
     LOG.info("done.")
 
@@ -937,10 +747,11 @@ def reconnect(
         psd_poses,
         bs_node,
         joints_attr_defaults,
-        pose_joints=POSE_JOINTS,
+        config_file_path,
+        # pose_joints=POSE_JOINTS,
         expressions_node="CTRL_expressions",
-        additional_shapes=ADDITIONAL_SHAPES,
-        additional_combos=ADDITIONAL_COMBOS,
+        # additional_shapes=ADDITIONAL_SHAPES,
+        # additional_combos=ADDITIONAL_COMBOS,
         reconnect_joints=True,
         reconnect_targets=True,
         use_combo_network=False,
@@ -948,18 +759,21 @@ def reconnect(
 ):
     """TODO support multiple blendshape nodes
     """
+    # load config
+    bake_config = BakeConfig.load(config_file_path)
+
     # create additional poses
-    if additional_shapes:
+    if bake_config.shapes:
         mhCore.add_additional_shapes(
-            poses, additional_shapes, joints_attr_defaults
+            poses, bake_config.shapes, joints_attr_defaults
         )
 
     # create additional combos
-    if additional_combos:
+    if bake_config.combos:
         LOG.info("Adding additional combos...")
 
         mhCore.add_additional_combo_poses(
-            poses, psd_poses, additional_combos, joints_attr_defaults
+            poses, psd_poses, bake_config.combos, joints_attr_defaults
         )
 
     # create combo logic

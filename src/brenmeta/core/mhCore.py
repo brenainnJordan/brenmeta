@@ -358,3 +358,54 @@ def add_additional_combo_poses(poses, psd_poses, additional_combos, joints_attr_
         combo.update_name(override=True)
 
     return poses, psd_poses
+
+
+class Project(object):
+    def __init__(self):
+        self.input_dna_path = None
+        self.output_dna_path = None
+        self.dna_assets_path = None
+        self.dna_files_path = None
+        self.bake_config_path = os.path.join(DATA_DIR, "configs", "bake_config.json")
+
+
+    def get_dna_files(self):
+        generic_assets = None
+
+        assets = ["Input Dna", "Output Dna"]
+
+        if self.dna_files_path:
+            generic_assets = []
+
+            # dna_path = os.path.join(self.dna_assets_path, "dna_files")
+
+            if os.path.exists(self.dna_files_path):
+                for i in os.listdir(self.dna_files_path):
+                    if any([
+                        not i.endswith(".dna"),
+                    ]):
+                        continue
+
+                    generic_assets.append(i.split(".")[0])
+
+        if generic_assets:
+            assets += generic_assets
+
+        return assets
+
+    def get_path(self, asset):
+        dna_paths = {
+            "Input Dna": self.input_dna_path,
+            "Output Dna": self.output_dna_path,
+        }
+
+        if asset in dna_paths:
+            dna_path = dna_paths[asset]
+
+        else:
+            dna_path = os.path.join(
+                self.dna_files_path,
+                "{}.dna".format(asset)
+            )
+
+        return dna_path

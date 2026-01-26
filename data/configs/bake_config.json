@@ -1,0 +1,293 @@
+{
+  "shapes": [
+    "eyeSquintL",
+    "eyeSquintR"
+  ],
+  "in_betweens": {
+    "eyeBlinkL": 3,
+    "eyeBlinkR": 3,
+    "eyeLookLeftL": 1,
+    "eyeLookLeftR": 1,
+    "eyeLookRightL": 1,
+    "eyeLookRightR": 1,
+    "eyeLookUpL": 1,
+    "eyeLookUpR": 1,
+    "eyeLookDownL": 1,
+    "eyeLookDownR": 1,
+    "mouthLeft": 2,
+    "mouthRight": 2,
+    "mouthUpperLipBiteL": 1,
+    "mouthUpperLipBiteR": 1,
+    "mouthLowerLipBiteL": 1,
+    "mouthLowerLipBiteR": 1,
+    "tongueRoll": 2,
+    "jawOpen": 3,
+    "mouthLipsTogetherUL": 3,
+    "mouthLipsTogetherUR": 3,
+    "mouthLipsTogetherDL": 3,
+    "mouthLipsTogetherDR": 3,
+    "MlipsTogether_Jopen_UL": 3,
+    "MlipsTogether_Jopen_UR": 3,
+    "MlipsTogether_Jopen_DL": 3,
+    "MlipsTogether_Jopen_DR": 3
+  },
+  "combos": [
+    {
+      "description": "jawOpen first order combos",
+      "enabled": true,
+      "combos": [
+        ["jawOpen", "teethFwdD"],
+        ["jawOpen", "teethBackD"],
+        ["jawOpen", "teethUpD"],
+        ["jawOpen", "teethDownD"],
+        ["jawOpen", "tongueUp"],
+        ["jawOpen", "tongueDown"],
+        ["jawOpen", "tongueOut"],
+        ["jawOpen", "tongueBendUp"],
+        ["jawOpen", "tongueBendDown"],
+        ["jawOpen", "tongueTipUp"],
+        ["jawOpen", "tonguePress"]
+      ]
+    },
+    {
+      "description": "other brow",
+      "enabled": true,
+      "combos": [
+        ["browLateralL", "browRaiseInL"],
+        ["browLateralR", "browRaiseInR"]
+      ]
+    },
+    {
+      "description": "brows + blink",
+      "enabled": true,
+      "combos": [
+        ["browDownL", "eyeBlinkL"],
+        ["browDownR", "eyeBlinkR"],
+        ["browLateralL", "eyeBlinkL"],
+        ["browLateralR", "eyeBlinkR"]
+      ]
+    },
+    {
+      "description": "eyeBlink + eyeSquint",
+      "enabled": true,
+      "combos": [
+        ["eyeSquintL", "eyeBlinkL"],
+        ["eyeSquintR", "eyeBlinkR"]
+      ]
+    },
+    {
+      "description": "brow + cheek raise",
+      "enabled": true,
+      "combos": [
+        ["browDownL", "eyeCheekRaiseL"],
+        ["browDownR", "eyeCheekRaiseR"],
+        ["browLateralL", "eyeCheekRaiseL"],
+        ["browLateralR", "eyeCheekRaiseR"]
+      ]
+    },
+    {
+      "description": "brows down + eye directions",
+      "enabled": true,
+      "combos": [
+        ["browDownL", "eyeLookLeftL"],
+        ["browDownL", "eyeLookRightL"],
+        ["browDownL", "eyeLookUpL"],
+        ["browDownL", "eyeLookDownL"],
+        ["browDownR", "eyeLookLeftR"],
+        ["browDownR", "eyeLookRightR"],
+        ["browDownR", "eyeLookUpR"],
+        ["browDownR", "eyeLookDownR"]
+      ]
+    },
+    {
+      "description": "brow lateral + eye directions",
+      "enabled": true,
+      "combos": [
+        ["browLateralL", "eyeLookLeftL"],
+        ["browLateralL", "eyeLookRightL"],
+        ["browLateralL", "eyeLookUpL"],
+        ["browLateralL", "eyeLookDownL"],
+        ["browLateralR", "eyeLookLeftR"],
+        ["browLateralR", "eyeLookRightR"],
+        ["browLateralR", "eyeLookUpR"],
+        ["browLateralR", "eyeLookDownR"]
+      ]
+    },
+    {
+      "description": "brow raise in + eye directions",
+      "enabled": true,
+      "combos": [
+        ["browRaiseInL", "eyeLookLeftL"],
+        ["browRaiseInL", "eyeLookRightL"],
+        ["browRaiseInL", "eyeLookUpL"],
+        ["browRaiseInR", "eyeLookLeftR"],
+        ["browRaiseInR", "eyeLookRightR"],
+        ["browRaiseInR", "eyeLookUpR"]
+      ]
+    },
+    {
+      "description": "brow raise out + eye directions",
+      "enabled": true,
+      "combos": [
+        ["browRaiseOuterL", "eyeLookLeftL"],
+        ["browRaiseOuterL", "eyeLookRightL"],
+        ["browRaiseOuterL", "eyeLookUpL"],
+        ["browRaiseOuterR", "eyeLookLeftR"],
+        ["browRaiseOuterR", "eyeLookRightR"],
+        ["browRaiseOuterR", "eyeLookUpR"]
+      ]
+    },
+    {
+      "description": "eyeCheekRaise + eye directions",
+      "enabled": true,
+      "combos": [
+        ["eyeCheekRaiseL", "eyeLookLeftL"],
+        ["eyeCheekRaiseL", "eyeLookRightL"],
+        ["eyeCheekRaiseL", "eyeLookUpL"],
+        ["eyeCheekRaiseL", "eyeLookDownL"],
+        ["eyeCheekRaiseR", "eyeLookLeftR"],
+        ["eyeCheekRaiseR", "eyeLookRightR"],
+        ["eyeCheekRaiseR", "eyeLookUpR"],
+        ["eyeCheekRaiseR", "eyeLookDownR"]
+      ]
+    },
+    {
+      "description": "eyeSquint + eye directions",
+      "enabled": true,
+      "combos": [
+        ["eyeSquintL", "eyeLookLeftL"],
+        ["eyeSquintL", "eyeLookRightL"],
+        ["eyeSquintL", "eyeLookUpL"],
+        ["eyeSquintL", "eyeLookDownL"],
+        ["eyeSquintR", "eyeLookLeftR"],
+        ["eyeSquintR", "eyeLookRightR"],
+        ["eyeSquintR", "eyeLookUpR"],
+        ["eyeSquintR", "eyeLookDownR"]
+      ]
+    },
+    {
+      "description": "noseWrinkleUpper + eye directions",
+      "enabled": true,
+      "combos": [
+        ["noseWrinkleUpperL", "eyeLookLeftL"],
+        ["noseWrinkleUpperL", "eyeLookRightL"],
+        ["noseWrinkleUpperL", "eyeLookUpL"],
+        ["noseWrinkleUpperL", "eyeLookDownL"],
+        ["noseWrinkleUpperR", "eyeLookLeftR"],
+        ["noseWrinkleUpperR", "eyeLookRightR"],
+        ["noseWrinkleUpperR", "eyeLookUpR"],
+        ["noseWrinkleUpperR", "eyeLookDownR"]
+      ]
+    },
+    {
+      "description": "brows down + eye directions + blink",
+      "enabled": true,
+      "combos": [
+        ["browDownL", "eyeLookLeftL", "eyeBlinkL"],
+        ["browDownL", "eyeLookRightL", "eyeBlinkL"],
+        ["browDownL", "eyeLookUpL", "eyeBlinkL"],
+        ["browDownL", "eyeLookDownL", "eyeBlinkL"],
+        ["browDownR", "eyeLookLeftR", "eyeBlinkR"],
+        ["browDownR", "eyeLookRightR", "eyeBlinkR"],
+        ["browDownR", "eyeLookUpR", "eyeBlinkR"],
+        ["browDownR", "eyeLookDownR", "eyeBlinkR"]
+      ]
+    },
+    {
+      "description": "brow lateral + eye directions + blink",
+      "enabled": true,
+      "combos": [
+        ["browLateralL", "eyeLookLeftL", "eyeBlinkL"],
+        ["browLateralL", "eyeLookRightL", "eyeBlinkL"],
+        ["browLateralL", "eyeLookUpL", "eyeBlinkL"],
+        ["browLateralL", "eyeLookDownL", "eyeBlinkL"],
+        ["browLateralR", "eyeLookLeftR", "eyeBlinkR"],
+        ["browLateralR", "eyeLookRightR", "eyeBlinkR"],
+        ["browLateralR", "eyeLookUpR", "eyeBlinkR"],
+        ["browLateralR", "eyeLookDownR", "eyeBlinkR"]
+      ]
+    },
+    {
+      "description": "eyeSquint + eye directions + blink",
+      "enabled": true,
+      "combos": [
+        ["eyeSquintL", "eyeLookLeftL", "eyeBlinkL"],
+        ["eyeSquintL", "eyeLookRightL", "eyeBlinkL"],
+        ["eyeSquintL", "eyeLookUpL", "eyeBlinkL"],
+        ["eyeSquintL", "eyeLookDownL", "eyeBlinkL"],
+        ["eyeSquintR", "eyeLookLeftR", "eyeBlinkR"],
+        ["eyeSquintR", "eyeLookRightR", "eyeBlinkR"],
+        ["eyeSquintR", "eyeLookUpR", "eyeBlinkR"],
+        ["eyeSquintR", "eyeLookDownR", "eyeBlinkR"]
+      ]
+    },
+    {
+      "description": "eyeCheekRaise + eye directions + blink",
+      "enabled": true,
+      "combos": [
+        ["eyeCheekRaiseL", "eyeLookLeftL", "eyeBlinkL"],
+        ["eyeCheekRaiseL", "eyeLookRightL", "eyeBlinkL"],
+        ["eyeCheekRaiseL", "eyeLookUpL", "eyeBlinkL"],
+        ["eyeCheekRaiseL", "eyeLookDownL", "eyeBlinkL"],
+        ["eyeCheekRaiseR", "eyeLookLeftR", "eyeBlinkR"],
+        ["eyeCheekRaiseR", "eyeLookRightR", "eyeBlinkR"],
+        ["eyeCheekRaiseR", "eyeLookUpR", "eyeBlinkR"],
+        ["eyeCheekRaiseR", "eyeLookDownR", "eyeBlinkR"]
+      ]
+    }
+  ],
+  "pose_joints": [
+    "FACIAL_L_Eye",
+    "FACIAL_L_EyeParallel",
+    "FACIAL_L_Pupil",
+    "FACIAL_R_Eye",
+    "FACIAL_R_EyeParallel",
+    "FACIAL_R_Pupil",
+    "FACIAL_C_Jaw",
+    "FACIAL_C_LowerLipRotation",
+    "FACIAL_C_TeethUpper",
+    "FACIAL_C_TeethLower",
+    "FACIAL_C_Tongue1",
+    "FACIAL_C_Tongue2",
+    "FACIAL_C_Tongue3",
+    "FACIAL_C_Tongue4",
+    "FACIAL_L_TongueSide1",
+    "FACIAL_R_TongueSide1",
+    "FACIAL_L_TongueSide2",
+    "FACIAL_R_TongueSide2",
+    "FACIAL_L_TongueSide3",
+    "FACIAL_R_TongueSide3",
+    "FACIAL_L_TongueSide4",
+    "FACIAL_R_TongueSide4",
+    "FACIAL_C_TongueUpper1",
+    "FACIAL_C_TongueUpper2",
+    "FACIAL_C_TongueUpper3",
+    "FACIAL_C_TongueLower3"
+  ],
+  "keep_joints": [
+    "FACIAL_C_FacialRoot",
+    "head",
+    "neck_02",
+    "neck_01",
+    "spine_05",
+    "spine_04"
+  ],
+  "delete": [
+    "eyelashes_lod0_mesh",
+    "eyeEdge_lod0_mesh",
+    "cartilage_lod0_mesh",
+    "eyeshell_lod0_mesh",
+    "head_lod1_grp",
+    "head_lod2_grp",
+    "head_lod3_grp",
+    "head_lod4_grp",
+    "head_lod5_grp",
+    "head_lod6_grp",
+    "head_lod7_grp"
+  ],
+  "root_joints": [
+    "FACIAL_C_Neck2Root",
+    "FACIAL_C_Neck1Root",
+    "FACIAL_C_FacialRoot"
+  ]
+}

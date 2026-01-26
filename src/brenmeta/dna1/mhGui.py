@@ -1508,7 +1508,7 @@ class DnaModWidget(
     def __init__(self, *args, **kwargs):
         super(DnaModWidget, self).__init__(*args, **kwargs)
 
-        self.path_manager = mhWidgets.DnaPathManager()
+        self.project = mhCore.Project()
 
         self.setWindowTitle("Bren's MetaHuman DNA Modification Tool")
 
@@ -1546,10 +1546,10 @@ class DnaModWidget(
 
         self.tabs = QtWidgets.QTabWidget()
 
-        self.build_widget = DnaBuildWidget(self.path_manager)
-        self.transfer_widget = DnaTransferWidget(self.path_manager)
-        self.poses_widget = DnaPosesWidget(self.path_manager)
-        self.qc_widget = DnaQCWidget(self.path_manager)
+        self.build_widget = DnaBuildWidget(self.project)
+        self.transfer_widget = DnaTransferWidget(self.project)
+        self.poses_widget = DnaPosesWidget(self.project)
+        self.qc_widget = DnaQCWidget(self.project)
 
         self.tabs.addTab(self.build_widget, "build")
         self.tabs.addTab(self.transfer_widget, "transfer")
@@ -1561,10 +1561,10 @@ class DnaModWidget(
         self.paths_changed()
 
     def paths_changed(self):
-        self.path_manager.dna_assets_path = self.dna_assets_dir_widget.path
-        self.path_manager.dna_files_path = self.dna_files_dir_widget.path
-        self.path_manager.input_dna_path = self.input_file_widget.path
-        self.path_manager.output_dna_path = self.output_file_widget.path
+        self.project.dna_assets_path = self.dna_assets_dir_widget.path
+        self.project.dna_files_path = self.dna_files_dir_widget.path
+        self.project.input_dna_path = self.input_file_widget.path
+        self.project.output_dna_path = self.output_file_widget.path
 
         # update widgets
         self.build_widget.update_assets()

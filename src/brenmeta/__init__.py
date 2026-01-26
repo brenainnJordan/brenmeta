@@ -69,7 +69,7 @@ def validate_dependencies_v2():
 
         return False
 
-def show(version=1):
+def show(version=2):
     """
     import brenmeta
     gui = brenmeta.show(version=1)

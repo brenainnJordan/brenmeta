@@ -1672,6 +1672,108 @@ class DnaShapeBakeWidget(DnaTab):
         self.create_widgets()
 
     def create_widgets(self):
+
+        self.dna_file_combo = mhWidgets.DnaPathManagerWidget(self.path_manager, "dna file")
+
+        self.config_file_widget = mhWidgets.PathOpenWidget("bake config")
+        self.config_file_widget.path = self.path_manager.bake_config_path
+
+        # bake group box
+        self.bake_group_box = QtWidgets.QGroupBox("bake")
+
+        bake_lyt = QtWidgets.QVBoxLayout()
+        self.bake_group_box.setLayout(bake_lyt)
+
+        self.calculate_psd_deltas_checkbox = QtWidgets.QCheckBox("calculate psd deltas")
+        self.connect_shapes_checkbox = QtWidgets.QCheckBox("connect shapes")
+        self.optimise_checkbox = QtWidgets.QCheckBox("optimise")
+        self.delete_unused_joints_checkbox = QtWidgets.QCheckBox("delete unused joints")
+        self.use_combo_network_checkbox = QtWidgets.QCheckBox("use combo network")
+
+        self.calculate_psd_deltas_checkbox.setChecked(True)
+        self.connect_shapes_checkbox.setChecked(True)
+        self.optimise_checkbox.setChecked(True)
+        self.delete_unused_joints_checkbox.setChecked(True)
+
+        # build btn
+        self.build_btn = QtWidgets.QPushButton("Build")
+        self.build_btn.clicked.connect(self._build_clicked)
+
+        bake_lyt.addWidget(self.calculate_psd_deltas_checkbox)
+        bake_lyt.addWidget(self.connect_shapes_checkbox)
+        bake_lyt.addWidget(self.optimise_checkbox)
+        bake_lyt.addWidget(self.delete_unused_joints_checkbox)
+        bake_lyt.addWidget(self.build_btn)
+
+        # disconnect group box
+        self.disconnect_group_box = QtWidgets.QGroupBox("disconnect")
+
+        disconnect_lyt = QtWidgets.QVBoxLayout()
+        self.disconnect_group_box.setLayout(disconnect_lyt)
+
+        self.disconnect_targets_checkbox = QtWidgets.QCheckBox("disconnect targets")
+        self.disconnect_joints_checkbox = QtWidgets.QCheckBox("disconnect joints")
+        self.delete_combo_network_checkbox = QtWidgets.QCheckBox("delete combo network")
+
+        self.disconnect_targets_checkbox.setChecked(True)
+        self.disconnect_joints_checkbox.setChecked(True)
+        self.delete_combo_network_checkbox.setChecked(True)
+
+        # disconnect btn
+        self.disconnect_btn = QtWidgets.QPushButton("disconnect")
+        self.disconnect_btn.clicked.connect(self._disconnect_clicked)
+
+        disconnect_lyt.addWidget(self.disconnect_targets_checkbox)
+        disconnect_lyt.addWidget(self.disconnect_joints_checkbox)
+        disconnect_lyt.addWidget(self.delete_combo_network_checkbox)
+        disconnect_lyt.addWidget(self.disconnect_btn)
+
+        # reconnect group box
+        self.reconnect_group_box = QtWidgets.QGroupBox("reconnect")
+
+        reconnect_lyt = QtWidgets.QVBoxLayout()
+        self.reconnect_group_box.setLayout(reconnect_lyt)
+
+        # add missing
+        self.add_missing_targets_checkbox = QtWidgets.QCheckBox("add missing targets")
+        self.reconnect_combo_network_checkbox = QtWidgets.QCheckBox("use combo network")
+        self.reconnect_targets_checkbox = QtWidgets.QCheckBox("reconnect targets")
+        self.reconnect_joints_checkbox = QtWidgets.QCheckBox("reconnect joints")
+
+        self.bs_node_widget = mhWidgets.NodeLineEdit(
+            default="head_lod0_mesh_blendShape",
+            label="blendShape"
+        )
+
+        self.add_missing_targets_checkbox.setChecked(True)
+        self.reconnect_combo_network_checkbox.setChecked(True)
+        self.reconnect_targets_checkbox.setChecked(True)
+        self.reconnect_joints_checkbox.setChecked(True)
+
+        # reconnect btn
+        self.reconnect_btn = QtWidgets.QPushButton("Reconnect")
+        self.reconnect_btn.clicked.connect(self._reconnect_clicked)
+
+        reconnect_lyt.addWidget(self.bs_node_widget)
+        reconnect_lyt.addWidget(self.add_missing_targets_checkbox)
+        reconnect_lyt.addWidget(self.reconnect_combo_network_checkbox)
+        reconnect_lyt.addWidget(self.reconnect_targets_checkbox)
+        reconnect_lyt.addWidget(self.reconnect_joints_checkbox)
+        reconnect_lyt.addWidget(self.reconnect_btn)
+
+        # create layout
+        lyt = QtWidgets.QVBoxLayout()
+        self.setLayout(lyt)
+
+        lyt.addWidget(self.dna_file_combo)
+        lyt.addWidget(self.config_file_widget)
+        lyt.addWidget(self.bake_group_box)
+        lyt.addWidget(self.disconnect_group_box)
+        lyt.addWidget(self.reconnect_group_box)
+        lyt.addStretch()
+
+
+    def create_tab_widgets(self):
         self.create_build_widgets()
         self.create_settings_widget()
 
@@ -1868,8 +1970,9 @@ class DnaShapeBakeWidget(DnaTab):
 
     def _build_clicked(self):
 
-        # get path
+        # get paths
         dna_path = self.dna_file_combo.get_path()
+        bake_config_file = self.config_file_widget.path
 
         # check we have paths
         if not dna_path:
@@ -1891,14 +1994,15 @@ class DnaShapeBakeWidget(DnaTab):
 
         mhShapeBake.bake_shapes_from_dna_v2(
             dna_path,
+            bake_config_file,
             mesh="head_lod0_mesh",  # TODO widget
             calculate_psds=self.calculate_psd_deltas_checkbox.isChecked(),
             connect_shapes=self.connect_shapes_checkbox.isChecked(),
             optimise=self.optimise_checkbox.isChecked(),
             expressions_node="CTRL_expressions",
-            in_betweens={a: b for a, b in self.in_betweens_model.tuple_list},
-            pose_joints=self.pose_joints_model.list,
-            keep_joints=self.keep_model.list,
+            # in_betweens={a: b for a, b in self.in_betweens_model.tuple_list},
+            # pose_joints=self.pose_joints_model.list,
+            # keep_joints=self.keep_model.list,
             # additional_combos=self.combos_model.tuple_list, # TODO
             use_combo_network=False,
         )
@@ -1934,8 +2038,9 @@ class DnaShapeBakeWidget(DnaTab):
 
     def _reconnect_clicked(self):
 
-        # get path
+        # get paths
         dna_path = self.dna_file_combo.get_path()
+        bake_config_file = self.config_file_widget.path
 
         # check we have paths
         if not dna_path:
@@ -1977,6 +2082,7 @@ class DnaShapeBakeWidget(DnaTab):
                 psd_poses,
                 self.bs_node_widget.node,
                 joints_attr_defaults,
+                bake_config_file,
                 expressions_node="CTRL_expressions",
                 # additional_combos=self.combos_model.tuple_list, # TODO
                 use_combo_network=self.reconnect_combo_network_checkbox.isChecked(),
@@ -2123,7 +2229,7 @@ class DnaModWidget(
     def __init__(self, *args, **kwargs):
         super(DnaModWidget, self).__init__(*args, **kwargs)
 
-        self.path_manager = mhWidgets.DnaPathManager()
+        self.project = mhCore.Project()
 
         self.setWindowTitle("Bren's MetaHuman DNA Modification Tool")
 
@@ -2161,13 +2267,13 @@ class DnaModWidget(
         # tabs
         self.tabs = QtWidgets.QTabWidget()
 
-        self.build_widget = DnaBuildWidget(self.path_manager)
-        self.transfer_widget = DnaTransferWidget(self.path_manager)
-        self.merge_widget = DnaMergeWidget(self.path_manager)
-        self.poses_widget = DnaPosesWidget(self.path_manager)
-        self.shape_bake_widget = DnaShapeBakeWidget(self.path_manager)
-        self.sculpt_widget = DnaSculptWidget(self.path_manager)
-        self.qc_widget = DnaQCWidget(self.path_manager)
+        self.build_widget = DnaBuildWidget(self.project)
+        self.transfer_widget = DnaTransferWidget(self.project)
+        self.merge_widget = DnaMergeWidget(self.project)
+        self.poses_widget = DnaPosesWidget(self.project)
+        self.shape_bake_widget = DnaShapeBakeWidget(self.project)
+        self.sculpt_widget = DnaSculptWidget(self.project)
+        self.qc_widget = DnaQCWidget(self.project)
 
         self.tabs.addTab(self.build_widget, "build")
         self.tabs.addTab(self.transfer_widget, "transfer")
@@ -2182,10 +2288,10 @@ class DnaModWidget(
         self.paths_changed()
 
     def paths_changed(self):
-        self.path_manager.dna_assets_path = self.dna_assets_dir_widget.path
-        self.path_manager.dna_files_path = self.dna_files_dir_widget.path
-        self.path_manager.input_dna_path = self.input_file_widget.path
-        self.path_manager.output_dna_path = self.output_file_widget.path
+        self.project.dna_assets_path = self.dna_assets_dir_widget.path
+        self.project.dna_files_path = self.dna_files_dir_widget.path
+        self.project.input_dna_path = self.input_file_widget.path
+        self.project.output_dna_path = self.output_file_widget.path
 
         # update widgets
         self.build_widget.update_assets()
