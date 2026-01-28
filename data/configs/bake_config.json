@@ -4,11 +4,7 @@
   ],
   "shapes": [
     "eyeSquintL",
-    "eyeSquintR",
-    "poops",
-    "things",
-    "stuff",
-    "blah"
+    "eyeSquintR"
   ],
   "in_betweens": {
     "eyeBlinkL": 3,

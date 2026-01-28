@@ -582,7 +582,7 @@ def set_target_delta(bs_node, target, delta, in_between=None, optimise=False, th
 
 
 def get_blendshape_target_weights(bs_node_name, target):
-    _, target_index = bmBlendshapeUtils.parse_target_arg(bs_node_name, target)
+    _, target_index = parse_target_arg(bs_node_name, target)
 
     sl = OpenMaya.MSelectionList()
     sl.add(bs_node_name)
@@ -1119,5 +1119,39 @@ def apply_proxy_combo_sl(rebuild=True):
     proxy_combo = sl[0]
 
     apply_proxy_combo(proxy_combo, rebuild=rebuild)
+
+    return True
+
+def add_deltas_sl():
+    """Add deltas of selected targets and apply to last selected target
+    """
+    targets, in_betweens = get_selected_shape_editor_targets(force_single_bs_node=True)
+
+    bs_node = targets[0][0]
+
+    target_indices = [i[1] for i in targets]
+
+    deltas = get_summed_deltas(bs_node, target_indices)
+
+    set_target_delta(bs_node, target_indices[-1], deltas)
+
+    return True
+
+
+def subtract_deltas_sl():
+    """Sum deltas of selected targets except for the last selected target and subtract from last target
+    """
+    targets, in_betweens = get_selected_shape_editor_targets(force_single_bs_node=True)
+
+    bs_node = targets[0][0]
+
+    target_indices = [i[1] for i in targets]
+
+    summed_deltas = get_summed_deltas(bs_node, target_indices[:-1])
+
+    deltas = get_target_delta(bs_node, target_indices[-1], as_numpy=True)
+    deltas -= summed_deltas
+
+    set_target_delta(bs_node, target_indices[-1], deltas)
 
     return True

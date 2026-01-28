@@ -1933,26 +1933,81 @@ class DnaSculptWidget(DnaTab):
             label="blendShape"
         )
 
+        self.bs_node_widget.label.setFixedWidth(100)
+
         self.ingest_sculpts_btn = QtWidgets.QPushButton("ingest sculpts")
         self.ingest_sculpts_btn.clicked.connect(self._ingest_sculpts_clicked)
-
-        # TODO reassemble
 
         # IO lyt
         io_lyt = QtWidgets.QVBoxLayout()
         self.io_box.setLayout(io_lyt)
 
-        io_lyt.addWidget(self.export_objs_btn)
         io_lyt.addWidget(self.import_prefix)
-        io_lyt.addWidget(self.import_objs_btn)
         io_lyt.addWidget(self.bs_node_widget)
+        io_lyt.addWidget(self.export_objs_btn)
+        io_lyt.addWidget(self.import_objs_btn)
         io_lyt.addWidget(self.ingest_sculpts_btn)
+
+        # proxy combos
+        self.proxy_combos_box = QtWidgets.QGroupBox("Proxy Combos")
+
+        self.proxy_combo_label = QtWidgets.QLabel(
+            "Select two or more targets in the shape editor and click 'Create'\n\n"
+            "This will combine the targets into a single target on a new mesh\n"
+            "and a sculpt target to do your work.\n\n"
+            "Once you are done sculpting, select the proxy combo mesh and click 'Apply'\n\n"
+            "This will divide the sculpt delta between the original targets\n"
+            "based on their contribution to the combined target\n"
+            "then add the resulting deltas on top of the original targets."
+        )
+
+        self.create_proxy_combo_btn = QtWidgets.QPushButton("Create")
+        self.create_proxy_combo_btn.clicked.connect(self._create_proxy_combo_clicked)
+
+        self.apply_proxy_combo_btn = QtWidgets.QPushButton("Apply")
+        self.apply_proxy_combo_btn.clicked.connect(self._apply_proxy_combo_clicked)
+
+        proxy_combo_btn_lyt = QtWidgets.QHBoxLayout()
+        proxy_combo_btn_lyt.addWidget(self.create_proxy_combo_btn)
+        proxy_combo_btn_lyt.addWidget(self.apply_proxy_combo_btn)
+
+        proxy_combo_lyt = QtWidgets.QVBoxLayout()
+        proxy_combo_lyt.addWidget(self.proxy_combo_label)
+        proxy_combo_lyt.addLayout(proxy_combo_btn_lyt)
+
+        self.proxy_combos_box.setLayout(proxy_combo_lyt)
+
+        # deltas
+        self.deltas_box = QtWidgets.QGroupBox("Deltas")
+
+        self.deltas_label = QtWidgets.QLabel(
+            "Utilities for directly manipulating deltas\n"
+            "of selected shape editor targets"
+        )
+
+        self.add_deltas_btn = QtWidgets.QPushButton("Add")
+        self.add_deltas_btn.clicked.connect(self._add_deltas_clicked)
+
+        self.subtract_deltas_btn = QtWidgets.QPushButton("Subtract")
+        self.subtract_deltas_btn.clicked.connect(self._subtract_deltas_clicked)
+
+        deltas_btn_lyt = QtWidgets.QHBoxLayout()
+        deltas_btn_lyt.addWidget(self.add_deltas_btn)
+        deltas_btn_lyt.addWidget(self.subtract_deltas_btn)
+
+        deltas_lyt = QtWidgets.QVBoxLayout()
+        deltas_lyt.addWidget(self.deltas_label)
+        deltas_lyt.addLayout(deltas_btn_lyt)
+
+        self.deltas_box.setLayout(deltas_lyt)
 
         # main layout
         lyt = QtWidgets.QVBoxLayout()
         self.setLayout(lyt)
 
         lyt.addWidget(self.io_box)
+        lyt.addWidget(self.proxy_combos_box)
+        lyt.addWidget(self.deltas_box)
         lyt.addStretch()
 
     def _export_objs_clicked(self):
@@ -2017,6 +2072,18 @@ class DnaSculptWidget(DnaTab):
         )
 
         return True
+
+    def _create_proxy_combo_clicked(self):
+        mhBlendshape.create_proxy_combo_sl()
+
+    def _apply_proxy_combo_clicked(self):
+        mhBlendshape.apply_proxy_combo_sl()
+
+    def _add_deltas_clicked(self):
+        mhBlendshape.add_deltas_sl()
+
+    def _subtract_deltas_clicked(self):
+        mhBlendshape.subtract_deltas_sl()
 
 
 class DnaModWidget(

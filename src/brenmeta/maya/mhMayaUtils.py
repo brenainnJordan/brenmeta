@@ -248,7 +248,7 @@ def set_points(mesh, points):
         ])
 
     # get dag
-    dag = bmMObjectUtils.parse_dag_path(mesh)
+    dag = parse_dag_path(mesh)
 
     # get points
     m_mesh = OpenMaya.MFnMesh(dag)
@@ -274,7 +274,7 @@ def get_orig_mesh(deformer, as_name=True):
 
 
 def duplicate_orig_mesh(deformer, name, parent=None):
-    deformer_m_object = bmMObjectUtils.parse_m_object(
+    deformer_m_object = parse_m_object(
         deformer,
         # api_type=OpenMaya.MFn.kBlendShape
     )
@@ -286,7 +286,7 @@ def duplicate_orig_mesh(deformer, name, parent=None):
     dag_fn = OpenMaya.MFnDagNode()
 
     if parent:
-        parent = bmMObjectUtils.parse_m_object(parent, api_type=OpenMaya.MFn.kTransform)
+        parent = parse_m_object(parent, api_type=OpenMaya.MFn.kTransform)
     else:
         parent = OpenMaya.MObject.kNullObj
 
