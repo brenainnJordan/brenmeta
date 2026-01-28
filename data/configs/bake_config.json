@@ -1,7 +1,14 @@
 {
+  "mesh_blendshapes": [
+    ["head_lod0_mesh", "head_lod0_mesh_blendShape"]
+  ],
   "shapes": [
     "eyeSquintL",
-    "eyeSquintR"
+    "eyeSquintR",
+    "poops",
+    "things",
+    "stuff",
+    "blah"
   ],
   "in_betweens": {
     "eyeBlinkL": 3,

@@ -20,6 +20,7 @@
 
 import json
 import os
+import numpy
 
 from maya.api import OpenMaya
 from maya.api import OpenMayaAnim
@@ -28,6 +29,7 @@ from maya import cmds
 from brenmeta.core import mhCore
 
 LOG = mhCore.get_basic_logger(__name__)
+
 
 def break_connections(attrs):
     if not isinstance(attrs, (list, tuple)):
@@ -57,7 +59,7 @@ def parse_m_object(value, api_type=None, check_valid=True):
     """
 
     if api_type is not None:
-        if not isinstance(api_type, (list,tuple)):
+        if not isinstance(api_type, (list, tuple)):
             api_type = [api_type]
 
         for i, api_type_i in enumerate(api_type):
@@ -208,23 +210,51 @@ def get_all_component_list_elements(component_list):
     return all_elements
 
 
-def get_points(mesh, space=OpenMaya.MSpace.kWorld, as_positions=False, as_vector=False):
+def get_points(mesh, space=OpenMaya.MSpace.kObject, as_numpy=False, trim=True, both=False):
+    """Get vertex points for given mesh.
+
+    :param mesh: str - mesh name or path
+    :param space: int - Maya MSpace enum - Coordinate system to use
+    :param as_numpy: bool - return points as a numpy array instead of point array
+    :param trim: bool - trim redundant 4th value from each point if returning as numpy array
+    :return: numpy.ndarray if as_numpy is True else OpenMaya.MPointArray
+
+    """
     # get dag
-    dag = parse_dag_path(mesh)
+    dag = parse_mesh_dag_path(mesh)
 
     # get points
     m_mesh = OpenMaya.MFnMesh(dag)
     m_points = m_mesh.getPoints(space=space)
 
-    if as_positions:
-        return [list(i)[:3] for i in m_points]
+    if as_numpy or both:
+        if trim:
+            n_points = numpy.array(m_points)[:, :-1]
+        else:
+            n_points = numpy.array(m_points)
 
-    elif as_vector:
-        return [OpenMaya.MVector(i) for i in m_points]
-
+        if both:
+            return m_points, n_points
+        else:
+            return n_points
     else:
         return m_points
 
+
+def set_points(mesh, points):
+    if isinstance(points, numpy.ndarray):
+        points = OpenMaya.MPointArray([
+            OpenMaya.MPoint(point) for point in np_points
+        ])
+
+    # get dag
+    dag = bmMObjectUtils.parse_dag_path(mesh)
+
+    # get points
+    m_mesh = OpenMaya.MFnMesh(dag)
+    m_mesh.setPoints(points)
+
+    return True
 
 def get_orig_mesh(deformer, as_name=True):
     deformer_m_object = parse_m_object(
@@ -241,6 +271,37 @@ def get_orig_mesh(deformer, as_name=True):
         return mesh_fn.name()
     else:
         return mesh_object
+
+
+def duplicate_orig_mesh(deformer, name, parent=None):
+    deformer_m_object = bmMObjectUtils.parse_m_object(
+        deformer,
+        # api_type=OpenMaya.MFn.kBlendShape
+    )
+
+    deformer_fn = OpenMayaAnim.MFnGeometryFilter(deformer_m_object)
+
+    orig_mesh_object = deformer_fn.getInputGeometry()[0]
+
+    dag_fn = OpenMaya.MFnDagNode()
+
+    if parent:
+        parent = bmMObjectUtils.parse_m_object(parent, api_type=OpenMaya.MFn.kTransform)
+    else:
+        parent = OpenMaya.MObject.kNullObj
+
+    transform = dag_fn.create("transform", name=name, parent=parent)
+
+    mesh_fn = OpenMaya.MFnMesh()
+    shape = mesh_fn.copy(orig_mesh_object, parent=transform)
+    mesh_fn.name()
+    mesh_fn.setName("{}Shape".format(name))
+
+    cmds.sets(
+        mesh_fn.partialPathName(), edit=True, forceElement="initialShadingGroup"
+    )
+
+    return transform, shape
 
 
 def get_average_position(positions):
@@ -519,7 +580,6 @@ def export_meshes_to_objs(meshes, directory, prefix="", suffix="", overwrite=Fal
 
 
 def import_objs(directory, prefix=None, verbose=True):
-
     # get obj files
     contents = os.listdir(directory)
 

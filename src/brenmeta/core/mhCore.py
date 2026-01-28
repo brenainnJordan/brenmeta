@@ -317,10 +317,10 @@ class PSDPose(object):
         return self.pose.name
 
 
-def add_additional_shapes(poses, additional_shapes, joints_attr_defaults):
+def add_additional_poses(poses, pose_names, joints_attr_defaults):
     pose_count = len(poses)
 
-    for i, pose_name in enumerate(additional_shapes):
+    for i, pose_name in enumerate(pose_names):
         pose = Pose()
         pose.name = pose_name
         pose.index = pose_count + i

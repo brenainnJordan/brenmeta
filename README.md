@@ -11,18 +11,11 @@ unique and interesting characters rigs.
 
 # dependencies
 
-**Qt.py**
-
-The GUI for this tool uses Qt.py to handle different versions of Qt/PySide in Maya.
-You can test if this is installed by calling
-    
-    import Qt
-
-If this errors then you need to install via pip using mayapy.exe
+Install dependencies via pip using mayapy.exe and the included requirements.txt file
 
 eg.
 
-    "C:\Program Files\Autodesk\Maya2023\bin\mayapy.exe" -m pip install Qt.py
+    "C:\Program Files\Autodesk\Maya2023\bin\mayapy.exe" -m pip install -r D:\Repos\brenmeta\requirements.txt
 
 **Unreal 5.6 onwards:**
 
