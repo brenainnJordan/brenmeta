@@ -17,7 +17,7 @@
 
 """General reusable widgets"""
 
-import os
+import json
 
 from maya import cmds
 from maya import OpenMayaUI
@@ -25,8 +25,10 @@ from maya.api import OpenMaya
 
 from Qt import QtCore
 from Qt import QtWidgets
+from Qt import QtGui
 
 from brenmeta.core import mhCore
+
 
 class LabelledSpinBox(QtWidgets.QWidget):
     SPIN_BOX_CLS = QtWidgets.QSpinBox
@@ -63,6 +65,7 @@ class LabelledDoubleSpinBox(LabelledSpinBox):
             name, label_width=label_width, spin_box_width=spin_box_width, height=height, default=default,
             minimum=minimum, maximum=maximum, **kwargs
         )
+
 
 class LabelledLineEdit(QtWidgets.QWidget):
 
@@ -284,55 +287,6 @@ class LabelledNamespaceLineEdit(QtWidgets.QWidget):
         return
 
 
-class DnaPathManager(object):
-    def __init__(self):
-        self.input_path = None
-        self.output_path = None
-        self.dna_assets_path = None
-        self.dna_files_path = None
-
-    def get_dna_files(self):
-        generic_assets = None
-
-        assets = ["Input Dna", "Output Dna"]
-
-        if self.dna_files_path:
-            generic_assets = []
-
-            # dna_path = os.path.join(self.dna_assets_path, "dna_files")
-
-            if os.path.exists(self.dna_files_path):
-                for i in os.listdir(self.dna_files_path):
-                    if any([
-                        not i.endswith(".dna"),
-                    ]):
-                        continue
-
-                    generic_assets.append(i.split(".")[0])
-
-        if generic_assets:
-            assets += generic_assets
-
-        return assets
-
-    def get_path(self, asset):
-        dna_paths = {
-            "Input Dna": self.input_dna_path,
-            "Output Dna": self.output_dna_path,
-        }
-
-        if asset in dna_paths:
-            dna_path = dna_paths[asset]
-
-        else:
-            dna_path = os.path.join(
-                self.dna_files_path,
-                "{}.dna".format(asset)
-            )
-
-        return dna_path
-
-
 class DnaPathManagerWidget(QtWidgets.QGroupBox):
     def __init__(self, path_manager, name, parent=None):
         super(DnaPathManagerWidget, self).__init__(name, parent=parent)
@@ -342,7 +296,7 @@ class DnaPathManagerWidget(QtWidgets.QGroupBox):
         self.file_edit = None
 
         self.setLayout(QtWidgets.QVBoxLayout())
-        self.layout().setContentsMargins(0,0,0,0)
+        self.layout().setContentsMargins(0, 0, 0, 0)
         self.layout().addWidget(self.combo)
 
         self.update_assets()
@@ -633,6 +587,263 @@ class TupleListModel(QtCore.QAbstractTableModel):
             return f"{section}"
 
 
+class ProjectListModel(QtCore.QAbstractListModel):
+    """
+    A Qt model that exposes a list as an editable table.
+    """
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._project = None
+        self._project_attr = None
+
+    @property
+    def project(self):
+        return self._project
+
+    @property
+    def project_attr(self):
+        return self._project_attr
+
+    @property
+    def list(self):
+        if not self.project or not self.project_attr:
+            return None
+
+        if not hasattr(self.project, self.project_attr):
+            return None
+
+        return getattr(self.project, self.project_attr)
+
+    def set_project(self, project, project_attr):
+        self.beginResetModel()
+        self._project = project
+        self._project_attr = project_attr
+        self.endResetModel()
+
+    # @property
+    # def list_type(self):
+    #     return self._list_type
+
+    def rowCount(self, parent=QtCore.QModelIndex()):
+        if not self.list:
+            return 0
+
+        return len(self.list)
+
+    def data(self, index, role=QtCore.Qt.DisplayRole):
+        if not index.isValid() or not self.list:
+            return None
+
+        if role in (QtCore.Qt.DisplayRole, QtCore.Qt.EditRole):
+            return self.list[index.row()]
+
+        return None
+
+    def flags(self, index):
+        if not index.isValid():
+            return QtCore.Qt.NoItemFlags
+
+        return QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEnabled | QtCore.Qt.ItemIsEditable
+
+    def setData(self, index, value, role=QtCore.Qt.EditRole):
+        if role != QtCore.Qt.EditRole or not index.isValid() or not self.list:
+            return False
+
+        # # type coercion
+        # try:
+        #     value = self.list_type(value)
+        # except Exception:
+        #     pass
+
+        self.list[index.row()] = value
+
+        self.dataChanged.emit(index, index, [QtCore.Qt.DisplayRole, QtCore.Qt.EditRole])
+
+        return True
+
+    def insertRows(self, row, count, parent=QtCore.QModelIndex()):
+        if not self.list:
+            return False
+
+        self.beginInsertRows(QtCore.QModelIndex(), row, row + count - 1)
+        for _ in range(count):
+            self.list.insert(row, None)
+        self.endInsertRows()
+
+        return True
+
+    def removeRows(self, row, count, parent=QtCore.QModelIndex()):
+        if not self.list:
+            return False
+
+        self.beginRemoveRows(QtCore.QModelIndex(), row, row + count - 1)
+        for _ in range(count):
+            del self.list[row]
+        self.endRemoveRows()
+        return True
+
+
+class ProjectTableModel(QtCore.QAbstractTableModel):
+    """
+    A Qt model that exposes a list of tuples as an editable table.
+    Each tuple becomes a row; each tuple element becomes a column.
+    """
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        # self._tuple_list = None
+        self._headers = None
+        # self._column_types = None
+        # self._column_count = 0
+
+        self._project = None
+        self._project_attr = None
+
+    @property
+    def project(self):
+        return self._project
+
+    @property
+    def project_attr(self):
+        return self._project_attr
+
+    @property
+    def table(self):
+        if not self.project or not self.project_attr:
+            return None
+
+        if not hasattr(self.project, self.project_attr):
+            return None
+
+        return getattr(self.project, self.project_attr)
+
+    def set_project(self, project, project_attr):
+        self.beginResetModel()
+        self._project = project
+        self._project_attr = project_attr
+        self.endResetModel()
+
+    # @property
+    # def tuple_list(self):
+    #     return self._tuple_list
+    #
+    # def set_tuple_list(self, tuple_list):
+    #     self.beginResetModel()
+    #     # Infer column count and type from first tuple
+    #     self._column_count = len(tuple_list[0]) if tuple_list else 0
+    #     self._column_types = [type(i) for i in tuple_list[0]]
+    #     self._tuple_list = tuple_list
+    #     self.endResetModel()
+
+    # @property
+    # def column_types(self):
+    #     return self._column_types
+
+    @property
+    def headers(self):
+        return self._headers
+
+    @headers.setter
+    def headers(self, value):
+        mhCore.validate_arg("headers", value, list)
+        self.beginResetModel()
+        self._headers = value
+        self.endResetModel()
+
+    def rowCount(self, parent=QtCore.QModelIndex()):
+        if not self.table:
+            return 0
+
+        return len(self.table)
+
+    def columnCount(self, parent=QtCore.QModelIndex()):
+        if not self.table:
+            return 0
+
+        # Infer column count and type from first tuple
+        column_count = len(self.table[0])
+
+        return column_count
+
+    def data(self, index, role=QtCore.Qt.DisplayRole):
+        if not index.isValid() or not self.table:
+            return None
+
+        row, col = index.row(), index.column()
+        value = self.table[row][col]
+
+        if role in (QtCore.Qt.DisplayRole, QtCore.Qt.EditRole):
+            return value
+
+        return None
+
+    def flags(self, index):
+        if not index.isValid():
+            return QtCore.Qt.NoItemFlags
+
+        return QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEnabled | QtCore.Qt.ItemIsEditable
+
+    def setData(self, index, value, role=QtCore.Qt.EditRole):
+        if role != QtCore.Qt.EditRole or not index.isValid() or not self.table:
+            return False
+
+        row, column = index.row(), index.column()
+        old_tuple = self.table[row]
+
+        # # type coercion
+        # try:
+        #     value = self.column_types[column](value)
+        # except Exception:
+        #     pass
+
+        # # Rebuild tuple (since tuples are immutable)
+        # new_tuple = list(old_tuple)
+        # new_tuple[column] = value
+        self.table[row][column] = value
+
+        self.dataChanged.emit(index, index, [QtCore.Qt.DisplayRole, QtCore.Qt.EditRole])
+        return True
+
+    def insertRows(self, row, count, parent=QtCore.QModelIndex()):
+        if not self.table:
+            return False
+
+        self.beginInsertRows(QtCore.QModelIndex(), row, row + count - 1)
+
+        for _ in range(count):
+            # self.table.insert(row, [column_type() for column_type in self.column_types])
+            self.table.insert(row, [None] * self.columnCount())
+
+        self.endInsertRows()
+
+        return True
+
+    def removeRows(self, row, count, parent=QtCore.QModelIndex()):
+        if not self.tuple_list:
+            return False
+
+        self.beginRemoveRows(QtCore.QModelIndex(), row, row + count - 1)
+
+        for _ in range(count):
+            del self.table[row]
+
+        self.endRemoveRows()
+
+        return True
+
+    def headerData(self, section, orientation, role=QtCore.Qt.DisplayRole):
+        if role != QtCore.Qt.DisplayRole:
+            return None
+
+        if orientation == QtCore.Qt.Horizontal:
+            if self.headers:
+                if section < len(self.headers):
+                    return self.headers[section]
+
+        return str(section)
+
+
 class TableGroup(QtWidgets.QGroupBox):
     # TODO import/export data
     def __init__(self, parent=None):
@@ -665,4 +876,122 @@ class TableGroup(QtWidgets.QGroupBox):
         if not self.view.model():
             return
 
-        self.view.model().removeRows(self.view.currentIndex().row(),1)
+        self.view.model().removeRows(self.view.currentIndex().row(), 1)
+
+
+class JsonHighlighter(QtGui.QSyntaxHighlighter):
+    """copilot code TODO test!
+    """
+
+    def __init__(self, parent=None):
+        super(JsonHighlighter, self).__init__(parent)
+
+        def fmt(color, bold=False):
+            f = QtGui.QTextCharFormat()
+            f.setForeground(QtGui.QColor(color))
+            if bold:
+                f.setFontWeight(QtGui.QFont.Bold)
+            return f
+
+        self.rules = []
+
+        # Keys
+        self.rules.append((
+            QtCore.QRegularExpression(r'"([^"\\]|\\.)*"\s*(?=:)'),
+            fmt("#7aa2f7", True)
+        ))
+
+        # Strings
+        self.rules.append((
+            QtCore.QRegularExpression(r'\"([^\"\\]|\\.)*\"'),
+            fmt("#9ece6a")
+        ))
+
+        # Numbers
+        self.rules.append((
+            QtCore.QRegularExpression(r'\b-?(0|[1-9]\d*)(\.\d+)?([eE][+-]?\d+)?\b'),
+            fmt("#e0af68")
+        ))
+
+        # Booleans & null
+        self.rules.append((
+            QtCore.QRegularExpression(r'\b(true|false|null)\b'),
+            fmt("#bb9af7", True)
+        ))
+
+        # Braces / brackets
+        self.rules.append((
+            QtCore.QRegularExpression(r'[{}\[\]]'),
+            fmt("#c0caf5", True)
+        ))
+
+    def highlightBlock(self, text):
+        for pattern, format in self.rules:
+            it = pattern.globalMatch(text)
+            while it.hasNext():
+                m = it.next()
+                self.setFormat(m.capturedStart(), m.capturedLength(), format)
+
+
+class JsonEditorDialog(QtWidgets.QDialog):
+    """copilot code TODO test!
+    """
+
+    def __init__(self, parent=None):
+        super(JsonEditorDialog, self).__init__(parent)
+
+        self.setWindowTitle("Edit JSON")
+        self.resize(600, 500)
+
+        layout = QtWidgets.QVBoxLayout(self)
+
+        # Editor
+        self.editor = QtWidgets.QPlainTextEdit()
+        self.editor.setFont(QtGui.QFont("Consolas", 11))
+        self.editor.textChanged.connect(self.validate_json)
+
+        self.highlighter = JsonHighlighter(self.editor.document())
+
+        # Error label
+        self.error_label = QtWidgets.QLabel("")
+        self.error_label.setStyleSheet("color: #f7768e;")
+        self.error_label.setVisible(False)
+
+        # Buttons
+        btns = QtWidgets.QDialogButtonBox(
+            QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel
+        )
+        btns.accepted.connect(self.accept_if_valid)
+        btns.rejected.connect(self.reject)
+
+        layout.addWidget(self.editor)
+        layout.addWidget(self.error_label)
+        layout.addWidget(btns)
+
+    # --- API -------------------------------------------------------------
+
+    def load_json(self, data):
+        self.editor.setPlainText(json.dumps(data, indent=4))
+
+    def get_json(self):
+        return json.loads(self.editor.toPlainText())
+
+    # --- Validation ------------------------------------------------------
+
+    def validate_json(self):
+        text = self.editor.toPlainText()
+        try:
+            json.loads(text)
+            self.error_label.setVisible(False)
+            return True
+        except Exception as e:
+            self.error_label.setText(str(e))
+            self.error_label.setVisible(True)
+            return False
+
+    def accept_if_valid(self):
+        if self.validate_json():
+            self.accept()
+        else:
+            # Keep dialog open, highlight error
+            QtWidgets.QApplication.beep()

@@ -18,7 +18,9 @@
 """
 Convert pose system to pure blendshapes
 """
+
 import time
+import json
 
 from maya.api import OpenMaya
 from maya import cmds
@@ -30,130 +32,96 @@ from brenmeta.core import mhCore
 
 LOG = mhCore.get_basic_logger(__name__)
 
-DEFAULT_IN_BETWEENS = [
-    ("eyeBlinkL", 3),
-    ("eyeBlinkR", 3),
-    ("eyeLookLeftL", 1),
-    ("eyeLookLeftR", 1),
-    ("eyeLookRightL", 1),
-    ("eyeLookRightR", 1),
-    ("eyeLookUpL", 1),
-    ("eyeLookUpR", 1),
-    ("eyeLookDownL", 1),
-    ("eyeLookDownR", 1),
-    ("mouthLeft", 2),
-    ("mouthRight", 2),
-    ("mouthUpperLipBiteL", 1),
-    ("mouthUpperLipBiteR", 1),
-    ("mouthLowerLipBiteL", 1),
-    ("mouthLowerLipBiteR", 1),
-    ("tongueRoll", 2),
-    # jaw and combos should share same number of in-betweens
-    ("jawOpen", 3),
-    ("mouthLipsTogetherUL", 3),
-    ("mouthLipsTogetherUR", 3),
-    ("mouthLipsTogetherDL", 3),
-    ("mouthLipsTogetherDR", 3),
-    ("MlipsTogether_Jopen_UL", 3),
-    ("MlipsTogether_Jopen_UR", 3),
-    ("MlipsTogether_Jopen_DL", 3),
-    ("MlipsTogether_Jopen_DR", 3),
-]
-
-DEFAULT_IN_BETWEENS_DICT = {a: b for a, b in DEFAULT_IN_BETWEENS}
-
-ADDITIONAL_COMBOS = [
-    # jawOpen
-    ("jawOpen", "teethFwdD"),
-    ("jawOpen", "teethBackD"),
-    ("jawOpen", "teethUpD"),
-    ("jawOpen", "teethDownD"),
-    # ("jawOpen", "teethLeftD"),
-    # ("jawOpen", "teethRightD"),
-    ("jawOpen", "tongueUp"),
-    ("jawOpen", "tongueDown"),
-    ("jawOpen", "tongueOut"),
-    ("jawOpen", "tongueBendUp"),
-    ("jawOpen", "tongueBendDown"),
-    ("jawOpen", "tongueTipUp"),
-    ("jawOpen", "tonguePress"),
-    # brows/eyelids
-    ("browDownL", "eyeBlinkL"),
-    ("browDownR", "eyeBlinkR"),
-    ("browLateralL", "eyeBlinkL"),
-    ("browLateralR", "eyeBlinkR"),
-    ("browRaiseInL", "eyeBlinkL"),
-    ("browRaiseInR", "eyeBlinkR"),
-    ("browRaiseOuterL", "eyeBlinkL"),
-    ("browRaiseOuterR", "eyeBlinkR"),
-    # brow cheek raise
-    ("browDownL", "eyeCheekRaiseL"),
-    ("browDownR", "eyeCheekRaiseR"),
-    ("browLateralL", "eyeCheekRaiseL"),
-    ("browLateralR", "eyeCheekRaiseR"),
-]
-
-POSE_JOINTS = [
-    "FACIAL_L_Eye",
-    "FACIAL_L_EyeParallel",
-    "FACIAL_L_Pupil",
-    "FACIAL_R_Eye",
-    "FACIAL_R_EyeParallel",
-    "FACIAL_R_Pupil",
-    "FACIAL_C_Jaw",
-    "FACIAL_C_LowerLipRotation",
-    "FACIAL_C_TeethUpper",
-    "FACIAL_C_TeethLower",
-    # tongue
-    "FACIAL_C_Tongue1",
-    "FACIAL_C_Tongue2",
-    "FACIAL_C_Tongue3",
-    "FACIAL_C_Tongue4",
-    "FACIAL_L_TongueSide1",
-    "FACIAL_R_TongueSide1",
-    "FACIAL_L_TongueSide2",
-    "FACIAL_R_TongueSide2",
-    "FACIAL_L_TongueSide3",
-    "FACIAL_R_TongueSide3",
-    "FACIAL_L_TongueSide4",
-    "FACIAL_R_TongueSide4",
-    "FACIAL_C_TongueUpper1",
-    "FACIAL_C_TongueUpper2",
-    "FACIAL_C_TongueUpper3",
-    "FACIAL_C_TongueLower3",
-]
-
-KEEP_JOINTS = [
-    "FACIAL_C_FacialRoot",
-    "head",
-    "neck_02",
-    "neck_01",
-    "spine_05",
-    "spine_04",
-]
-
-DELETE = [
-    "eyelashes_lod0_mesh",
-    "eyeEdge_lod0_mesh",
-    "cartilage_lod0_mesh",
-    "eyeshell_lod0_mesh",
-    "head_lod1_grp",
-    "head_lod2_grp",
-    "head_lod3_grp",
-    "head_lod4_grp",
-    "head_lod5_grp",
-    "head_lod6_grp",
-    "head_lod7_grp",
-]
-
-ROOT_JOINTS = [
-    "FACIAL_C_Neck2Root",
-    "FACIAL_C_Neck1Root",
-    "FACIAL_C_FacialRoot",
-]
+COMBO_NET = "combo_network"
 
 
-def delete_redundant_joints(keep_joints=KEEP_JOINTS, pose_joints=POSE_JOINTS):
+class BakeConfig(object):
+    """Convenience object to load and manage bake config data
+
+    mesh_blendshapes: list of lists
+        [
+            [<mesh>, <blendshape node>],
+            ...
+        ]
+
+    shapes: list of additional targets
+        [
+            "eyeSquintL",
+            ...
+        ]
+
+    in_betweens: dict
+        {
+            <target>: <number of in-betweens>,
+            ...
+        }
+
+    combos: list of dicts
+        [
+            {
+                "description": "brief human-readable description",
+                "enabled": true,
+                "combos": [
+                    ["jawOpen", "teethFwdD"],
+                    ...
+                ]
+            },
+            ...
+        ]
+
+    pose_joints: list of joints used for posing the rig
+
+    keep_joints: list of joints in addition to pose_joints to keep
+
+    delete: list of other nodes to delete after bake
+
+    root_joints: list of root joints to parse hierarchy
+
+    """
+
+    def __init__(self):
+        self.mesh_blendshapes = None
+        self.shapes = None
+        self.in_betweens = None
+        self.combos = None
+        self.pose_joints = None
+        self.keep_joints = None
+        self.delete = None
+        self.root_joints = None
+
+    @classmethod
+    def load(cls, file_path):
+        config = cls()
+
+        data = None
+
+        with open(file_path, 'r') as f:
+            if f:
+                data = json.load(f)
+
+        if not data:
+            raise mhCore.MHError(
+                "Failed to load config: {}".format(file_path)
+            )
+
+        config.mesh_blendshapes = data["mesh_blendshapes"]
+        config.shapes = data["shapes"]
+        config.in_betweens = data["in_betweens"]
+        config.pose_joints = data["pose_joints"]
+        config.keep_joints = data["keep_joints"]
+        config.delete = data["delete"]
+        config.root_joints = data["root_joints"]
+
+        config.combos = [
+            combo for combo_data in data["combos"]
+            for combo in combo_data["combos"]
+            if combo_data["enabled"]
+        ]
+
+        return config
+
+
+def delete_redundant_joints(keep_joints, pose_joints):
     joints = cmds.ls(type="joint")
     joints = [i for i in joints if i not in keep_joints + pose_joints]
     cmds.delete(joints)
@@ -161,16 +129,12 @@ def delete_redundant_joints(keep_joints=KEEP_JOINTS, pose_joints=POSE_JOINTS):
 
 def bake_shapes_from_dna_v1(
         dna_file,
+        bake_config_file,
         name="poseSystem",
         expressions_node="CTRL_expressions",
-        in_betweens=DEFAULT_IN_BETWEENS_DICT,
-        mesh="head_lod0_mesh",
         calculate_psds=True,
         connect_shapes=True,
         optimise=True,
-        pose_joints=POSE_JOINTS,
-        keep_joints=KEEP_JOINTS,
-        additional_combos=ADDITIONAL_COMBOS,
         detailed_verbose=False
 ):
     """
@@ -217,20 +181,15 @@ bmMhFaceShapeBake.bake_shapes(
     psd_poses = mhBehaviour.get_psd_poses(calib_reader, poses)
     joints_attr_defaults = mhBehaviour.get_joint_defaults(calib_reader)
 
-    convert_rig(
+    bake_rig(
         poses,
         psd_poses,
         joints_attr_defaults,
-        mesh=mesh,
+        bake_config_file,
         calculate_psds=calculate_psds,
         connect_shapes=connect_shapes,
         optimise=optimise,
-        name=name,
         expressions_node=expressions_node,
-        in_betweens=in_betweens,
-        pose_joints=pose_joints,
-        keep_joints=keep_joints,
-        additional_combos=additional_combos,
         detailed_verbose=detailed_verbose
     )
 
@@ -239,16 +198,11 @@ bmMhFaceShapeBake.bake_shapes(
 
 def bake_shapes_from_dna_v2(
         dna_file,
-        # name="poseSystem",
+        bake_config_file,
         expressions_node="CTRL_expressions",
-        in_betweens=DEFAULT_IN_BETWEENS_DICT,
-        mesh="head_lod0_mesh",
         calculate_psds=True,
         connect_shapes=True,
         optimise=True,
-        pose_joints=POSE_JOINTS,
-        keep_joints=KEEP_JOINTS,
-        additional_combos=ADDITIONAL_COMBOS,
         use_combo_network=False,
         detailed_verbose=False
 ):
@@ -296,20 +250,15 @@ bmMhFaceShapeBake.bake_shapes_from_dna_v2(
     psd_poses = mhBehaviour.get_psd_poses(calib_reader, poses)
     joints_attr_defaults = mhBehaviour.get_joint_defaults(calib_reader)
 
-    convert_rig(
+    bake_rig(
         poses,
         psd_poses,
         joints_attr_defaults,
-        mesh=mesh,
+        bake_config_file,
         calculate_psds=calculate_psds,
         connect_shapes=connect_shapes,
         optimise=optimise,
-        # name=name,
         expressions_node=expressions_node,
-        in_betweens=in_betweens,
-        pose_joints=pose_joints,
-        keep_joints=keep_joints,
-        additional_combos=additional_combos,
         use_combo_network=use_combo_network,
         detailed_verbose=detailed_verbose,
     )
@@ -323,7 +272,7 @@ bmMhFaceShapeBake.bake_shapes_from_dna_v2(
     return True
 
 
-def break_joint_connections(root_joints=ROOT_JOINTS):
+def break_joint_connections(root_joints):
     transforms = []
 
     for root_joint in root_joints:
@@ -337,20 +286,36 @@ def break_joint_connections(root_joints=ROOT_JOINTS):
     return True
 
 
-def create_combo_logic(poses, psd_poses, expressions_node, use_combo_network=True):
-
+def create_driver_logic(poses, psd_poses, expressions_node, additional_shapes=None, use_combo_network=True):
     # get expressions
     expressions = cmds.listAttr(expressions_node, userDefined=True)
 
-    # create driver mapping
+    # add expression attrs for additional shapes
+    if additional_shapes:
+        for shape_name in additional_shapes:
+            if shape_name not in expressions:
+                LOG.info("Adding expression attr: {}.{}".format(expressions_node, shape_name))
+
+                cmds.addAttr(
+                    expressions_node,
+                    longName=shape_name,
+                    min=0.0,
+                    max=1.0
+                )
+
+            expressions.append(shape_name)
+
+    # create driver mapping for non-combo poses
     driver_mapping = {}
 
-    for pose in poses:
+    for pose_index, pose in enumerate(poses):
+        if pose_index in psd_poses or pose.name is None:
+            continue
+
         if pose.name in expressions:
             driver_mapping[pose.name] = "{}.{}".format(expressions_node, pose.name)
         else:
-            pass
-            # LOG.warning("pose not found on {}: {}".format(expressions_node, pose.name))
+            LOG.warning("Pose not found on expression node: {}".format(pose.name))
 
     # create combo logic
     if use_combo_network:
@@ -407,6 +372,7 @@ def create_combo_logic(poses, psd_poses, expressions_node, use_combo_network=Tru
 
 
 def create_joint_poses(poses, pose_joints, driver_mapping):
+    # TODO investigate why combos aren't connecting
     # get attr poses
     # dict where key is every attr for all joints we want to still have driven
     # and value is all poses that drive that attr
@@ -501,19 +467,34 @@ def create_joint_poses(poses, pose_joints, driver_mapping):
     return True
 
 
-def bake_shapes_from_poses(mesh, poses, psd_poses, in_betweens, detailed_verbose=True):
+def bake_shapes_from_poses(mesh_blendshapes, poses, psd_poses, in_betweens, detailed_verbose=True):
+    """Pose rig and create blendshape targets for the given meshes
+    """
+    meshes = [mesh for mesh, bs_node in mesh_blendshapes]
+    bs_nodes = [bs_node for mesh, bs_node in mesh_blendshapes]
 
-    base_mesh = cmds.duplicate(mesh, name="{}_baked".format(mesh))[0]
+    base_meshes = [
+        cmds.duplicate(mesh, name="{}_baked".format(mesh))[0]
+        for mesh in meshes
+    ]
 
-    bs_node = cmds.deformer(
-        base_mesh, type="blendShape", name="{}_blendShape".format(mesh)
-    )[0]
+    bs_nodes = [
+        cmds.deformer(
+            base_mesh, type="blendShape", name=bs_node
+        )[0]
+        for base_mesh, bs_node in zip(base_meshes, bs_nodes)
+    ]
 
-    target_group = cmds.createNode("transform", name="targets")
-    cmds.hide(target_group)
+    target_groups = [
+        cmds.createNode("transform", name="{}_targets".format(mesh))
+        for mesh in meshes
+    ]
+
+    cmds.hide(target_groups)
 
     # bake core shapes
-    targets = []
+    targets = [[] for _ in meshes]
+
     pose_names = []
 
     # start progress bar
@@ -549,19 +530,22 @@ def bake_shapes_from_poses(mesh, poses, psd_poses, in_betweens, detailed_verbose
         if detailed_verbose:
             LOG.info("    {} - {}".format(pose_name, pose))
 
-        target = cmds.duplicate(mesh, name=pose_name)[0]
-        cmds.parent(target, target_group)
-        targets.append(target)
+        for mesh, base_mesh, bs_node, target_group, mesh_targets in zip(
+                meshes, base_meshes, bs_nodes, target_groups, targets
+        ):
+            target = cmds.duplicate(mesh, name=pose_name)[0]
+            cmds.parent(target, target_group)
+            mesh_targets.append(target)
 
-        mhBlendshape.append_blendshape_targets(
-            bs_node, base_mesh, target, default_weight=0.0
-        )
+            mhBlendshape.append_blendshape_targets(
+                bs_node, base_mesh, target, default_weight=0.0
+            )
 
         pose.reset_joints()
 
         # create in-betweens
         if pose_name in in_betweens:
-            in_between_targets = []
+            # in_between_targets = []
 
             for ib_index in range(in_betweens[pose_name]):
                 ib_value = float(ib_index + 1) / float(in_betweens[pose_name] + 1)
@@ -569,19 +553,22 @@ def bake_shapes_from_poses(mesh, poses, psd_poses, in_betweens, detailed_verbose
 
                 pose.pose_joints(blend=ib_value)
 
-                in_between_target = cmds.duplicate(mesh, name=pose_name)[0]
-                cmds.parent(in_between_target, target_group)
-                in_between_targets.append(in_between_target)
+                for mesh, base_mesh, bs_node, target_group, mesh_targets in zip(
+                        meshes, base_meshes, bs_nodes, target_groups, targets
+                ):
+                    in_between_target = cmds.duplicate(mesh, name=pose_name)[0]
+                    cmds.parent(in_between_target, target_group)
+                    # in_between_targets.append(in_between_target)
 
-                mhBlendshape.add_in_between_target(
-                    bs_node, base_mesh, pose_name, in_between_target, ib_value
-                )
+                    mhBlendshape.add_in_between_target(
+                        bs_node, base_mesh, pose_name, in_between_target, ib_value
+                    )
 
                 pose.reset_joints()
 
     cmds.progressBar(gMainProgressBar, edit=True, endProgress=True)
 
-    return base_mesh, bs_node, target_group
+    return base_meshes, bs_nodes, target_groups
 
 
 def calculate_psd_deltas(bs_node, psd_poses, in_betweens, detailed_verbose=True, optimise=True):
@@ -665,65 +652,91 @@ def calculate_psd_deltas(bs_node, psd_poses, in_betweens, detailed_verbose=True,
     return True
 
 
-def convert_rig(
+def bake_rig(
         poses,
         psd_poses,
         joints_attr_defaults,
-        mesh="head_lod0_mesh",
+        config_file_path,
         calculate_psds=True,
         connect_shapes=True,
         optimise=True,
-        # name="poseSystem",
         expressions_node="CTRL_expressions",
         use_combo_network=False,
-        in_betweens=DEFAULT_IN_BETWEENS,
-        pose_joints=POSE_JOINTS,
-        keep_joints=KEEP_JOINTS,
-        additional_combos=ADDITIONAL_COMBOS,
-        delete=DELETE,
         detailed_verbose=False
 ):
     """
-    TODO support more than one mesh
     """
 
+    # load config
+    bake_config = BakeConfig.load(config_file_path)
+
+    meshes = [mesh for mesh, bs_node in bake_config.mesh_blendshapes]
+
+    # create additional poses
+    if bake_config.shapes:
+        LOG.info("Adding additional poses...")
+
+        mhCore.add_additional_poses(
+            poses, bake_config.shapes, joints_attr_defaults
+        )
+
     # create additional combos
-    if additional_combos:
-        LOG.info("Adding additional combos...")
+    if bake_config.combos:
+        LOG.info("Adding additional combo poses...")
 
         mhCore.add_additional_combo_poses(
-            poses, psd_poses, additional_combos, joints_attr_defaults
+            poses, psd_poses, bake_config.combos, joints_attr_defaults
         )
 
     # break joint connections
     LOG.info("Disconnecting joints...")
 
-    break_joint_connections()
+    break_joint_connections(bake_config.root_joints)
 
     # create base mesh and blendshape node
     LOG.info("Baking shapes...")
 
-    base_mesh, bs_node, target_group = bake_shapes_from_poses(
-        mesh, poses, psd_poses, in_betweens, detailed_verbose=detailed_verbose
+    base_meshes, bs_nodes, target_groups = bake_shapes_from_poses(
+        bake_config.mesh_blendshapes,
+        poses,
+        psd_poses,
+        bake_config.in_betweens,
+        detailed_verbose=detailed_verbose
     )
 
     # delete targets so we can edit the deltas
     if calculate_psds:
         cmds.refresh()
-        cmds.delete(target_group)
+        cmds.delete(target_groups)
         cmds.refresh()
 
         # calculate psd blendshape deltas and subtract
         LOG.info("Calculating PSD deltas...")
 
-        calculate_psd_deltas(
-            bs_node, psd_poses, in_betweens, detailed_verbose=True, optimise=optimise
-        )
+        for bs_node in bs_nodes:
+            calculate_psd_deltas(
+                bs_node,
+                psd_poses,
+                bake_config.in_betweens,
+                detailed_verbose=True,
+                optimise=optimise
+            )
+
+    # delete original mesh
+    cmds.delete(meshes)
+
+    for base_mesh, mesh in zip(base_meshes, meshes):
+        cmds.rename(base_mesh, mesh)
 
     # create combo logic
-    driver_mapping = create_combo_logic(
-        poses, psd_poses, expressions_node,
-        use_combo_network=use_combo_network
+    LOG.info("Creating driver logic...")
+
+    driver_mapping = create_driver_logic(
+        poses,
+        psd_poses,
+        expressions_node,
+        additional_shapes=bake_config.shapes,
+        use_combo_network=use_combo_network,
     )
 
     # connect expression attrs
@@ -731,81 +744,155 @@ def convert_rig(
         LOG.info("Connecting expression attrs...")
 
         for pose_name, driver_attr in driver_mapping.items():
-            cmds.connectAttr(
-                driver_attr,
-                "{}.{}".format(bs_node, pose_name)
-            )
+            for bs_node in bs_nodes:
+                cmds.connectAttr(
+                    driver_attr,
+                    "{}.{}".format(bs_node, pose_name)
+                )
 
     # create joint pose nodes
     LOG.info("Creating joint poses...")
 
-    create_joint_poses(poses, pose_joints, driver_mapping)
+    create_joint_poses(poses, bake_config.pose_joints, driver_mapping)
 
     # cleanup
     delete_redundant_joints(
-        pose_joints=pose_joints, keep_joints=keep_joints
+        bake_config.pose_joints,
+        bake_config.keep_joints
     )
 
-    cmds.delete(mesh)
-    cmds.rename(base_mesh, mesh)
-
-    if delete:
-        cmds.delete(delete)
+    if bake_config.delete:
+        cmds.delete(bake_config.delete)
 
     LOG.info("done.")
 
     return True
 
 
-def reconnect_shapes(
-    poses,
-    psd_poses,
-    bs_node,
-    joints_attr_defaults,
-    expressions_node="CTRL_expressions",
-    additional_combos=ADDITIONAL_COMBOS,
-    use_combo_network=False,
-    add_missing_targets=True,
+def disconnect(
+        config_file_path,
+        disconnect_targets=True,
+        disconnect_joints=True,
+        delete_combo_network=True,
+        verbose=True
 ):
-    """TODO support multiple blendshape nodes
-    """
-    # create additional combos
-    if additional_combos:
-        LOG.info("Adding additional combos...")
+    # load config
+    bake_config = BakeConfig.load(config_file_path)
 
-        mhCore.add_additional_combo_poses(
-            poses, psd_poses, additional_combos, joints_attr_defaults
+    bs_nodes = [bs_node for mesh, bs_node in bake_config.mesh_blendshapes]
+
+    # disconnect blendshapes
+    if disconnect_targets:
+        for bs_node in bs_nodes:
+            if verbose:
+                LOG.info("Disconnecting blendshape targets: {}".format(bs_node))
+
+            targets = mhBlendshape.get_blendshape_weight_aliases(bs_node)
+
+            for target in targets:
+                target_attr = "{}.{}".format(bs_node, target)
+
+                cons = cmds.listConnections(
+                    target_attr, source=True, destination=False, plugs=True
+                )
+
+                if cons:
+                    cmds.disconnectAttr(cons[0], target_attr)
+
+    # disconnect joints and delete networks
+    if disconnect_joints:
+        if verbose:
+            LOG.info("Disconnecting joints")
+
+        pose_nets = cmds.ls("*_poses", type="network")
+        cmds.delete(pose_nets)
+
+    if delete_combo_network:
+        # delete combo network
+        if cmds.objExists(COMBO_NET):
+            if verbose:
+                LOG.info("deleting node: {}".format(COMBO_NET))
+
+            cmds.delete(COMBO_NET)
+
+    return True
+
+
+def reconnect(
+        poses,
+        psd_poses,
+        joints_attr_defaults,
+        config_file_path,
+        expressions_node="CTRL_expressions",
+        reconnect_joints=True,
+        reconnect_targets=True,
+        use_combo_network=False,
+        add_missing_targets=True,
+):
+    """TODO debug why additional shapes aren't being added
+    """
+    # load config
+    bake_config = BakeConfig.load(config_file_path)
+
+    bs_nodes = [bs_node for mesh, bs_node in bake_config.mesh_blendshapes]
+
+    # create additional poses
+    if bake_config.shapes:
+        LOG.info("Adding additional poses...")
+
+        print(bake_config.shapes)
+
+        mhCore.add_additional_poses(
+            poses, bake_config.shapes, joints_attr_defaults
         )
 
-    # delete old combo network
-    if cmds.objExists("combo_network"):
-        cmds.delete("combo_network")
+    # create additional combos
+    if bake_config.combos:
+        LOG.info("Adding additional combo poses...")
+
+        mhCore.add_additional_combo_poses(
+            poses, psd_poses, bake_config.combos, joints_attr_defaults
+        )
 
     # create combo logic
-    driver_mapping = create_combo_logic(
-        poses, psd_poses, expressions_node,
+    LOG.info("Creating driver logic...")
+
+    driver_mapping = create_driver_logic(
+        poses,
+        psd_poses,
+        expressions_node,
+        additional_shapes=bake_config.shapes,
         use_combo_network=use_combo_network
     )
 
     # connect expression attrs
-    LOG.info("Connecting expression attrs...")
+    if reconnect_targets or add_missing_targets:
+        LOG.info("Connecting expression attrs...")
 
-    base_mesh = cmds.blendShape(bs_node, query=True, geometry=True)[0]
+        for pose_name, driver_attr in driver_mapping.items():
+            for bs_node in bs_nodes:
+                base_mesh = cmds.blendShape(bs_node, query=True, geometry=True)[0]
 
-    for pose_name, driver_attr in driver_mapping.items():
-        if mhBlendshape.get_blendshape_target_index(bs_node, pose_name) is None:
-            if add_missing_targets:
-                LOG.info("Adding target: {}".format(pose_name))
+                if mhBlendshape.get_blendshape_target_index(bs_node, pose_name) is None:
+                    if add_missing_targets:
+                        LOG.info("Adding target: {}.{}".format(bs_node, pose_name))
 
-                mhBlendshape.create_empty_target(
-                    base_mesh, bs_node, pose_name, default=0.0
-                )
-            else:
-                continue
+                        mhBlendshape.create_empty_target(
+                            base_mesh, bs_node, pose_name, default=0.0
+                        )
+                    else:
+                        LOG.info("Missing target: {}.{}".format(bs_node, pose_name))
+                        continue
 
-        cmds.connectAttr(
-            driver_attr,
-            "{}.{}".format(bs_node, pose_name)
-        )
+                if reconnect_targets:
+                    cmds.connectAttr(
+                        driver_attr,
+                        "{}.{}".format(bs_node, pose_name)
+                    )
+
+    if reconnect_joints:
+        LOG.info("Reconnecting joints")
+        # connecting joints
+        create_joint_poses(poses, bake_config.pose_joints, driver_mapping)
 
     return True
