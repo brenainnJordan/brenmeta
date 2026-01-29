@@ -52,7 +52,7 @@ from brenmeta.mh import mhFaceJoints
 from brenmeta.mh import mhFaceMeshes
 from brenmeta.maya import mhAnimUtils
 from brenmeta.maya import mhMayaUtils
-from brenmeta.maya import mhShapeBake
+from brenmeta.maya import mhBakeRig
 from brenmeta.maya import mhBlendshape
 
 LOG = mhCore.get_basic_logger(__name__)
@@ -1665,9 +1665,9 @@ class DnaMergeWidget(DnaTab):
         return True
 
 
-class DnaShapeBakeWidget(DnaTab):
+class DnaBakeRigWidget(DnaTab):
     def __init__(self, path_manager, parent=None):
-        super(DnaShapeBakeWidget, self).__init__(path_manager, parent=parent)
+        super(DnaBakeRigWidget, self).__init__(path_manager, parent=parent)
 
         self.create_widgets()
 
@@ -1680,29 +1680,33 @@ class DnaShapeBakeWidget(DnaTab):
 
         # bake group box
         self.bake_group_box = QtWidgets.QGroupBox("bake")
+        bake_lyt = QtWidgets.QVBoxLayout()
+        self.bake_group_box.setLayout(bake_lyt)
 
+        self.bake_shapes_checkbox = QtWidgets.QCheckBox("bake shapes")
         self.calculate_psd_deltas_checkbox = QtWidgets.QCheckBox("calculate psd deltas")
         self.connect_shapes_checkbox = QtWidgets.QCheckBox("connect shapes")
+        self.connect_joints_checkbox = QtWidgets.QCheckBox("connect joints")
         self.optimise_checkbox = QtWidgets.QCheckBox("optimise")
-        self.delete_unused_joints_checkbox = QtWidgets.QCheckBox("delete unused joints")
+        self.cleanup_checkbox = QtWidgets.QCheckBox("cleanup")
         self.use_combo_network_checkbox = QtWidgets.QCheckBox("use combo network")
 
-        self.calculate_psd_deltas_checkbox.setChecked(True)
-        self.connect_shapes_checkbox.setChecked(True)
-        self.optimise_checkbox.setChecked(True)
-        self.delete_unused_joints_checkbox.setChecked(True)
+        for checkbox in [
+            self.bake_shapes_checkbox,
+            self.calculate_psd_deltas_checkbox,
+            self.connect_shapes_checkbox,
+            self.connect_joints_checkbox,
+            self.optimise_checkbox,
+            self.cleanup_checkbox,
+            self.use_combo_network_checkbox,
+        ]:
+            checkbox.setChecked(True)
+            bake_lyt.addWidget(checkbox)
 
         # build btn
         self.build_btn = QtWidgets.QPushButton("Build")
         self.build_btn.clicked.connect(self._build_clicked)
 
-        # bake lyt
-        bake_lyt = QtWidgets.QVBoxLayout()
-        self.bake_group_box.setLayout(bake_lyt)
-        bake_lyt.addWidget(self.calculate_psd_deltas_checkbox)
-        bake_lyt.addWidget(self.connect_shapes_checkbox)
-        bake_lyt.addWidget(self.optimise_checkbox)
-        bake_lyt.addWidget(self.delete_unused_joints_checkbox)
         bake_lyt.addWidget(self.build_btn)
 
         # disconnect group box
@@ -1785,7 +1789,7 @@ class DnaShapeBakeWidget(DnaTab):
         confirm = QtWidgets.QMessageBox.warning(
             self,
             "confirm",
-            "This will bake rig in the scene to shapes as defined by dna file and config:\n\n{}\n\n{}\n\nContinue?".format(
+            "This will bake the rig in the scene as defined by dna file and config:\n\n{}\n\n{}\n\nContinue?".format(
                 dna_path, bake_config_file
             ),
             QtWidgets.QMessageBox.Ok | QtWidgets.QMessageBox.Cancel
@@ -1794,12 +1798,15 @@ class DnaShapeBakeWidget(DnaTab):
         if confirm is QtWidgets.QMessageBox.Cancel:
             return False
 
-        mhShapeBake.bake_shapes_from_dna_v2(
+        mhBakeRig.bake_shapes_from_dna_v2(
             dna_path,
             bake_config_file,
+            bake_shapes=self.bake_shapes_checkbox.isChecked(),
             calculate_psds=self.calculate_psd_deltas_checkbox.isChecked(),
             connect_shapes=self.connect_shapes_checkbox.isChecked(),
+            connect_joints=self.connect_joints_checkbox.isChecked(),
             optimise=self.optimise_checkbox.isChecked(),
+            cleanup=self.cleanup_checkbox.isChecked(),
             expressions_node="CTRL_expressions",
             use_combo_network=False,
         )
@@ -2137,7 +2144,7 @@ class DnaModWidget(
         self.transfer_widget = DnaTransferWidget(self.project)
         self.merge_widget = DnaMergeWidget(self.project)
         self.poses_widget = DnaPosesWidget(self.project)
-        self.shape_bake_widget = DnaShapeBakeWidget(self.project)
+        self.shape_bake_widget = DnaBakeRigWidget(self.project)
         self.sculpt_widget = DnaSculptWidget(self.project)
         self.qc_widget = DnaQCWidget(self.project)
 

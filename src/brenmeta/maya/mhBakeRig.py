@@ -16,11 +16,13 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 """
-Convert pose system to pure blendshapes
+Convert metahuman rig to pure blendshapes and native maya nodes
 """
 
 import time
 import json
+import math
+import numpy
 
 from maya.api import OpenMaya
 from maya import cmds
@@ -29,6 +31,7 @@ from maya import mel
 from brenmeta.maya import mhBlendshape
 from brenmeta.maya import mhMayaUtils
 from brenmeta.core import mhCore
+from brenmeta.maya.mhMayaUtils import points_equal
 
 LOG = mhCore.get_basic_logger(__name__)
 
@@ -200,32 +203,16 @@ def bake_shapes_from_dna_v2(
         dna_file,
         bake_config_file,
         expressions_node="CTRL_expressions",
+        bake_shapes=True,
         calculate_psds=True,
         connect_shapes=True,
+        connect_joints=True,
         optimise=True,
+        cleanup=True,
         use_combo_network=False,
         detailed_verbose=False
 ):
     """
-from brenmy.mh.presets import bmMhFaceShapeBake
-
-dna_file = r"D:/Projects/3d/metahuman/chloe/MHC_DCC_Export/MHC_chloe/head.dna"
-
-bmMhFaceShapeBake.bake_shapes_from_dna_v2(
-    dna_file,
-    mesh="head_lod0_mesh",
-    calculate_psd_deltas=True,
-    connect_shapes=True,
-    optimise=True
-)
-
-    :param dna_file:
-    :param name:
-    :param expressions_node:
-    :param in_betweens:
-    :param mesh:
-    :return:
-
     """
     from brenmeta.dna2 import mhBehaviour
     from brenmeta.dna2 import mhSrc
@@ -255,9 +242,12 @@ bmMhFaceShapeBake.bake_shapes_from_dna_v2(
         psd_poses,
         joints_attr_defaults,
         bake_config_file,
+        bake_shapes=bake_shapes,
         calculate_psds=calculate_psds,
         connect_shapes=connect_shapes,
+        connect_joints=connect_joints,
         optimise=optimise,
+        cleanup=cleanup,
         expressions_node=expressions_node,
         use_combo_network=use_combo_network,
         detailed_verbose=detailed_verbose,
@@ -371,6 +361,23 @@ def create_driver_logic(poses, psd_poses, expressions_node, additional_shapes=No
     return driver_mapping
 
 
+def connect_targets(driver_mapping, bs_nodes):
+    for bs_node in bs_nodes:
+        targets = mhBlendshape.get_blendshape_weight_aliases(bs_node)
+
+        for pose_name, driver_attr in driver_mapping.items():
+
+            if pose_name not in targets:
+                continue
+
+            cmds.connectAttr(
+                driver_attr,
+                "{}.{}".format(bs_node, pose_name)
+            )
+
+    return True
+
+
 def create_joint_poses(poses, pose_joints, driver_mapping):
     # TODO investigate why combos aren't connecting
     # get attr poses
@@ -467,17 +474,26 @@ def create_joint_poses(poses, pose_joints, driver_mapping):
     return True
 
 
-def bake_shapes_from_poses(mesh_blendshapes, poses, psd_poses, in_betweens, detailed_verbose=True):
+def bake_shapes_from_poses(mesh_blendshapes, poses, psd_poses, in_betweens, detailed_verbose=True, skip_empty=True):
     """Pose rig and create blendshape targets for the given meshes
     """
+    # get nodes
     meshes = [mesh for mesh, bs_node in mesh_blendshapes]
     bs_nodes = [bs_node for mesh, bs_node in mesh_blendshapes]
 
+    # get neutral points
+    neutral_points = [
+        mhMayaUtils.get_points(mesh, as_numpy=True)
+        for mesh in meshes
+    ]
+
+    # create base meshes
     base_meshes = [
         cmds.duplicate(mesh, name="{}_baked".format(mesh))[0]
         for mesh in meshes
     ]
 
+    # create new blendshape nodes
     bs_nodes = [
         cmds.deformer(
             base_mesh, type="blendShape", name=bs_node
@@ -485,6 +501,7 @@ def bake_shapes_from_poses(mesh_blendshapes, poses, psd_poses, in_betweens, deta
         for base_mesh, bs_node in zip(base_meshes, bs_nodes)
     ]
 
+    # create groups
     target_groups = [
         cmds.createNode("transform", name="{}_targets".format(mesh))
         for mesh in meshes
@@ -493,7 +510,7 @@ def bake_shapes_from_poses(mesh_blendshapes, poses, psd_poses, in_betweens, deta
     cmds.hide(target_groups)
 
     # bake core shapes
-    targets = [[] for _ in meshes]
+    targets_list = [[] for _ in meshes]
 
     pose_names = []
 
@@ -530,11 +547,30 @@ def bake_shapes_from_poses(mesh_blendshapes, poses, psd_poses, in_betweens, deta
         if detailed_verbose:
             LOG.info("    {} - {}".format(pose_name, pose))
 
-        for mesh, base_mesh, bs_node, target_group, mesh_targets in zip(
-                meshes, base_meshes, bs_nodes, target_groups, targets
-        ):
-            target = cmds.duplicate(mesh, name=pose_name)[0]
+        for i, mesh in enumerate(meshes):
+            base_mesh = base_meshes[i]
+            bs_node = bs_nodes[i]
+            points = neutral_points[i]
+            target_group = target_groups[i]
+            mesh_targets = targets_list[i]
+
+            # check if mesh has actually changed shape
+            target_points = mhMayaUtils.get_points(mesh, as_numpy=True)
+
+            points_equal = mhMayaUtils.points_equal(points, target_points)
+
+            # skip empty targets (excluding first mesh, assuming that's the head)
+            if all([
+                i > 0,
+                skip_empty,
+                points_equal,
+            ]):
+                continue
+
+            # create target
+            target = cmds.duplicate(mesh)[0]
             cmds.parent(target, target_group)
+            target = cmds.rename(target, pose_name)
             mesh_targets.append(target)
 
             mhBlendshape.append_blendshape_targets(
@@ -545,8 +581,6 @@ def bake_shapes_from_poses(mesh_blendshapes, poses, psd_poses, in_betweens, deta
 
         # create in-betweens
         if pose_name in in_betweens:
-            # in_between_targets = []
-
             for ib_index in range(in_betweens[pose_name]):
                 ib_value = float(ib_index + 1) / float(in_betweens[pose_name] + 1)
                 ib_value = round(ib_value, 3)
@@ -554,11 +588,14 @@ def bake_shapes_from_poses(mesh_blendshapes, poses, psd_poses, in_betweens, deta
                 pose.pose_joints(blend=ib_value)
 
                 for mesh, base_mesh, bs_node, target_group, mesh_targets in zip(
-                        meshes, base_meshes, bs_nodes, target_groups, targets
+                        meshes, base_meshes, bs_nodes, target_groups, targets_list
                 ):
+                    # skip in-between if target has been skipped
+                    if pose_name not in mesh_targets:
+                        continue
+
                     in_between_target = cmds.duplicate(mesh, name=pose_name)[0]
                     cmds.parent(in_between_target, target_group)
-                    # in_between_targets.append(in_between_target)
 
                     mhBlendshape.add_in_between_target(
                         bs_node, base_mesh, pose_name, in_between_target, ib_value
@@ -574,12 +611,14 @@ def bake_shapes_from_poses(mesh_blendshapes, poses, psd_poses, in_betweens, deta
 def calculate_psd_deltas(bs_node, psd_poses, in_betweens, detailed_verbose=True, optimise=True):
     gMainProgressBar = mel.eval('$tmp = $gMainProgressBar')
 
+    all_targets = mhBlendshape.get_blendshape_weight_aliases(bs_node)
+
     cmds.progressBar(
         gMainProgressBar,
         edit=True,
         beginProgress=True,
         isInterruptable=True,
-        status='Calculating PSD deltas...',
+        status='Calculating PSD deltas ({})...'.format(bs_node),
         maxValue=len(psd_poses.keys())
     )
 
@@ -589,11 +628,15 @@ def calculate_psd_deltas(bs_node, psd_poses, in_betweens, detailed_verbose=True,
 
         cmds.progressBar(gMainProgressBar, edit=True, step=1)
 
+        # check if this target was skipped
+        if psd_pose.pose.name not in all_targets:
+            continue
+
         if detailed_verbose:
             LOG.info("    {}".format(psd_pose.pose.name))
 
         src_targets = [
-            pose.index for pose in psd_pose.input_poses
+            pose.name for pose in psd_pose.input_poses if pose.name in all_targets
         ]
 
         weights = [1.0] * len(src_targets)
@@ -602,7 +645,7 @@ def calculate_psd_deltas(bs_node, psd_poses, in_betweens, detailed_verbose=True,
             bs_node,
             src_targets,
             weights,
-            psd_pose.pose.index,
+            psd_pose.pose.name,
             optimise=optimise,
         )
 
@@ -616,7 +659,7 @@ def calculate_psd_deltas(bs_node, psd_poses, in_betweens, detailed_verbose=True,
                     bs_node,
                     src_targets,
                     weights,
-                    psd_pose.pose.index,
+                    psd_pose.pose.name,
                     optimise=optimise,
                     in_between=ib_index
                 )
@@ -657,9 +700,12 @@ def bake_rig(
         psd_poses,
         joints_attr_defaults,
         config_file_path,
+        bake_shapes=True,
         calculate_psds=True,
         connect_shapes=True,
+        connect_joints=True,
         optimise=True,
+        cleanup=True,
         expressions_node="CTRL_expressions",
         use_combo_network=False,
         detailed_verbose=False
@@ -671,6 +717,7 @@ def bake_rig(
     bake_config = BakeConfig.load(config_file_path)
 
     meshes = [mesh for mesh, bs_node in bake_config.mesh_blendshapes]
+    bs_nodes = [bs_node for mesh, bs_node in bake_config.mesh_blendshapes]
 
     # create additional poses
     if bake_config.shapes:
@@ -689,27 +736,38 @@ def bake_rig(
         )
 
     # break joint connections
-    LOG.info("Disconnecting joints...")
-
-    break_joint_connections(bake_config.root_joints)
+    if bake_shapes or connect_joints:
+        break_joint_connections(bake_config.root_joints)
 
     # create base mesh and blendshape node
-    LOG.info("Baking shapes...")
+    if bake_shapes:
+        LOG.info("Disconnecting joints...")
 
-    base_meshes, bs_nodes, target_groups = bake_shapes_from_poses(
-        bake_config.mesh_blendshapes,
-        poses,
-        psd_poses,
-        bake_config.in_betweens,
-        detailed_verbose=detailed_verbose
-    )
+
+        LOG.info("Baking shapes...")
+
+        base_meshes, bs_nodes, target_groups = bake_shapes_from_poses(
+            bake_config.mesh_blendshapes,
+            poses,
+            psd_poses,
+            bake_config.in_betweens,
+            detailed_verbose=detailed_verbose
+        )
+
+        # delete original meshes
+        cmds.delete(meshes)
+
+        # rename baked meshes
+        for base_mesh, mesh in zip(base_meshes, meshes):
+            cmds.rename(base_mesh, mesh)
+
+        if cleanup:
+            cmds.refresh()
+            cmds.delete(target_groups)
+            cmds.refresh()
 
     # delete targets so we can edit the deltas
     if calculate_psds:
-        cmds.refresh()
-        cmds.delete(target_groups)
-        cmds.refresh()
-
         # calculate psd blendshape deltas and subtract
         LOG.info("Calculating PSD deltas...")
 
@@ -722,47 +780,41 @@ def bake_rig(
                 optimise=optimise
             )
 
-    # delete original mesh
-    cmds.delete(meshes)
-
-    for base_mesh, mesh in zip(base_meshes, meshes):
-        cmds.rename(base_mesh, mesh)
-
     # create combo logic
-    LOG.info("Creating driver logic...")
+    if connect_shapes or connect_joints:
+        LOG.info("Creating driver logic...")
 
-    driver_mapping = create_driver_logic(
-        poses,
-        psd_poses,
-        expressions_node,
-        additional_shapes=bake_config.shapes,
-        use_combo_network=use_combo_network,
-    )
+        driver_mapping = create_driver_logic(
+            poses,
+            psd_poses,
+            expressions_node,
+            additional_shapes=bake_config.shapes,
+            use_combo_network=use_combo_network,
+        )
+    else:
+        driver_mapping = None
 
     # connect expression attrs
     if connect_shapes:
         LOG.info("Connecting expression attrs...")
 
-        for pose_name, driver_attr in driver_mapping.items():
-            for bs_node in bs_nodes:
-                cmds.connectAttr(
-                    driver_attr,
-                    "{}.{}".format(bs_node, pose_name)
-                )
+        connect_targets(driver_mapping, bs_nodes)
 
     # create joint pose nodes
-    LOG.info("Creating joint poses...")
+    if connect_joints:
+        LOG.info("Creating joint poses...")
 
-    create_joint_poses(poses, bake_config.pose_joints, driver_mapping)
+        create_joint_poses(poses, bake_config.pose_joints, driver_mapping)
 
     # cleanup
-    delete_redundant_joints(
-        bake_config.pose_joints,
-        bake_config.keep_joints
-    )
+    if cleanup:
+        delete_redundant_joints(
+            bake_config.pose_joints,
+            bake_config.keep_joints
+        )
 
-    if bake_config.delete:
-        cmds.delete(bake_config.delete)
+        if bake_config.delete:
+            cmds.delete(bake_config.delete)
 
     LOG.info("done.")
 
@@ -840,8 +892,6 @@ def reconnect(
     if bake_config.shapes:
         LOG.info("Adding additional poses...")
 
-        print(bake_config.shapes)
-
         mhCore.add_additional_poses(
             poses, bake_config.shapes, joints_attr_defaults
         )
@@ -865,30 +915,26 @@ def reconnect(
         use_combo_network=use_combo_network
     )
 
+    # add missing targets
+    if add_missing_targets:
+        for bs_node in bs_nodes:
+            base_mesh = cmds.blendShape(bs_node, query=True, geometry=True)[0]
+
+            for shape_name in bake_config.shapes:
+                if mhBlendshape.get_blendshape_target_index(bs_node, shape_name) is not None:
+                    continue
+
+                LOG.info("Adding target: {}.{}".format(bs_node, shape_name))
+
+                mhBlendshape.create_empty_target(
+                    base_mesh, bs_node, shape_name, default=0.0
+                )
+
     # connect expression attrs
-    if reconnect_targets or add_missing_targets:
-        LOG.info("Connecting expression attrs...")
+    if reconnect_targets:
+        LOG.info("Connecting targets...")
 
-        for pose_name, driver_attr in driver_mapping.items():
-            for bs_node in bs_nodes:
-                base_mesh = cmds.blendShape(bs_node, query=True, geometry=True)[0]
-
-                if mhBlendshape.get_blendshape_target_index(bs_node, pose_name) is None:
-                    if add_missing_targets:
-                        LOG.info("Adding target: {}.{}".format(bs_node, pose_name))
-
-                        mhBlendshape.create_empty_target(
-                            base_mesh, bs_node, pose_name, default=0.0
-                        )
-                    else:
-                        LOG.info("Missing target: {}.{}".format(bs_node, pose_name))
-                        continue
-
-                if reconnect_targets:
-                    cmds.connectAttr(
-                        driver_attr,
-                        "{}.{}".format(bs_node, pose_name)
-                    )
+        connect_targets(driver_mapping, bs_nodes)
 
     if reconnect_joints:
         LOG.info("Reconnecting joints")

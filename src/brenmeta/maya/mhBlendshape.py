@@ -250,6 +250,11 @@ def append_blendshape_targets(bs_node, base_mesh, target, default_weight=0.0):
 def add_in_between_target(bs_node, base_mesh, target, in_between_target, in_between_value):
     target_index = get_blendshape_target_index(bs_node, target)
 
+    if target_index is None:
+        raise mhCore.MHError(
+            "Target not found, cannot add inbetween: {}.{}".format(bs_node, target)
+        )
+
     cmds.blendShape(
         bs_node,
         edit=True,
@@ -1153,5 +1158,102 @@ def subtract_deltas_sl():
     deltas -= summed_deltas
 
     set_target_delta(bs_node, target_indices[-1], deltas)
+
+    return True
+
+
+def bake_blendshape_driven_mesh(driver_bs_node, driven_mesh, cleanup=True, skip_static=True):
+    targets = get_blendshape_weight_aliases(driver_bs_node)
+
+    connections = {}
+
+    # disconnect and reset all targets
+    for target in targets:
+        target_attr = "{}.{}".format(driver_bs_node, target)
+
+        cons = cmds.listConnections(
+            target_attr,
+            source=True,
+            destination=False,
+            plugs=True,
+        )
+
+        if cons:
+            cmds.disconnectAttr(cons[0], target_attr)
+
+            connections[target] = cons[0]
+
+        cmds.setAttr(target_attr, 0.0)
+
+    # create group and base mesh
+    neutral_points = mhMayaUtils.get_points(driven_mesh, as_numpy=True)
+    target_group = cmds.createNode("transform", name="{}_targets".format(driven_mesh))
+    base_mesh = cmds.duplicate(driven_mesh, name="{}_baked".format(driven_mesh))[0]
+
+    # start progress bar
+    gMainProgressBar = mel.eval('$tmp = $gMainProgressBar')
+
+    cmds.progressBar(
+        gMainProgressBar,
+        edit=True,
+        beginProgress=True,
+        isInterruptable=True,
+        status='Baking driven shapes...',
+        maxValue=len(targets)
+    )
+
+    # create targets
+    driven_targets = []
+
+    for target in targets:
+        if cmds.progressBar(gMainProgressBar, query=True, isCancelled=True):
+            return False
+
+        cmds.progressBar(gMainProgressBar, edit=True, step=1)
+
+        target_attr = "{}.{}".format(driver_bs_node, target)
+
+        cmds.setAttr(target_attr, 1.0)
+
+        if skip_static:
+            target_points = mhMayaUtils.get_points(driven_mesh, as_numpy=True)
+
+            if mhMayaUtils.points_equal(neutral_points, target_points, precision=6):
+                cmds.setAttr(target_attr, 0.0)
+                continue
+
+        driven_target = cmds.duplicate(driven_mesh)[0]
+
+        cmds.setAttr(target_attr, 0.0)
+
+        cmds.parent(driven_target, target_group)
+        driven_target = cmds.rename(driven_target, target)
+
+        driven_targets.append(driven_target)
+
+    cmds.progressBar(gMainProgressBar, edit=True, endProgress=True)
+
+    if not driven_targets:
+        raise mhCore.MHError("No targets baked: {}".format(driven_mesh))
+
+    # create blendshape
+    driven_bs_node = cmds.blendShape(
+        driven_targets,
+        base_mesh,
+        name="{}_blendShape".format(driven_mesh)
+    )[0]
+
+    # reconnect targets
+    for target, cons in connections.items():
+        cmds.connectAttr(
+            connections[target],
+            "{}.{}".format(driver_bs_node, target)
+        )
+
+        if target in driven_targets:
+            cmds.connectAttr(
+                connections[target],
+                "{}.{}".format(driven_bs_node, target)
+            )
 
     return True

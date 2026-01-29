@@ -221,7 +221,7 @@ def get_points(mesh, space=OpenMaya.MSpace.kObject, as_numpy=False, trim=True, b
 
     """
     # get dag
-    dag = parse_mesh_dag_path(mesh)
+    dag = parse_dag_path(mesh)
 
     # get points
     m_mesh = OpenMaya.MFnMesh(dag)
@@ -255,6 +255,19 @@ def set_points(mesh, points):
     m_mesh.setPoints(points)
 
     return True
+
+
+def points_equal(points_a, points_b, precision=6):
+    """Test if points are the same
+    """
+    delta = points_b - points_a
+
+    delta_length = numpy.linalg.norm(delta, axis=1)
+    delta_total = delta_length.sum()
+    delta_total = round(delta_total, precision)
+
+    return delta_total == 0.0
+
 
 def get_orig_mesh(deformer, as_name=True):
     deformer_m_object = parse_m_object(
