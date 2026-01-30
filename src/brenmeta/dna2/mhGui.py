@@ -1501,16 +1501,16 @@ class DnaQCWidget(DnaTab):
 
             if additional_combos:
                 LOG.info("Adding additional combos...")
-                # get additional combos from mhShapeBake global attr for now
+                # get additional combos from mhBakeRig global attr for now
                 # TODO refactor tool to make this more global
-                from brenmeta.maya import mhShapeBake
+                from brenmeta.maya import mhBakeRig
 
                 mhCore.add_additional_poses(
-                    poses, mhShapeBake.ADDITIONAL_SHAPES, joints_attr_defaults
+                    poses, mhBakeRig.ADDITIONAL_SHAPES, joints_attr_defaults
                 )
 
                 mhCore.add_additional_combo_poses(
-                    poses, psd_poses, mhShapeBake.ADDITIONAL_COMBOS, joints_attr_defaults
+                    poses, psd_poses, mhBakeRig.ADDITIONAL_COMBOS, joints_attr_defaults
                 )
 
             mapping = mhAnimUtils.map_expressions_to_controls(tongue=tongue, eyelashes=eyelashes, namespace=namespace)
@@ -1885,7 +1885,7 @@ class DnaBakeRigWidget(DnaTab):
         bake_config_file = self.config_file_widget.path
 
         try:
-            mhShapeBake.disconnect(
+            mhBakeRig.disconnect(
                 bake_config_file,
                 disconnect_targets=self.disconnect_targets_checkbox.isChecked(),
                 disconnect_joints=self.disconnect_joints_checkbox.isChecked(),
@@ -1946,7 +1946,7 @@ class DnaBakeRigWidget(DnaTab):
 
         # reconnect
         try:
-            mhShapeBake.reconnect(
+            mhBakeRig.reconnect(
                 poses,
                 psd_poses,
                 joints_attr_defaults,
