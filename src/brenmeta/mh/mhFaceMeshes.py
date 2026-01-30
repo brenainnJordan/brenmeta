@@ -213,7 +213,9 @@ def get_average_vertex_position(vertices):
     return [mean(values[i::3]) for i in range(3)]
 
 
-def create_eyelid_wrapper_meshes(head_mesh, l_eye_mesh, r_eye_mesh, prefix=None, scale=1.0):
+def create_eyelid_wrapper_meshes(
+        head_mesh, l_eye_mesh, r_eye_mesh, prefix=None, scale=1.0
+):
     # allow pivots to be passed in
     if isinstance(l_eye_mesh, (list, tuple)):
         l_position = l_eye_mesh
@@ -498,10 +500,19 @@ def create_eyewet_meshes(
 
 
 def eyewet_post(
-        edge_mesh, edge_blend_mesh, shell_mesh, shell_blend_mesh, l_eyeball_mesh, r_eyeball_mesh,
+        # edge_mesh, edge_blend_mesh, shell_mesh, shell_blend_mesh, l_eyeball_mesh, r_eyeball_mesh,
+        edge_mesh="eyeEdge_lod0_mesh",
+        shell_mesh="eyeshell_lod0_mesh",
+        l_eyeball_mesh="eyeLeft_lod0_mesh",
+        r_eyeball_mesh="eyeRight_lod0_mesh",
+        cartilage_mesh="cartilage_lod0_mesh",
+        edge_blend_mesh=None,
+        shell_blend_mesh=None,
         # TODO either expose this to the user or figure out a way to determine an offset from src
         shell_offset=0.05,
 ):
+    """TODO snap cartilage mesh
+    """
     # clean up shell
     cmds.select(shell_mesh)
     cmds.DeleteHistory()
@@ -512,10 +523,11 @@ def eyewet_post(
     ]:
         project_mesh_onto_eye(shell_mesh, eyeball_mesh, verts, eye_mid_verts, shell_offset)
 
-    # snap shell border
-    blend_points(
-        shell_blend_mesh, shell_mesh, EYE_SHELL_BORDER_VERTS + EYE_SHELL_BLEND_VERTS
-    )
+    # snap shell border to temp blend mesh
+    if shell_blend_mesh:
+        blend_points(
+            shell_blend_mesh, shell_mesh, EYE_SHELL_BORDER_VERTS + EYE_SHELL_BLEND_VERTS
+        )
 
     blend_vertices = [
         "{}.vtx[{}]".format(shell_mesh, i) for i in EYE_SHELL_BLEND_VERTS
@@ -547,9 +559,11 @@ def eyewet_post(
         project_mesh_onto_eye(edge_mesh, eyeball_mesh, inner_verts + blend_verts, eye_mid_verts, 0.01)
         # snap_eye_edge(eyeball_mesh, edge_mesh, inner_verts, blend_verts)
 
-    blend_points(
-        edge_blend_mesh, edge_mesh, EDGE_BORDER_VERTS
-    )
+    # snap edge mesh to temp blend mesh
+    if edge_blend_mesh:
+        blend_points(
+            edge_blend_mesh, edge_mesh, EDGE_BORDER_VERTS
+        )
 
     edge_mush = cmds.deltaMush(edge_mesh, smoothingIterations=5)[0]
     cmds.setAttr("{}.displacement".format(edge_mush), 0.0)
@@ -793,7 +807,16 @@ mhFaceMeshes.transfer_eye_meshes(
 
     # eyewet post
     if transfer_eyewet:
-        eyewet_post(edge_mesh, edge_blend_mesh, shell_mesh, shell_blend_mesh, l_eyeball_mesh, r_eyeball_mesh)
+        eyewet_post(
+            # edge_mesh, edge_blend_mesh, shell_mesh, shell_blend_mesh, l_eyeball_mesh, r_eyeball_mesh
+            edge_mesh=edge_mesh,
+            shell_mesh=shell_mesh,
+            l_eyeball_mesh=l_eyeball_mesh,
+            r_eyeball_mesh=r_eyeball_mesh,
+            cartilage_mesh=cartilage_mesh,
+            edge_blend_mesh=edge_blend_mesh,
+            shell_blend_mesh=shell_blend_mesh,
+        )
 
     # cleanup
     if cleanup:

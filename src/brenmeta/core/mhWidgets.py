@@ -116,7 +116,7 @@ class PathWidgetBase(LabelledLineEdit):
 
         self.lyt.addWidget(self.browse_btn)
 
-        self.filter = "files (*.dna)"
+        self.filter = "files (*.*)"
 
         self.line_edit.textChanged.connect(self.emit_path_changed)
 
@@ -165,7 +165,7 @@ class PathOpenWidget(PathWidgetBase):
     def browse_clicked(self):
         file_path, file_type = QtWidgets.QFileDialog.getOpenFileName(
             self,
-            "Input Dna file",
+            self.caption,
             self.path,
             self.filter
         )
@@ -186,7 +186,7 @@ class PathSaveWidget(PathWidgetBase):
     def browse_clicked(self):
         file_path, file_type = QtWidgets.QFileDialog.getSaveFileName(
             self,
-            "Output Dna file",
+            self.caption,
             self.path,
             self.filter
         )

@@ -117,6 +117,21 @@ class DnaTransferWidget(DnaTab):
 
         meshes_lyt.addWidget(self.transfer_face_meshes_btn)
 
+        # mesh utils
+        self.mesh_utils_group_box = QtWidgets.QGroupBox("mesh utils")
+
+        mesh_utils_lyt = QtWidgets.QVBoxLayout()
+        self.mesh_utils_group_box.setLayout(mesh_utils_lyt)
+
+        self.eyewet_post_btn = QtWidgets.QPushButton("eyewet post")
+        self.eyewet_post_btn.clicked.connect(self._eyewet_post_clicked)
+
+        self.create_eyelid_wrap_meshes_btn = QtWidgets.QPushButton("create eyelid wrap meshes")
+        self.create_eyelid_wrap_meshes_btn.clicked.connect(self._create_eyelid_wrap_meshes_clicked)
+
+        mesh_utils_lyt.addWidget(self.eyewet_post_btn)
+        mesh_utils_lyt.addWidget(self.create_eyelid_wrap_meshes_btn)
+
         # transfer joints
         self.transfer_joints_group_box = QtWidgets.QGroupBox("transfer joints")
 
@@ -190,6 +205,7 @@ class DnaTransferWidget(DnaTab):
 
         # main lyt
         lyt.addWidget(self.transfer_meshes_group_box)
+        lyt.addWidget(self.mesh_utils_group_box)
         lyt.addWidget(self.transfer_joints_group_box)
         lyt.addWidget(self.update_dna_group_box)
         lyt.addStretch()
@@ -338,6 +354,15 @@ class DnaTransferWidget(DnaTab):
         except mhCore.MHError as err:
             self.error(err)
 
+    def _eyewet_post_clicked(self):
+        mhFaceMeshes.eyewet_post()
+
+    def _create_eyelid_wrap_meshes_clicked(self):
+        mhFaceMeshes.create_eyelid_wrapper_meshes(
+            "head_lod0_mesh",
+            "eyeLeft_lod0_mesh",
+            "eyeRight_lod0_mesh",
+        )
 
 class DnaInspectWidget(QtWidgets.QMainWindow):
     """
@@ -1676,6 +1701,7 @@ class DnaBakeRigWidget(DnaTab):
         self.dna_file_combo = mhWidgets.DnaPathManagerWidget(self.path_manager, "dna file")
 
         self.config_file_widget = mhWidgets.PathOpenWidget("bake config")
+        self.config_file_widget.filter = "json files (*.json)"
         self.config_file_widget.path = self.path_manager.bake_config_path
 
         # bake group box
@@ -2168,7 +2194,10 @@ class DnaModWidget(
         self.dna_files_dir_widget = mhWidgets.DirWidget("Dna Files Dir")
 
         self.input_file_widget = mhWidgets.PathOpenWidget("Input DNA")
+        self.input_file_widget.filter = "dna files (*.dna)"
+
         self.output_file_widget = mhWidgets.PathSaveWidget("Output DNA")
+        self.output_file_widget.filter = "dna files (*.dna)"
 
         self.dna_assets_dir_widget.PATH_CHANGED.connect(self.paths_changed)
         self.dna_files_dir_widget.PATH_CHANGED.connect(self.paths_changed)
