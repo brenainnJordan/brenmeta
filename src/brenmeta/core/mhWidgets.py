@@ -200,7 +200,7 @@ class PathSaveWidget(PathWidgetBase):
 
 
 class NodeLineEdit(QtWidgets.QWidget):
-    def __init__(self, default=None, label=None, parent=None):
+    def __init__(self, default=None, label=None, label_width=None, parent=None):
         super(NodeLineEdit, self).__init__(parent=parent)
 
         self.lyt = QtWidgets.QHBoxLayout()
@@ -216,6 +216,10 @@ class NodeLineEdit(QtWidgets.QWidget):
 
         if label:
             self.label = QtWidgets.QLabel(label)
+
+            if label_width is not None:
+                self.label.setFixedWidth(label_width)
+
             self.lyt.addWidget(self.label)
         else:
             self.label = None

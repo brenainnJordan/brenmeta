@@ -1759,6 +1759,40 @@ class DnaBakeRigWidget(DnaTab):
         reconnect_lyt.addWidget(self.reconnect_joints_checkbox)
         reconnect_lyt.addWidget(self.reconnect_btn)
 
+        # bake driven group box
+        self.bake_driven_group_box = QtWidgets.QGroupBox("bake driven")
+
+        bake_driven_lyt = QtWidgets.QVBoxLayout()
+        self.bake_driven_group_box.setLayout(bake_driven_lyt)
+
+        self.driver_bs_node_widget = mhWidgets.NodeLineEdit(
+            default="head_lod0_blendShape", label="driver blendshape", label_width=100
+        )
+
+        self.driven_mesh_widget = mhWidgets.NodeLineEdit(
+            label="driven mesh", label_width=100
+        )
+
+        self.bake_driven_targets_only_checkbox = QtWidgets.QCheckBox("targets only")
+        self.bake_driven_skip_static_checkbox = QtWidgets.QCheckBox("skip static")
+        self.bake_driven_connect_checkbox = QtWidgets.QCheckBox("connect")
+        self.bake_driven_cleanup_checkbox = QtWidgets.QCheckBox("cleanup")
+
+        self.bake_driven_skip_static_checkbox.setChecked(True)
+        self.bake_driven_connect_checkbox.setChecked(True)
+        self.bake_driven_cleanup_checkbox.setChecked(True)
+
+        self.bake_driven_btn = QtWidgets.QPushButton("bake driven")
+        self.bake_driven_btn.clicked.connect(self._bake_driven_clicked)
+
+        bake_driven_lyt.addWidget(self.driver_bs_node_widget)
+        bake_driven_lyt.addWidget(self.driven_mesh_widget)
+        bake_driven_lyt.addWidget(self.bake_driven_targets_only_checkbox)
+        bake_driven_lyt.addWidget(self.bake_driven_skip_static_checkbox)
+        bake_driven_lyt.addWidget(self.bake_driven_connect_checkbox)
+        bake_driven_lyt.addWidget(self.bake_driven_cleanup_checkbox)
+        bake_driven_lyt.addWidget(self.bake_driven_btn)
+
         # create layout
         lyt = QtWidgets.QVBoxLayout()
         self.setLayout(lyt)
@@ -1768,6 +1802,7 @@ class DnaBakeRigWidget(DnaTab):
         lyt.addWidget(self.bake_group_box)
         lyt.addWidget(self.disconnect_group_box)
         lyt.addWidget(self.reconnect_group_box)
+        lyt.addWidget(self.bake_driven_group_box)
         lyt.addStretch()
 
     def _build_clicked(self):
@@ -1908,6 +1943,16 @@ class DnaBakeRigWidget(DnaTab):
             self.error(err)
 
         return True
+
+    def _bake_driven_clicked(self):
+        mhBlendshape.bake_blendshape_driven_mesh(
+            self.driver_bs_node_widget.node,
+            self.driven_mesh_widget.node,
+            cleanup=self.bake_driven_cleanup_checkbox.isChecked(),
+            skip_static=self.bake_driven_skip_static_checkbox.isChecked(),
+            connect=self.bake_driven_connect_checkbox.isChecked(),
+            targets_only=self.bake_driven_targets_only_checkbox.isChecked()
+        )
 
     def update_assets(self):
         self.dna_file_combo.update_assets()
@@ -2152,7 +2197,7 @@ class DnaModWidget(
         self.tabs.addTab(self.transfer_widget, "transfer")
         self.tabs.addTab(self.merge_widget, "merge")
         self.tabs.addTab(self.poses_widget, "edit poses")
-        self.tabs.addTab(self.shape_bake_widget, "bake shapes")
+        self.tabs.addTab(self.shape_bake_widget, "bake rig")
         self.tabs.addTab(self.sculpt_widget, "sculpt")
         self.tabs.addTab(self.qc_widget, "QC")
 

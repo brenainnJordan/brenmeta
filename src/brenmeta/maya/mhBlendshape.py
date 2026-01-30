@@ -1162,7 +1162,9 @@ def subtract_deltas_sl():
     return True
 
 
-def bake_blendshape_driven_mesh(driver_bs_node, driven_mesh, cleanup=True, skip_static=True):
+def bake_blendshape_driven_mesh(
+        driver_bs_node, driven_mesh, cleanup=True, skip_static=True, connect=True, targets_only=False
+):
     targets = get_blendshape_weight_aliases(driver_bs_node)
 
     connections = {}
@@ -1236,6 +1238,9 @@ def bake_blendshape_driven_mesh(driver_bs_node, driven_mesh, cleanup=True, skip_
     if not driven_targets:
         raise mhCore.MHError("No targets baked: {}".format(driven_mesh))
 
+    if targets_only:
+        return True
+
     # create blendshape
     driven_bs_node = cmds.blendShape(
         driven_targets,
@@ -1250,10 +1255,22 @@ def bake_blendshape_driven_mesh(driver_bs_node, driven_mesh, cleanup=True, skip_
             "{}.{}".format(driver_bs_node, target)
         )
 
-        if target in driven_targets:
-            cmds.connectAttr(
-                connections[target],
-                "{}.{}".format(driven_bs_node, target)
-            )
+    if connect:
+        for target in driven_targets:
+            if target in connections:
+                cmds.connectAttr(
+                    connections[target],
+                    "{}.{}".format(driven_bs_node, target)
+                )
+            else:
+                cmds.connectAttr(
+                    "{}.{}".format(driver_bs_node, target),
+                    "{}.{}".format(driven_bs_node, target)
+                )
+
+    if cleanup:
+        cmds.delete(driven_mesh)
+        cmds.rename(base_mesh, driven_mesh)
+        cmds.delete(target_group)
 
     return True
