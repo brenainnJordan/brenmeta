@@ -379,13 +379,16 @@ def connect_targets(driver_mapping, bs_nodes):
 
 
 def create_joint_poses(poses, pose_joints, driver_mapping):
-    # TODO investigate why combos aren't connecting
     # get attr poses
     # dict where key is every attr for all joints we want to still have driven
     # and value is all poses that drive that attr
     attr_poses = {}
 
     for joint in pose_joints:
+        if not cmds.objExists(joint):
+            LOG.warning("Joint not found: {}".format(joint))
+            continue
+
         for attr in ["tx", "ty", "tz", "rx", "ry", "rz", "sx", "sy", "sz"]:
             joint_attr = "{}.{}".format(joint, attr)
 
