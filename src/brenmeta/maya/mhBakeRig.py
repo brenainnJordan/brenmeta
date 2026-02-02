@@ -903,9 +903,11 @@ def reconnect(
     if bake_config.combos:
         LOG.info("Adding additional combo poses...")
 
-        mhCore.add_additional_combo_poses(
+        _, _, new_psd_poses = mhCore.add_additional_combo_poses(
             poses, psd_poses, bake_config.combos, joints_attr_defaults
         )
+    else:
+        new_psd_poses = []
 
     # create combo logic
     LOG.info("Creating driver logic...")
@@ -923,7 +925,10 @@ def reconnect(
         for bs_node in bs_nodes:
             base_mesh = cmds.blendShape(bs_node, query=True, geometry=True)[0]
 
-            for shape_name in bake_config.shapes:
+            new_shapes = list(bake_config.shapes)
+            new_shapes += [psd_pose.pose.name for psd_pose in new_psd_poses]
+
+            for shape_name in new_shapes:
                 if mhBlendshape.get_blendshape_target_index(bs_node, shape_name) is not None:
                     continue
 
