@@ -14,6 +14,7 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
+import numpy
 
 import dna
 import dnacalib2
@@ -34,8 +35,8 @@ def get_mesh_indices(dna_obj, reader, lod=None):
 
     return mesh_indices
 
-def get_vertex_positions_from_dna(dna_obj, reader, lod=0):
 
+def get_vertex_positions_from_dna(dna_obj, reader, lod=0):
     mesh_indices = get_mesh_indices(dna_obj, reader, lod=lod)
 
     if not mesh_indices:
@@ -50,7 +51,7 @@ def get_vertex_positions_from_dna(dna_obj, reader, lod=0):
         zs = reader.getVertexPositionZs(mesh_index)
 
         positions = [
-            [x,y,z] for x,y,z in zip(xs, ys, zs)
+            [x, y, z] for x, y, z in zip(xs, ys, zs)
         ]
 
         mesh_vertex_positions.append(positions)
@@ -59,7 +60,6 @@ def get_vertex_positions_from_dna(dna_obj, reader, lod=0):
 
 
 def update_meshes_from_scene(dna_obj, calib_reader, lod=0):
-
     # get existing mesh data
     LOG.info("getting dna mesh data...")
     mesh_data = get_vertex_positions_from_dna(dna_obj, calib_reader, lod=lod)
@@ -79,15 +79,16 @@ def update_meshes_from_scene(dna_obj, calib_reader, lod=0):
 
         LOG.info("updating mesh: {}".format(mesh))
 
-        scene_vertex_positions = mhMayaUtils.get_points(mesh, as_positions=True)
+        scene_vertex_positions = mhMayaUtils.get_points(mesh, as_numpy=True)
+        deltas = scene_vertex_positions - numpy.array(existing_positions)
 
-        deltas = [
-            [a[i]-b[i] for i in range(3)]
-            for a, b in zip(scene_vertex_positions, existing_positions)
-        ]
+        # deltas = [
+        #     [a[i]-b[i] for i in range(3)]
+        #     for a, b in zip(scene_vertex_positions, existing_positions)
+        # ]
 
         command = dnacalib2.SetVertexPositionsCommand(
-            mesh_index, deltas, dnacalib2.VectorOperation_Add
+            mesh_index, deltas.tolist(), dnacalib2.VectorOperation_Add
         )
 
         commands.add(command)
@@ -127,6 +128,7 @@ def calculate_lods(dna_obj, calib_reader, from_lod=0):
 
     return True
 
+
 def get_blendshape_deltas(dna_obj, reader, lod=0):
     # TODO finish this
     if lod is None:
@@ -149,15 +151,17 @@ def get_blendshape_deltas(dna_obj, reader, lod=0):
 
     return True
 
+
 def set_blendshape_deltas():
     # TODO
     dnacalib2.SetBlendShapeTargetDeltasCommand
 
+
 def scale_all_blendshape_deltas():
     pass
 
-def merge_meshes_positions(src_dna_obj, src_calib_reader, dst_dna_obj, dst_calib_reader, lod=0):
 
+def merge_meshes_positions(src_dna_obj, src_calib_reader, dst_dna_obj, dst_calib_reader, lod=0):
     # get existing mesh data
     LOG.info("getting dna mesh data...")
 
@@ -179,7 +183,7 @@ def merge_meshes_positions(src_dna_obj, src_calib_reader, dst_dna_obj, dst_calib
         dst_positions = dst_mesh_data[mesh_index]
 
         deltas = [
-            [a[i]-b[i] for i in range(3)]
+            [a[i] - b[i] for i in range(3)]
             for a, b in zip(src_positions, dst_positions)
         ]
 

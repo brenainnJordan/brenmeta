@@ -46,6 +46,8 @@ ScaleCommand(float scale, Vector3 origin)
 
 """
 
+import numpy
+
 import dna
 import dnacalib
 
@@ -107,15 +109,11 @@ def update_meshes_from_scene(dna_obj, calib_reader, lod=0):
 
         print("updating mesh: {}".format(mesh))
 
-        scene_vertex_positions = mhMayaUtils.get_points(mesh, as_positions=True)
-
-        deltas = [
-            [a[i]-b[i] for i in range(3)]
-            for a, b in zip(scene_vertex_positions, existing_positions)
-        ]
+        scene_vertex_positions = mhMayaUtils.get_points(mesh, as_numpy=True)
+        deltas = scene_vertex_positions - numpy.array(existing_positions)
 
         command = dnacalib.SetVertexPositionsCommand(
-            mesh_index, deltas, dnacalib.VectorOperation_Add
+            mesh_index, deltas.tolist(), dnacalib.VectorOperation_Add
         )
 
         commands.add(command)

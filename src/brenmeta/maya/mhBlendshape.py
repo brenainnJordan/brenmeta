@@ -695,11 +695,8 @@ def apply_sculpt(bs_node, sculpt, sculpt_prefix, rebuild=True, group=None, verbo
     delta = get_target_delta(bs_node, target, as_numpy=True)
 
     base_mesh = mhMayaUtils.get_orig_mesh(bs_node)
-    base_points = mhMayaUtils.get_points(base_mesh, as_positions=True)
-    sculpt_points = mhMayaUtils.get_points(sculpt, as_positions=True)
-
-    sculpt_points = numpy.array(sculpt_points)
-    base_points = numpy.array(base_points)
+    base_points = mhMayaUtils.get_points(base_mesh, as_numpy=True)
+    sculpt_points = mhMayaUtils.get_points(sculpt, as_numpy=True)
 
     sculpt_delta = sculpt_points - base_points - delta
 
@@ -748,8 +745,7 @@ def apply_sculpt(bs_node, sculpt, sculpt_prefix, rebuild=True, group=None, verbo
             # use in between sculpt delta
             LOG.info("    in-between sculpt: {}".format(ib_sculpt))
 
-            ib_sculpt_points = mhMayaUtils.get_points(ib_sculpt, as_positions=True)
-            ib_sculpt_points = numpy.array(ib_sculpt_points)
+            ib_sculpt_points = mhMayaUtils.get_points(ib_sculpt, as_numpy=True)
 
             ib_delta = get_target_delta(bs_node, target, as_numpy=True, in_between=in_between)
 

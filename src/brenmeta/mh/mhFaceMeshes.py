@@ -652,21 +652,37 @@ mhFaceMeshes.transfer_eye_meshes(
 
     cmds.parent(l_src_wrapper_mesh, r_src_wrapper_mesh, transfer_grp)
 
+    # # get head points
+    # src_points = mhMayaUtils.get_points(src_head_mesh, as_vector=True)
+    # dst_points = mhMayaUtils.get_points(dst_head_mesh, as_vector=True)
+    #
+    # # get eyelid edge points
+    # l_src_eyelid_points = [src_points[i] for i in L_EYELID_EDGE_VERTS]
+    # r_src_eyelid_points = [src_points[i] for i in R_EYELID_EDGE_VERTS]
+    # l_dst_eyelid_points = [dst_points[i] for i in L_EYELID_EDGE_VERTS]
+    # r_dst_eyelid_points = [dst_points[i] for i in R_EYELID_EDGE_VERTS]
+    #
+    # # approximate dst eyeball scale based on width
+    # l_src_x = [i.x for i in l_src_eyelid_points]
+    # l_dst_x = [i.x for i in l_dst_eyelid_points]
+    # r_src_x = [i.x for i in r_src_eyelid_points]
+    # r_dst_x = [i.x for i in r_dst_eyelid_points]
+
     # get head points
-    src_points = mhMayaUtils.get_points(src_head_mesh, as_vector=True)
-    dst_points = mhMayaUtils.get_points(dst_head_mesh, as_vector=True)
+    src_points = mhMayaUtils.get_points(src_head_mesh, as_numpy=True)
+    dst_points = mhMayaUtils.get_points(dst_head_mesh, as_numpy=True)
 
     # get eyelid edge points
-    l_src_eyelid_points = [src_points[i] for i in L_EYELID_EDGE_VERTS]
-    r_src_eyelid_points = [src_points[i] for i in R_EYELID_EDGE_VERTS]
-    l_dst_eyelid_points = [dst_points[i] for i in L_EYELID_EDGE_VERTS]
-    r_dst_eyelid_points = [dst_points[i] for i in R_EYELID_EDGE_VERTS]
+    l_src_eyelid_points = src_points[L_EYELID_EDGE_VERTS]
+    r_src_eyelid_points = src_points[R_EYELID_EDGE_VERTS]
+    l_dst_eyelid_points = dst_points[L_EYELID_EDGE_VERTS]
+    r_dst_eyelid_points = dst_points[R_EYELID_EDGE_VERTS]
 
     # approximate dst eyeball scale based on width
-    l_src_x = [i.x for i in l_src_eyelid_points]
-    l_dst_x = [i.x for i in l_dst_eyelid_points]
-    r_src_x = [i.x for i in r_src_eyelid_points]
-    r_dst_x = [i.x for i in r_dst_eyelid_points]
+    l_src_x = [i[0] for i in l_src_eyelid_points]
+    l_dst_x = [i[0] for i in l_dst_eyelid_points]
+    r_src_x = [i[0] for i in r_src_eyelid_points]
+    r_dst_x = [i[0] for i in r_dst_eyelid_points]
 
     l_src_width = max(l_src_x) - min(l_src_x)
     l_dst_width = max(l_dst_x) - min(l_dst_x)
@@ -679,7 +695,7 @@ mhFaceMeshes.transfer_eye_meshes(
     dst_eyeball_scale = (l_eyeball_scale + r_eyeball_scale) / 2.0
 
     # determine l dst pivot
-    l_src_wrapper_points = mhMayaUtils.get_points(l_src_wrapper_mesh, as_vector=True)
+    l_src_wrapper_points = mhMayaUtils.get_points(l_src_wrapper_mesh, as_numpy=True)
     l_src_eye_pivot = l_src_wrapper_points[0]
     l_src_eyelid_avg_point = mhMayaUtils.get_average_position(l_src_eyelid_points)
     l_dst_eyelid_avg_point = mhMayaUtils.get_average_position(l_dst_eyelid_points)
@@ -690,7 +706,7 @@ mhFaceMeshes.transfer_eye_meshes(
     ]
 
     # determine r dst pivot
-    r_src_wrapper_points = mhMayaUtils.get_points(r_src_wrapper_mesh, as_vector=True)
+    r_src_wrapper_points = mhMayaUtils.get_points(r_src_wrapper_mesh, as_numpy=True)
     r_src_eye_pivot = r_src_wrapper_points[0]
     r_src_eyelid_avg_point = mhMayaUtils.get_average_position(r_src_eyelid_points)
     r_dst_eyelid_avg_point = mhMayaUtils.get_average_position(r_dst_eyelid_points)

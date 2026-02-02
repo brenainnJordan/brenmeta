@@ -25,7 +25,7 @@ from brenmeta.maya import mhMayaUtils
 
 
 def snap_joints_to_vertex_ids(mesh, mapped_joints):
-    points = mhMayaUtils.get_points(mesh, as_positions=True)
+    points = mhMayaUtils.get_points(mesh, as_numpy=True)
 
     for joint, vertex_id in mapped_joints.items():
         mhMayaUtils.xform_preserve_children(
