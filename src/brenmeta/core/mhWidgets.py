@@ -999,3 +999,15 @@ class JsonEditorDialog(QtWidgets.QDialog):
         else:
             # Keep dialog open, highlight error
             QtWidgets.QApplication.beep()
+
+
+class DebugDialog(QtWidgets.QDialog):
+    def __init__(self, text, parent=None):
+        super().__init__(parent)
+
+        edit = QtWidgets.QPlainTextEdit(self)
+        edit.setPlainText(text)
+        edit.setReadOnly(True)
+
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.addWidget(edit)

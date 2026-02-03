@@ -380,8 +380,8 @@ class DnaInspectWidget(QtWidgets.QMainWindow):
 
         self.setWindowTitle(filename)
 
-        dna_obj = dna_viewer.DNA(dna_path)
-        calib_reader = dnacalib2.DNACalibDNAReader(dna_obj.reader)
+        dna_obj = DNAReader.read(dna_path, Layer.all)
+        calib_reader = dnacalib2.DNACalibDNAReader(dna_obj._reader)
 
         # mesh text
         mesh_fmt = "    {mesh_name}: {point_count} points, {blendshape_count} blendshape targets\n"
@@ -389,10 +389,11 @@ class DnaInspectWidget(QtWidgets.QMainWindow):
         mesh_txt = ""
 
         mesh_indices = mhMesh.get_mesh_indices(dna_obj, calib_reader, lod=lod)
+        meshes = dna_obj.get_meshes()
 
         for mesh_index in mesh_indices:
             mesh_txt += mesh_fmt.format(
-                mesh_name=dna_obj.meshes.names[mesh_index],
+                mesh_name=meshes[mesh_index].name,
                 point_count=calib_reader.getVertexPositionCount(mesh_index),
                 blendshape_count=calib_reader.getBlendShapeTargetCount(mesh_index)
             )
@@ -435,12 +436,7 @@ Mesh count: {mesh_count}
         raw_controls_text = "Raw Controls:\n\n{}".format(raw_controls_text)
 
         # joint column to blendshape channels
-        blendshape_channel_inputs = calib_reader.getBlendShapeChannelInputIndices()
-
-        columns_to_blendshapes = [""] * calib_reader.getJointColumnCount()
-
-        for blendshape_channel_name, joint_column in zip(blendshape_channel_names, blendshape_channel_inputs):
-            columns_to_blendshapes[joint_column] = blendshape_channel_name
+        columns_to_blendshapes = mhBehaviour.get_columns_to_blendshape_channels(calib_reader)
 
         columns_to_blendshapes_text = ["{}: {}".format(i, name) for i, name in enumerate(columns_to_blendshapes)]
         columns_to_blendshapes_text = "\n".join(columns_to_blendshapes_text)
@@ -471,8 +467,24 @@ Mesh count: {mesh_count}
 
         for psd_output in sorted(psd_mapping.keys()):
             psd_name = columns_to_blendshapes[psd_output]
-            input_names = [columns_to_blendshapes[i] for i in psd_mapping[psd_output]]
-            psd_text += "{}: {}\n".format(psd_name, input_names)
+
+            if psd_name is None:
+                psd_name = str(psd_output)
+
+            psd_text += "{}: ".format(psd_name)
+
+            for i in psd_mapping[psd_output]:
+                input_name = None
+
+                if i < len(columns_to_blendshapes):
+                    input_name = columns_to_blendshapes[i]
+
+                if input_name is None:
+                    input_name = str(i)
+
+                psd_text += "{}, ".format(input_name)
+
+            psd_text += "\n"
 
         # print to output
         print(summary_text)
@@ -1690,6 +1702,7 @@ class DnaMergeWidget(DnaTab):
         return True
 
 
+
 class DnaBakeRigWidget(DnaTab):
     def __init__(self, path_manager, parent=None):
         super(DnaBakeRigWidget, self).__init__(path_manager, parent=parent)
@@ -1703,6 +1716,9 @@ class DnaBakeRigWidget(DnaTab):
         self.config_file_widget = mhWidgets.PathOpenWidget("bake config")
         self.config_file_widget.filter = "json files (*.json)"
         self.config_file_widget.path = self.path_manager.bake_config_path
+
+        self.inspect_config_btn = QtWidgets.QPushButton("inspect")
+        self.inspect_config_btn.clicked.connect(self._inspect_clicked)
 
         # bake group box
         self.bake_group_box = QtWidgets.QGroupBox("bake")
@@ -1825,11 +1841,71 @@ class DnaBakeRigWidget(DnaTab):
 
         lyt.addWidget(self.dna_file_combo)
         lyt.addWidget(self.config_file_widget)
+        lyt.addWidget(self.inspect_config_btn)
         lyt.addWidget(self.bake_group_box)
         lyt.addWidget(self.disconnect_group_box)
         lyt.addWidget(self.reconnect_group_box)
         lyt.addWidget(self.bake_driven_group_box)
         lyt.addStretch()
+
+    def _inspect_clicked(self):
+        """
+        """
+        # get paths
+        dna_path = self.dna_file_combo.get_path()
+        bake_config_file = self.config_file_widget.path
+
+        # check we have paths
+        if not dna_path:
+            self.error("No source DNA path given")
+            return False
+
+        if not bake_config_file:
+            self.error("No bake config path given")
+            return False
+
+        # load dna data
+        LOG.info("Loading dna: {}".format(dna_path))
+
+        dna_obj = DNAReader.read(dna_path, Layer.all)
+
+        LOG.info("Getting reader...")
+        calib_reader = dnacalib2.DNACalibDNAReader(dna_obj._reader)
+
+        # get pose data
+        LOG.info("Getting pose data...")
+
+        poses = mhBehaviour.get_all_poses(calib_reader)
+        psd_poses = mhBehaviour.get_psd_poses(calib_reader, poses)
+        joints_attr_defaults = mhBehaviour.get_joint_defaults(calib_reader)
+
+        # load config
+        bake_config = mhBakeRig.BakeConfig.load(bake_config_file)
+
+        # create additional poses
+        LOG.info("Adding additional poses...")
+
+        mhCore.add_additional_poses(
+            poses, bake_config.shapes, joints_attr_defaults
+        )
+
+        # create additional combos
+        LOG.info("Adding additional combo poses...")
+
+        _, _, new_psd_poses = mhCore.add_additional_combo_poses(
+            poses, psd_poses, bake_config.combos, joints_attr_defaults
+        )
+
+        new_targets = list(bake_config.shapes)
+        new_targets += [psd_pose.pose.name for psd_pose in new_psd_poses]
+
+        target_text = "\n".join(new_targets)
+
+        dialog = mhWidgets.DebugDialog(target_text, parent=self)
+        dialog.setWindowTitle("Bake debug")
+        dialog.exec_()
+
+        return True
 
     def _build_clicked(self):
 

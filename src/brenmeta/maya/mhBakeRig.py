@@ -884,7 +884,7 @@ def reconnect(
         use_combo_network=False,
         add_missing_targets=True,
 ):
-    """TODO debug why additional shapes aren't being added
+    """
     """
     # load config
     bake_config = BakeConfig.load(config_file_path)
@@ -950,3 +950,4 @@ def reconnect(
         create_joint_poses(poses, bake_config.pose_joints, driver_mapping)
 
     return True
+

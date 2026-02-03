@@ -79,6 +79,12 @@ class CorneaDeformer(object):
             else:
                 self.mesh_offsets.append(None)
 
+        # calculate an appropriate max distance based on eye bounding box
+        bbox = cmds.exactWorldBoundingBox(self.eyeball_mesh)
+        eyeball_width = bbox[3] - bbox[0]
+
+        self.max_distance = eyeball_width
+
         return True
 
     def deform_mesh(self, mesh=None):

@@ -568,6 +568,9 @@ def eyewet_post(
     edge_mush = cmds.deltaMush(edge_mesh, smoothingIterations=5)[0]
     cmds.setAttr("{}.displacement".format(edge_mush), 0.0)
 
+    # delete history
+    cmds.delete(edge_mesh, constructionHistory=True)
+
     return True
 
 
