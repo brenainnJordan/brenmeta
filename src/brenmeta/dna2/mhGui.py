@@ -704,7 +704,9 @@ class DnaBuildWidget(DnaTab):
             raise err
 
     def create_lamberts(self):
-        mhUeUtils.create_materials()
+        mhMayaUtils.create_materials_for_hierarchy(
+            "head_lod0_grp", "lambert", suffix="_material"
+        )
 
     def import_materials(self):
 
@@ -1399,14 +1401,14 @@ class DnaQCWidget(DnaTab):
         self.frame_interval = mhWidgets.LabelledSpinBox("Frame Interval", default=10, maximum=100)
         self.update_timeline_checkbox = QtWidgets.QCheckBox("Update Timeline")
         self.combos_checkbox = QtWidgets.QCheckBox("Combos")
-        self.additional_combos_checkbox = QtWidgets.QCheckBox("Additional Combos")
+        self.use_bake_config_checkbox = QtWidgets.QCheckBox("Use Bake Config")
         self.combine_lr_checkbox = QtWidgets.QCheckBox("Combine LR")
         self.annotate_checkbox = QtWidgets.QCheckBox("Annotate")
         self.selected_sculpts_checkbox = QtWidgets.QCheckBox("Selected Sculpts")
 
         self.update_timeline_checkbox.setChecked(True)
         self.combos_checkbox.setChecked(True)
-        self.additional_combos_checkbox.setChecked(True)
+        self.use_bake_config_checkbox.setChecked(False)
         self.combine_lr_checkbox.setChecked(True)
         self.annotate_checkbox.setChecked(True)
 
@@ -1421,7 +1423,7 @@ class DnaQCWidget(DnaTab):
         tech_rom_lyt.addWidget(self.frame_interval)
         tech_rom_lyt.addWidget(self.update_timeline_checkbox)
         tech_rom_lyt.addWidget(self.combos_checkbox)
-        tech_rom_lyt.addWidget(self.additional_combos_checkbox)
+        tech_rom_lyt.addWidget(self.use_bake_config_checkbox)
         tech_rom_lyt.addWidget(self.combine_lr_checkbox)
         tech_rom_lyt.addWidget(self.annotate_checkbox)
         tech_rom_lyt.addWidget(self.selected_sculpts_checkbox)
@@ -1483,12 +1485,13 @@ class DnaQCWidget(DnaTab):
         annotate = self.annotate_checkbox.isChecked()
         combine_lr = self.combine_lr_checkbox.isChecked()
         combos = self.combos_checkbox.isChecked()
-        additional_combos = self.additional_combos_checkbox.isChecked()
         selected_sculpts = self.selected_sculpts_checkbox.isChecked()
         start_frame = self.start_spin.spin_box.value()
         interval = self.frame_interval.spin_box.value()
         tongue = False
         eyelashes = False
+        use_bake_config = self.use_bake_config_checkbox.isChecked()
+        bake_config_file = self.path_manager.bake_config_path
 
         if selected_sculpts:
             sculpts = cmds.ls(sl=True, type="transform")
@@ -1511,19 +1514,38 @@ class DnaQCWidget(DnaTab):
             psd_poses = mhBehaviour.get_psd_poses(calib_reader, poses)
             joints_attr_defaults = mhBehaviour.get_joint_defaults(calib_reader)
 
-            if additional_combos:
-                LOG.info("Adding additional combos...")
-                # get additional combos from mhBakeRig global attr for now
-                # TODO refactor tool to make this more global
-                from brenmeta.maya import mhBakeRig
+            if use_bake_config:
+                LOG.info("Adding additional shapes and combos from bake config...")
 
-                mhCore.add_additional_poses(
-                    poses, mhBakeRig.ADDITIONAL_SHAPES, joints_attr_defaults
-                )
+                bake_config = mhBakeRig.BakeConfig.load(bake_config_file)
 
-                mhCore.add_additional_combo_poses(
-                    poses, psd_poses, mhBakeRig.ADDITIONAL_COMBOS, joints_attr_defaults
-                )
+                # create additional poses
+                if bake_config.shapes:
+                    LOG.info("Adding additional poses...")
+
+                    mhCore.add_additional_poses(
+                        poses, bake_config.shapes, joints_attr_defaults
+                    )
+
+                # create additional combos
+                if bake_config.combos:
+                    LOG.info("Adding additional combo poses...")
+
+                    mhCore.add_additional_combo_poses(
+                        poses, psd_poses, bake_config.combos, joints_attr_defaults
+                    )
+
+                # # get additional combos from mhBakeRig global attr for now
+                # # TODO refactor tool to make this more global
+                # from brenmeta.maya import mhBakeRig
+                #
+                # mhCore.add_additional_poses(
+                #     poses, mhBakeRig.ADDITIONAL_SHAPES, joints_attr_defaults
+                # )
+                #
+                # mhCore.add_additional_combo_poses(
+                #     poses, psd_poses, mhBakeRig.ADDITIONAL_COMBOS, joints_attr_defaults
+                # )
 
             mapping = mhAnimUtils.map_expressions_to_controls(tongue=tongue, eyelashes=eyelashes, namespace=namespace)
 
@@ -1713,11 +1735,11 @@ class DnaBakeRigWidget(DnaTab):
 
         self.dna_file_combo = mhWidgets.DnaPathManagerWidget(self.path_manager, "dna file")
 
-        self.config_file_widget = mhWidgets.PathOpenWidget("bake config")
-        self.config_file_widget.filter = "json files (*.json)"
-        self.config_file_widget.path = self.path_manager.bake_config_path
+        # self.config_file_widget = mhWidgets.PathOpenWidget("bake config")
+        # self.config_file_widget.filter = "json files (*.json)"
+        # self.config_file_widget.path = self.path_manager.bake_config_path
 
-        self.inspect_config_btn = QtWidgets.QPushButton("inspect")
+        self.inspect_config_btn = QtWidgets.QPushButton("inspect bake config")
         self.inspect_config_btn.clicked.connect(self._inspect_clicked)
 
         # bake group box
@@ -1840,7 +1862,7 @@ class DnaBakeRigWidget(DnaTab):
         self.setLayout(lyt)
 
         lyt.addWidget(self.dna_file_combo)
-        lyt.addWidget(self.config_file_widget)
+        # lyt.addWidget(self.config_file_widget)
         lyt.addWidget(self.inspect_config_btn)
         lyt.addWidget(self.bake_group_box)
         lyt.addWidget(self.disconnect_group_box)
@@ -1911,7 +1933,7 @@ class DnaBakeRigWidget(DnaTab):
 
         # get paths
         dna_path = self.dna_file_combo.get_path()
-        bake_config_file = self.config_file_widget.path
+        bake_config_file = self.path_manager.bake_config_path
 
         # check we have paths
         if not dna_path:
@@ -1945,7 +1967,7 @@ class DnaBakeRigWidget(DnaTab):
             optimise=self.optimise_checkbox.isChecked(),
             cleanup=self.cleanup_checkbox.isChecked(),
             expressions_node="CTRL_expressions",
-            use_combo_network=False,
+            use_combo_network=self.use_combo_network_checkbox.isChecked(),
         )
 
         QtWidgets.QMessageBox.information(
@@ -1958,11 +1980,9 @@ class DnaBakeRigWidget(DnaTab):
         return True
 
     def _disconnect_clicked(self):
-        bake_config_file = self.config_file_widget.path
-
         try:
             mhBakeRig.disconnect(
-                bake_config_file,
+                self.path_manager.bake_config_path,
                 disconnect_targets=self.disconnect_targets_checkbox.isChecked(),
                 disconnect_joints=self.disconnect_joints_checkbox.isChecked(),
                 delete_combo_network=self.delete_combo_network_checkbox.isChecked(),
@@ -1981,7 +2001,7 @@ class DnaBakeRigWidget(DnaTab):
 
         # get paths
         dna_path = self.dna_file_combo.get_path()
-        bake_config_file = self.config_file_widget.path
+        bake_config_file = self.path_manager.bake_config_path
 
         # check we have paths
         if not dna_path:
@@ -2077,7 +2097,7 @@ class DnaSculptWidget(DnaTab):
         self.export_objs_btn.clicked.connect(self._export_objs_clicked)
 
         # import objs (with prefix)
-        self.import_prefix = mhWidgets.LabelledLineEdit("import prefix", default="sculpt")
+        self.import_prefix = mhWidgets.LabelledLineEdit("import prefix", default="sculpt_")
         self.import_objs_btn = QtWidgets.QPushButton("import objs")
         self.import_objs_btn.clicked.connect(self._import_objs_clicked)
 
@@ -2209,8 +2229,8 @@ class DnaSculptWidget(DnaTab):
 
         prefix = self.import_prefix.text
 
-        if prefix:
-            prefix += "_"
+        # if prefix:
+        #     prefix += "_"
 
         bs_node = self.bs_node_widget.node
 
@@ -2275,15 +2295,21 @@ class DnaModWidget(
         self.output_file_widget = mhWidgets.PathSaveWidget("Output DNA")
         self.output_file_widget.filter = "dna files (*.dna)"
 
+        self.bake_config_file_widget = mhWidgets.PathOpenWidget("bake config")
+        self.bake_config_file_widget.filter = "json files (*.json)"
+        self.bake_config_file_widget.path = self.project.bake_config_path
+
         self.dna_assets_dir_widget.PATH_CHANGED.connect(self.paths_changed)
         self.dna_files_dir_widget.PATH_CHANGED.connect(self.paths_changed)
         self.input_file_widget.PATH_CHANGED.connect(self.paths_changed)
         self.output_file_widget.PATH_CHANGED.connect(self.paths_changed)
+        self.bake_config_file_widget.PATH_CHANGED.connect(self.paths_changed)
 
         config_lyt.addWidget(self.dna_assets_dir_widget)
         config_lyt.addWidget(self.dna_files_dir_widget)
         config_lyt.addWidget(self.input_file_widget)
         config_lyt.addWidget(self.output_file_widget)
+        config_lyt.addWidget(self.bake_config_file_widget)
 
         lyt.addWidget(self.config_group_box)
 
@@ -2315,6 +2341,7 @@ class DnaModWidget(
         self.project.dna_files_path = self.dna_files_dir_widget.path
         self.project.input_dna_path = self.input_file_widget.path
         self.project.output_dna_path = self.output_file_widget.path
+        self.project.bake_config_path = self.bake_config_file_widget.path
 
         # update widgets
         self.build_widget.update_assets()

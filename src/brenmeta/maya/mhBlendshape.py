@@ -831,13 +831,14 @@ def apply_sculpts(bs_node, sculpts, sculpt_prefix, rebuild=True):
     return True
 
 
-def create_proxy_combo(bs_node, targets, name=None, create_sculpt_target=True, ref_targets=None, sum_combos=True):
+def create_proxy_combo(bs_node, targets, name=None, create_sculpt_target=True, ref_targets=None, sum_combos=False):
     """Create a mesh that combines the given targets.
     Optionally with a sculpt target blendshape.
     """
     # get target indices
     target_indices = []
     target_names = []
+    target_weights = []
 
     for target in targets:
         if isinstance(target, str):
@@ -850,6 +851,10 @@ def create_proxy_combo(bs_node, targets, name=None, create_sculpt_target=True, r
         target_indices.append(target_index)
         target_names.append(target_name)
 
+        target_weights.append(
+            cmds.getAttr("{}.{}".format(bs_node, target_name))
+        )
+
     if name:
         proxy_combo = name
     else:
@@ -858,12 +863,24 @@ def create_proxy_combo(bs_node, targets, name=None, create_sculpt_target=True, r
 
     # get ref target indices
     ref_indices = []
+    ref_names = []
+    ref_weights = []
 
     if ref_targets:
         for target in ref_targets:
             if isinstance(target, str):
-                target = get_blendshape_target_index(bs_node, target)
-            ref_indices.append(target)
+                target_index = get_blendshape_target_index(bs_node, target)
+                target_name = target
+            else:
+                target_index = target
+                target_name = get_blendshape_weight_alias(bs_node, target)
+
+            ref_indices.append(target_index)
+            ref_names.append(target_name)
+
+            ref_weights.append(
+                cmds.getAttr("{}.{}".format(bs_node, target_name))
+            )
 
     # create mesh
     target_transform, target_shape = mhMayaUtils.duplicate_orig_mesh(bs_node, proxy_combo, parent=None)
@@ -874,27 +891,27 @@ def create_proxy_combo(bs_node, targets, name=None, create_sculpt_target=True, r
     # sum target deltas
     summed_delta = numpy.array([[0.0, 0.0, 0.0] for _ in range(point_count)])
 
-    for target_index in target_indices:
+    for target_index, target_weight in zip(target_indices, target_weights):
         if is_combo(bs_node, target_index) and sum_combos:
             delta = get_summed_combo_delta(bs_node, target_index)
         else:
             delta = get_target_delta(bs_node, target_index, as_numpy=True)
 
         if delta is not None:
-            summed_delta += delta
+            summed_delta += delta * target_weight
 
     # sum ref target deltas
     if ref_indices:
         summed_ref_delta = numpy.array([[0.0, 0.0, 0.0] for _ in range(point_count)])
 
-        for target_index in ref_indices:
+        for target_index, target_weight in zip(ref_indices, ref_weights):
             if is_combo(bs_node, target_index) and sum_combos:
                 delta = get_summed_combo_delta(bs_node, target_index)
             else:
                 delta = get_target_delta(bs_node, target_index, as_numpy=True)
 
             if delta is not None:
-                summed_ref_delta += delta
+                summed_ref_delta += delta *target_weight
     else:
         summed_ref_delta = None
 
@@ -938,6 +955,10 @@ def create_proxy_combo(bs_node, targets, name=None, create_sculpt_target=True, r
         "blendShape": bs_node,
         "targets": targets,
         "target_indices": target_indices,
+        "target_weights": target_weights,
+        "ref_targets": ref_names,
+        "ref_indices": ref_indices,
+        "ref_weights": ref_weights,
     }
 
     meta_data = json.dumps(meta_data)
@@ -981,6 +1002,10 @@ def apply_proxy_combo(proxy_combo, rebuild=True, verbose=True):
 
     bs_node = meta_data["blendShape"]
     target_indices = meta_data["target_indices"]
+    target_weights = meta_data["target_weights"]
+    ref_names = meta_data["ref_targets"]
+    ref_indices = meta_data["ref_indices"]
+    ref_weights = meta_data["ref_weights"]
 
     # get sculpt delta
     sculpt_bs_node = "{}_blendShape".format(proxy_combo)
@@ -997,21 +1022,21 @@ def apply_proxy_combo(proxy_combo, rebuild=True, verbose=True):
 
     # get existing deltas
     deltas = []
-    delta_lengths = []
+    delta_magnitudes = []
 
     summed_delta = numpy.array([[0.0, 0.0, 0.0] for _ in range(point_count)])
-    summed_delta_length = numpy.zeros(point_count)
+    summed_delta_magnitude = numpy.zeros(point_count)
 
-    for target_index in target_indices:
+    for target_index, target_weight in zip(target_indices, target_weights):
         if is_combo(bs_node, target_index):
             delta = get_summed_combo_delta(bs_node, target_index)
         else:
             delta = get_target_delta(bs_node, target_index, as_numpy=True)
 
         deltas.append(delta)
-        delta_length = numpy.linalg.norm(delta, axis=1)
-        delta_lengths.append(delta_length)
-        summed_delta_length += delta_length
+        delta_magnitude = numpy.linalg.norm(delta, axis=1)
+        delta_magnitudes.append(delta_magnitude)
+        summed_delta_magnitude += delta_magnitude * target_weight
 
     # calculate weights and split sculpt deltas
     if rebuild:
@@ -1023,8 +1048,8 @@ def apply_proxy_combo(proxy_combo, rebuild=True, verbose=True):
     else:
         group = None
 
-    for target_index, delta, delta_length in zip(
-            target_indices, deltas, delta_lengths
+    for target_index, target_weight, delta, delta_magnitude in zip(
+            target_indices, target_weights, deltas, delta_magnitudes
     ):
         target_plugs = BlendshapeTargetPlugs(bs_node, target_index)
         inbetween_values, inbetween_indices = target_plugs.get_inbetween_values()
@@ -1032,11 +1057,15 @@ def apply_proxy_combo(proxy_combo, rebuild=True, verbose=True):
         if verbose:
             LOG.info("  distributing delta to target: {}".format(target_plugs.target_alias))
 
+        # Calculate sculpt weights for this target by
+        # determining how much it contributed to the combined shape:
+        # divide delta magnitude by the total summed delta magnitude
+        # (only where delta > 0, defaulting to 0)
         weights = numpy.divide(
-            delta_length,
-            summed_delta_length,
-            out=numpy.zeros_like(delta_length, dtype=float),
-            where=summed_delta_length != 0
+            delta_magnitude,
+            summed_delta_magnitude,
+            out=numpy.zeros_like(delta_magnitude, dtype=float),
+            where=summed_delta_magnitude != 0
         )
 
         weights = numpy.reshape(numpy.repeat(weights, 3), [point_count, 3])

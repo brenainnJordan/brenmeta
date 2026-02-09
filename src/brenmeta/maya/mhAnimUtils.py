@@ -73,6 +73,13 @@ def create_type_text(name, text, font_size=2):
         "{}.fontSize".format(type_node), font_size
     )
 
+    # create material
+    shading_node, set_node = mhMayaUtils.create_material(name, "lambert", meshes=transform)
+
+    cmds.setAttr(
+        "{}.incandescence".format(shading_node), 1, 1, 1
+    )
+
     return type_node, transform, shape
 
 
@@ -481,10 +488,23 @@ def animate_ctrl_rom(
                 "Some given sculpts were not matched to poses: {}".format(unmatched_sculpts)
             )
 
+    # get placements for annotations
+    face_root_pos = cmds.xform("FACIAL_C_FacialRoot", query=True, translation=True, worldSpace=True)
+    neck_pos = cmds.xform("neck_01", query=True, translation=True, worldSpace=True)
+
     if sculpts and annotate:
         # create sculpt annotations
-        create_type_text(SCULPT_ANNOTATION, "sculpt")
-        create_type_text(ORIGINAL_ANNOTATION, "original")
+        sculpt_annotation_nodes = create_type_text(SCULPT_ANNOTATION, "sculpt")
+        orig_annotation_nodes = create_type_text(ORIGINAL_ANNOTATION, "original")
+
+        annotation_pos = list(face_root_pos)
+        annotation_pos[1] += (face_root_pos[1] - neck_pos[1])
+
+        cmds.xform(
+            [sculpt_annotation_nodes[1], orig_annotation_nodes[1]],
+            translation=annotation_pos
+        )
+
 
     # organise combos
     if namespace:
@@ -563,14 +583,14 @@ def animate_ctrl_rom(
         # TODO check keyable
         if isinstance(data, list):
             for attr, value in data:
+                annotation_data[exp_frame] += "    {}\n".format(attr)
                 node, attr = attr.split(".")
                 next_frame = animate_attr(node, attr, value, exp_frame, interval, hold)
-                annotation_data[exp_frame] += "    {}\n".format(attr)
         else:
             attr, value = data
+            annotation_data[exp_frame] += "    {}\n".format(attr)
             node, attr = attr.split(".")
             next_frame = animate_attr(node, attr, value, exp_frame, interval, hold)
-            annotation_data[exp_frame] += "    {}\n".format(attr)
 
         # continue to next expression
         if not (combine_lr and exp_attr.endswith("R")):
@@ -786,6 +806,12 @@ def animate_ctrl_rom(
 
     if annotate:
         type_node, transform, shape = create_type_text(ANNOTATION_NAME, None)
+
+        annotation_pos = list(face_root_pos)
+        annotation_pos[0] += (face_root_pos[1] - neck_pos[1])
+
+        cmds.xform(transform, translation=annotation_pos)
+
         set_animated_text(type_node, annotation_data)
 
     LOG.info("ROM complete")
