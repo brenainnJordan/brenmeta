@@ -9,3 +9,10 @@ All notable changes to this project will be documented in this file. This projec
 ## [1.1.0] - 2026-01-28
 
 - bake config, blendshape utils
+
+## [1.2.0] - 2026-02-09
+- multiple mesh bake support
+- bake driven, mesh utils, bake debug dialog
+- improved annotations
+- proxy combo target weight support
+- bugfixes
