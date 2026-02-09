@@ -682,7 +682,9 @@ class DnaBuildWidget(QtWidgets.QWidget):
             raise err
 
     def create_lamberts(self):
-        mhUeUtils.create_materials()
+        mhMayaUtils.create_materials_for_hierarchy(
+            "head_lod0_grp", "lambert", suffix="_material"
+        )
 
     def import_materials(self):
 

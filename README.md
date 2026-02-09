@@ -39,6 +39,10 @@ Add the "src" folder to sys.path or your PYTHONPATH env variable
 
 eg.
 
+    PYTHONPATH = D:\Repos\brenmeta\src
+
+OR 
+
     import sys
     
     path = r"D:\Repos\brenmeta\src"

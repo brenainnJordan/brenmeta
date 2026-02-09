@@ -221,7 +221,7 @@ def get_points(mesh, space=OpenMaya.MSpace.kObject, as_numpy=False, trim=True, b
 
     """
     # get dag
-    dag = parse_mesh_dag_path(mesh)
+    dag = parse_dag_path(mesh)
 
     # get points
     m_mesh = OpenMaya.MFnMesh(dag)
@@ -255,6 +255,19 @@ def set_points(mesh, points):
     m_mesh.setPoints(points)
 
     return True
+
+
+def points_equal(points_a, points_b, precision=6):
+    """Test if points are the same
+    """
+    delta = points_b - points_a
+
+    delta_length = numpy.linalg.norm(delta, axis=1)
+    delta_total = delta_length.sum()
+    delta_total = round(delta_total, precision)
+
+    return delta_total == 0.0
+
 
 def get_orig_mesh(deformer, as_name=True):
     deformer_m_object = parse_m_object(
@@ -597,23 +610,71 @@ def import_objs(directory, prefix=None, verbose=True):
         file_paths.append(path)
 
     # import objs
-    if prefix:
-        file_kwargs = {
-            "renameAll": True,
-            "renamingPrefix": prefix,
-        }
-    else:
-        file_kwargs = {}
+    # if prefix:
+    #     file_kwargs = {
+    #         "renameAll": True,
+    #         "renamingPrefix": prefix,
+    #     }
+    # else:
+    #     file_kwargs = {}
 
     for file_path in file_paths:
         if verbose:
             LOG.info("Importing file: {}".format(file_path))
 
-        result = cmds.file(
+        new_nodes = cmds.file(
             file_path,
             i=True,
             type="OBJ",
-            **file_kwargs
+            returnNewNodes=True,
+            # **file_kwargs
         )
+
+        new_nodes = cmds.ls(new_nodes, type="transform")
+
+        # rename object(s)
+        file_name = os.path.basename(file_path)
+        name = file_name.split(".")[0]
+
+        for i, new_node in enumerate(new_nodes):
+            if len(new_nodes) > 1:
+                new_name = "{}_{}".format(name, i)
+            else:
+                new_name = name
+
+            if prefix:
+                new_name = "{}{}".format(prefix, new_name)
+
+            cmds.rename(new_node, new_name)
+
+    return True
+
+
+def create_material(name, material_type, suffix=None, meshes=None):
+    if suffix is None:
+        suffix = "_{}".format(material_type)
+
+    shading_node = cmds.shadingNode(material_type, name="{}{}".format(name, suffix), asShader=True)
+
+    set_node = cmds.sets(
+        name="{}_shadingGroup".format(name), renderable=True, noSurfaceShader=True, empty=True
+    )
+
+    cmds.connectAttr(
+        "{}.outColor".format(shading_node),
+        "{}.surfaceShader".format(set_node)
+    )
+
+    if meshes:
+        cmds.sets(meshes, edit=True, forceElement=set_node)
+
+    return shading_node, set_node
+
+
+def create_materials_for_hierarchy(root_node, material_type, suffix=None):
+    for mesh in cmds.listRelatives(root_node):
+        name = mesh.split("_")[0]
+
+        create_material(name, material_type, suffix=suffix, meshes=mesh)
 
     return True

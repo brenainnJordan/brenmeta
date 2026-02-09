@@ -341,6 +341,8 @@ def add_additional_combo_poses(poses, psd_poses, additional_combos, joints_attr_
 
     pose_count = len(poses)
 
+    new_psd_poses = []
+
     for i, pose_names in enumerate(additional_combos):
         combo = PSDPose()
 
@@ -354,10 +356,11 @@ def add_additional_combo_poses(poses, psd_poses, additional_combos, joints_attr_
 
         psd_poses[combo.pose.index] = combo
         poses.append(combo.pose)
+        new_psd_poses.append(combo)
 
         combo.update_name(override=True)
 
-    return poses, psd_poses
+    return poses, psd_poses, new_psd_poses
 
 
 class Project(object):

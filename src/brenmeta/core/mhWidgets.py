@@ -116,7 +116,7 @@ class PathWidgetBase(LabelledLineEdit):
 
         self.lyt.addWidget(self.browse_btn)
 
-        self.filter = "files (*.dna)"
+        self.filter = "files (*.*)"
 
         self.line_edit.textChanged.connect(self.emit_path_changed)
 
@@ -165,7 +165,7 @@ class PathOpenWidget(PathWidgetBase):
     def browse_clicked(self):
         file_path, file_type = QtWidgets.QFileDialog.getOpenFileName(
             self,
-            "Input Dna file",
+            self.caption,
             self.path,
             self.filter
         )
@@ -186,7 +186,7 @@ class PathSaveWidget(PathWidgetBase):
     def browse_clicked(self):
         file_path, file_type = QtWidgets.QFileDialog.getSaveFileName(
             self,
-            "Output Dna file",
+            self.caption,
             self.path,
             self.filter
         )
@@ -200,7 +200,7 @@ class PathSaveWidget(PathWidgetBase):
 
 
 class NodeLineEdit(QtWidgets.QWidget):
-    def __init__(self, default=None, label=None, parent=None):
+    def __init__(self, default=None, label=None, label_width=None, parent=None):
         super(NodeLineEdit, self).__init__(parent=parent)
 
         self.lyt = QtWidgets.QHBoxLayout()
@@ -216,6 +216,10 @@ class NodeLineEdit(QtWidgets.QWidget):
 
         if label:
             self.label = QtWidgets.QLabel(label)
+
+            if label_width is not None:
+                self.label.setFixedWidth(label_width)
+
             self.lyt.addWidget(self.label)
         else:
             self.label = None
@@ -995,3 +999,15 @@ class JsonEditorDialog(QtWidgets.QDialog):
         else:
             # Keep dialog open, highlight error
             QtWidgets.QApplication.beep()
+
+
+class DebugDialog(QtWidgets.QDialog):
+    def __init__(self, text, parent=None):
+        super().__init__(parent)
+
+        edit = QtWidgets.QPlainTextEdit(self)
+        edit.setPlainText(text)
+        edit.setReadOnly(True)
+
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.addWidget(edit)

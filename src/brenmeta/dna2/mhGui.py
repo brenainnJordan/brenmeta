@@ -52,7 +52,7 @@ from brenmeta.mh import mhFaceJoints
 from brenmeta.mh import mhFaceMeshes
 from brenmeta.maya import mhAnimUtils
 from brenmeta.maya import mhMayaUtils
-from brenmeta.maya import mhShapeBake
+from brenmeta.maya import mhBakeRig
 from brenmeta.maya import mhBlendshape
 
 LOG = mhCore.get_basic_logger(__name__)
@@ -116,6 +116,21 @@ class DnaTransferWidget(DnaTab):
         self.transfer_face_meshes_btn.clicked.connect(self.transfer_face_meshes)
 
         meshes_lyt.addWidget(self.transfer_face_meshes_btn)
+
+        # mesh utils
+        self.mesh_utils_group_box = QtWidgets.QGroupBox("mesh utils")
+
+        mesh_utils_lyt = QtWidgets.QVBoxLayout()
+        self.mesh_utils_group_box.setLayout(mesh_utils_lyt)
+
+        self.eyewet_post_btn = QtWidgets.QPushButton("eyewet post")
+        self.eyewet_post_btn.clicked.connect(self._eyewet_post_clicked)
+
+        self.create_eyelid_wrap_meshes_btn = QtWidgets.QPushButton("create eyelid wrap meshes")
+        self.create_eyelid_wrap_meshes_btn.clicked.connect(self._create_eyelid_wrap_meshes_clicked)
+
+        mesh_utils_lyt.addWidget(self.eyewet_post_btn)
+        mesh_utils_lyt.addWidget(self.create_eyelid_wrap_meshes_btn)
 
         # transfer joints
         self.transfer_joints_group_box = QtWidgets.QGroupBox("transfer joints")
@@ -190,6 +205,7 @@ class DnaTransferWidget(DnaTab):
 
         # main lyt
         lyt.addWidget(self.transfer_meshes_group_box)
+        lyt.addWidget(self.mesh_utils_group_box)
         lyt.addWidget(self.transfer_joints_group_box)
         lyt.addWidget(self.update_dna_group_box)
         lyt.addStretch()
@@ -338,6 +354,15 @@ class DnaTransferWidget(DnaTab):
         except mhCore.MHError as err:
             self.error(err)
 
+    def _eyewet_post_clicked(self):
+        mhFaceMeshes.eyewet_post()
+
+    def _create_eyelid_wrap_meshes_clicked(self):
+        mhFaceMeshes.create_eyelid_wrapper_meshes(
+            "head_lod0_mesh",
+            "eyeLeft_lod0_mesh",
+            "eyeRight_lod0_mesh",
+        )
 
 class DnaInspectWidget(QtWidgets.QMainWindow):
     """
@@ -355,8 +380,8 @@ class DnaInspectWidget(QtWidgets.QMainWindow):
 
         self.setWindowTitle(filename)
 
-        dna_obj = dna_viewer.DNA(dna_path)
-        calib_reader = dnacalib2.DNACalibDNAReader(dna_obj.reader)
+        dna_obj = DNAReader.read(dna_path, Layer.all)
+        calib_reader = dnacalib2.DNACalibDNAReader(dna_obj._reader)
 
         # mesh text
         mesh_fmt = "    {mesh_name}: {point_count} points, {blendshape_count} blendshape targets\n"
@@ -364,10 +389,11 @@ class DnaInspectWidget(QtWidgets.QMainWindow):
         mesh_txt = ""
 
         mesh_indices = mhMesh.get_mesh_indices(dna_obj, calib_reader, lod=lod)
+        meshes = dna_obj.get_meshes()
 
         for mesh_index in mesh_indices:
             mesh_txt += mesh_fmt.format(
-                mesh_name=dna_obj.meshes.names[mesh_index],
+                mesh_name=meshes[mesh_index].name,
                 point_count=calib_reader.getVertexPositionCount(mesh_index),
                 blendshape_count=calib_reader.getBlendShapeTargetCount(mesh_index)
             )
@@ -410,12 +436,7 @@ Mesh count: {mesh_count}
         raw_controls_text = "Raw Controls:\n\n{}".format(raw_controls_text)
 
         # joint column to blendshape channels
-        blendshape_channel_inputs = calib_reader.getBlendShapeChannelInputIndices()
-
-        columns_to_blendshapes = [""] * calib_reader.getJointColumnCount()
-
-        for blendshape_channel_name, joint_column in zip(blendshape_channel_names, blendshape_channel_inputs):
-            columns_to_blendshapes[joint_column] = blendshape_channel_name
+        columns_to_blendshapes = mhBehaviour.get_columns_to_blendshape_channels(calib_reader)
 
         columns_to_blendshapes_text = ["{}: {}".format(i, name) for i, name in enumerate(columns_to_blendshapes)]
         columns_to_blendshapes_text = "\n".join(columns_to_blendshapes_text)
@@ -446,8 +467,24 @@ Mesh count: {mesh_count}
 
         for psd_output in sorted(psd_mapping.keys()):
             psd_name = columns_to_blendshapes[psd_output]
-            input_names = [columns_to_blendshapes[i] for i in psd_mapping[psd_output]]
-            psd_text += "{}: {}\n".format(psd_name, input_names)
+
+            if psd_name is None:
+                psd_name = str(psd_output)
+
+            psd_text += "{}: ".format(psd_name)
+
+            for i in psd_mapping[psd_output]:
+                input_name = None
+
+                if i < len(columns_to_blendshapes):
+                    input_name = columns_to_blendshapes[i]
+
+                if input_name is None:
+                    input_name = str(i)
+
+                psd_text += "{}, ".format(input_name)
+
+            psd_text += "\n"
 
         # print to output
         print(summary_text)
@@ -667,7 +704,9 @@ class DnaBuildWidget(DnaTab):
             raise err
 
     def create_lamberts(self):
-        mhUeUtils.create_materials()
+        mhMayaUtils.create_materials_for_hierarchy(
+            "head_lod0_grp", "lambert", suffix="_material"
+        )
 
     def import_materials(self):
 
@@ -1362,14 +1401,14 @@ class DnaQCWidget(DnaTab):
         self.frame_interval = mhWidgets.LabelledSpinBox("Frame Interval", default=10, maximum=100)
         self.update_timeline_checkbox = QtWidgets.QCheckBox("Update Timeline")
         self.combos_checkbox = QtWidgets.QCheckBox("Combos")
-        self.additional_combos_checkbox = QtWidgets.QCheckBox("Additional Combos")
+        self.use_bake_config_checkbox = QtWidgets.QCheckBox("Use Bake Config")
         self.combine_lr_checkbox = QtWidgets.QCheckBox("Combine LR")
         self.annotate_checkbox = QtWidgets.QCheckBox("Annotate")
         self.selected_sculpts_checkbox = QtWidgets.QCheckBox("Selected Sculpts")
 
         self.update_timeline_checkbox.setChecked(True)
         self.combos_checkbox.setChecked(True)
-        self.additional_combos_checkbox.setChecked(True)
+        self.use_bake_config_checkbox.setChecked(False)
         self.combine_lr_checkbox.setChecked(True)
         self.annotate_checkbox.setChecked(True)
 
@@ -1384,7 +1423,7 @@ class DnaQCWidget(DnaTab):
         tech_rom_lyt.addWidget(self.frame_interval)
         tech_rom_lyt.addWidget(self.update_timeline_checkbox)
         tech_rom_lyt.addWidget(self.combos_checkbox)
-        tech_rom_lyt.addWidget(self.additional_combos_checkbox)
+        tech_rom_lyt.addWidget(self.use_bake_config_checkbox)
         tech_rom_lyt.addWidget(self.combine_lr_checkbox)
         tech_rom_lyt.addWidget(self.annotate_checkbox)
         tech_rom_lyt.addWidget(self.selected_sculpts_checkbox)
@@ -1446,12 +1485,13 @@ class DnaQCWidget(DnaTab):
         annotate = self.annotate_checkbox.isChecked()
         combine_lr = self.combine_lr_checkbox.isChecked()
         combos = self.combos_checkbox.isChecked()
-        additional_combos = self.additional_combos_checkbox.isChecked()
         selected_sculpts = self.selected_sculpts_checkbox.isChecked()
         start_frame = self.start_spin.spin_box.value()
         interval = self.frame_interval.spin_box.value()
         tongue = False
         eyelashes = False
+        use_bake_config = self.use_bake_config_checkbox.isChecked()
+        bake_config_file = self.path_manager.bake_config_path
 
         if selected_sculpts:
             sculpts = cmds.ls(sl=True, type="transform")
@@ -1474,19 +1514,38 @@ class DnaQCWidget(DnaTab):
             psd_poses = mhBehaviour.get_psd_poses(calib_reader, poses)
             joints_attr_defaults = mhBehaviour.get_joint_defaults(calib_reader)
 
-            if additional_combos:
-                LOG.info("Adding additional combos...")
-                # get additional combos from mhShapeBake global attr for now
-                # TODO refactor tool to make this more global
-                from brenmeta.maya import mhShapeBake
+            if use_bake_config:
+                LOG.info("Adding additional shapes and combos from bake config...")
 
-                mhCore.add_additional_poses(
-                    poses, mhShapeBake.ADDITIONAL_SHAPES, joints_attr_defaults
-                )
+                bake_config = mhBakeRig.BakeConfig.load(bake_config_file)
 
-                mhCore.add_additional_combo_poses(
-                    poses, psd_poses, mhShapeBake.ADDITIONAL_COMBOS, joints_attr_defaults
-                )
+                # create additional poses
+                if bake_config.shapes:
+                    LOG.info("Adding additional poses...")
+
+                    mhCore.add_additional_poses(
+                        poses, bake_config.shapes, joints_attr_defaults
+                    )
+
+                # create additional combos
+                if bake_config.combos:
+                    LOG.info("Adding additional combo poses...")
+
+                    mhCore.add_additional_combo_poses(
+                        poses, psd_poses, bake_config.combos, joints_attr_defaults
+                    )
+
+                # # get additional combos from mhBakeRig global attr for now
+                # # TODO refactor tool to make this more global
+                # from brenmeta.maya import mhBakeRig
+                #
+                # mhCore.add_additional_poses(
+                #     poses, mhBakeRig.ADDITIONAL_SHAPES, joints_attr_defaults
+                # )
+                #
+                # mhCore.add_additional_combo_poses(
+                #     poses, psd_poses, mhBakeRig.ADDITIONAL_COMBOS, joints_attr_defaults
+                # )
 
             mapping = mhAnimUtils.map_expressions_to_controls(tongue=tongue, eyelashes=eyelashes, namespace=namespace)
 
@@ -1665,9 +1724,10 @@ class DnaMergeWidget(DnaTab):
         return True
 
 
-class DnaShapeBakeWidget(DnaTab):
+
+class DnaBakeRigWidget(DnaTab):
     def __init__(self, path_manager, parent=None):
-        super(DnaShapeBakeWidget, self).__init__(path_manager, parent=parent)
+        super(DnaBakeRigWidget, self).__init__(path_manager, parent=parent)
 
         self.create_widgets()
 
@@ -1675,34 +1735,42 @@ class DnaShapeBakeWidget(DnaTab):
 
         self.dna_file_combo = mhWidgets.DnaPathManagerWidget(self.path_manager, "dna file")
 
-        self.config_file_widget = mhWidgets.PathOpenWidget("bake config")
-        self.config_file_widget.path = self.path_manager.bake_config_path
+        # self.config_file_widget = mhWidgets.PathOpenWidget("bake config")
+        # self.config_file_widget.filter = "json files (*.json)"
+        # self.config_file_widget.path = self.path_manager.bake_config_path
+
+        self.inspect_config_btn = QtWidgets.QPushButton("inspect bake config")
+        self.inspect_config_btn.clicked.connect(self._inspect_clicked)
 
         # bake group box
         self.bake_group_box = QtWidgets.QGroupBox("bake")
+        bake_lyt = QtWidgets.QVBoxLayout()
+        self.bake_group_box.setLayout(bake_lyt)
 
+        self.bake_shapes_checkbox = QtWidgets.QCheckBox("bake shapes")
         self.calculate_psd_deltas_checkbox = QtWidgets.QCheckBox("calculate psd deltas")
         self.connect_shapes_checkbox = QtWidgets.QCheckBox("connect shapes")
+        self.connect_joints_checkbox = QtWidgets.QCheckBox("connect joints")
         self.optimise_checkbox = QtWidgets.QCheckBox("optimise")
-        self.delete_unused_joints_checkbox = QtWidgets.QCheckBox("delete unused joints")
+        self.cleanup_checkbox = QtWidgets.QCheckBox("cleanup")
         self.use_combo_network_checkbox = QtWidgets.QCheckBox("use combo network")
 
-        self.calculate_psd_deltas_checkbox.setChecked(True)
-        self.connect_shapes_checkbox.setChecked(True)
-        self.optimise_checkbox.setChecked(True)
-        self.delete_unused_joints_checkbox.setChecked(True)
+        for checkbox in [
+            self.bake_shapes_checkbox,
+            self.calculate_psd_deltas_checkbox,
+            self.connect_shapes_checkbox,
+            self.connect_joints_checkbox,
+            self.optimise_checkbox,
+            self.cleanup_checkbox,
+            self.use_combo_network_checkbox,
+        ]:
+            checkbox.setChecked(True)
+            bake_lyt.addWidget(checkbox)
 
         # build btn
         self.build_btn = QtWidgets.QPushButton("Build")
         self.build_btn.clicked.connect(self._build_clicked)
 
-        # bake lyt
-        bake_lyt = QtWidgets.QVBoxLayout()
-        self.bake_group_box.setLayout(bake_lyt)
-        bake_lyt.addWidget(self.calculate_psd_deltas_checkbox)
-        bake_lyt.addWidget(self.connect_shapes_checkbox)
-        bake_lyt.addWidget(self.optimise_checkbox)
-        bake_lyt.addWidget(self.delete_unused_joints_checkbox)
         bake_lyt.addWidget(self.build_btn)
 
         # disconnect group box
@@ -1755,22 +1823,117 @@ class DnaShapeBakeWidget(DnaTab):
         reconnect_lyt.addWidget(self.reconnect_joints_checkbox)
         reconnect_lyt.addWidget(self.reconnect_btn)
 
+        # bake driven group box
+        self.bake_driven_group_box = QtWidgets.QGroupBox("bake driven")
+
+        bake_driven_lyt = QtWidgets.QVBoxLayout()
+        self.bake_driven_group_box.setLayout(bake_driven_lyt)
+
+        self.driver_bs_node_widget = mhWidgets.NodeLineEdit(
+            default="head_lod0_blendShape", label="driver blendshape", label_width=100
+        )
+
+        self.driven_mesh_widget = mhWidgets.NodeLineEdit(
+            label="driven mesh", label_width=100
+        )
+
+        self.bake_driven_targets_only_checkbox = QtWidgets.QCheckBox("targets only")
+        self.bake_driven_skip_static_checkbox = QtWidgets.QCheckBox("skip static")
+        self.bake_driven_connect_checkbox = QtWidgets.QCheckBox("connect")
+        self.bake_driven_cleanup_checkbox = QtWidgets.QCheckBox("cleanup")
+
+        self.bake_driven_skip_static_checkbox.setChecked(True)
+        self.bake_driven_connect_checkbox.setChecked(True)
+        self.bake_driven_cleanup_checkbox.setChecked(True)
+
+        self.bake_driven_btn = QtWidgets.QPushButton("bake driven")
+        self.bake_driven_btn.clicked.connect(self._bake_driven_clicked)
+
+        bake_driven_lyt.addWidget(self.driver_bs_node_widget)
+        bake_driven_lyt.addWidget(self.driven_mesh_widget)
+        bake_driven_lyt.addWidget(self.bake_driven_targets_only_checkbox)
+        bake_driven_lyt.addWidget(self.bake_driven_skip_static_checkbox)
+        bake_driven_lyt.addWidget(self.bake_driven_connect_checkbox)
+        bake_driven_lyt.addWidget(self.bake_driven_cleanup_checkbox)
+        bake_driven_lyt.addWidget(self.bake_driven_btn)
+
         # create layout
         lyt = QtWidgets.QVBoxLayout()
         self.setLayout(lyt)
 
         lyt.addWidget(self.dna_file_combo)
-        lyt.addWidget(self.config_file_widget)
+        # lyt.addWidget(self.config_file_widget)
+        lyt.addWidget(self.inspect_config_btn)
         lyt.addWidget(self.bake_group_box)
         lyt.addWidget(self.disconnect_group_box)
         lyt.addWidget(self.reconnect_group_box)
+        lyt.addWidget(self.bake_driven_group_box)
         lyt.addStretch()
+
+    def _inspect_clicked(self):
+        """
+        """
+        # get paths
+        dna_path = self.dna_file_combo.get_path()
+        bake_config_file = self.config_file_widget.path
+
+        # check we have paths
+        if not dna_path:
+            self.error("No source DNA path given")
+            return False
+
+        if not bake_config_file:
+            self.error("No bake config path given")
+            return False
+
+        # load dna data
+        LOG.info("Loading dna: {}".format(dna_path))
+
+        dna_obj = DNAReader.read(dna_path, Layer.all)
+
+        LOG.info("Getting reader...")
+        calib_reader = dnacalib2.DNACalibDNAReader(dna_obj._reader)
+
+        # get pose data
+        LOG.info("Getting pose data...")
+
+        poses = mhBehaviour.get_all_poses(calib_reader)
+        psd_poses = mhBehaviour.get_psd_poses(calib_reader, poses)
+        joints_attr_defaults = mhBehaviour.get_joint_defaults(calib_reader)
+
+        # load config
+        bake_config = mhBakeRig.BakeConfig.load(bake_config_file)
+
+        # create additional poses
+        LOG.info("Adding additional poses...")
+
+        mhCore.add_additional_poses(
+            poses, bake_config.shapes, joints_attr_defaults
+        )
+
+        # create additional combos
+        LOG.info("Adding additional combo poses...")
+
+        _, _, new_psd_poses = mhCore.add_additional_combo_poses(
+            poses, psd_poses, bake_config.combos, joints_attr_defaults
+        )
+
+        new_targets = list(bake_config.shapes)
+        new_targets += [psd_pose.pose.name for psd_pose in new_psd_poses]
+
+        target_text = "\n".join(new_targets)
+
+        dialog = mhWidgets.DebugDialog(target_text, parent=self)
+        dialog.setWindowTitle("Bake debug")
+        dialog.exec_()
+
+        return True
 
     def _build_clicked(self):
 
         # get paths
         dna_path = self.dna_file_combo.get_path()
-        bake_config_file = self.config_file_widget.path
+        bake_config_file = self.path_manager.bake_config_path
 
         # check we have paths
         if not dna_path:
@@ -1785,7 +1948,7 @@ class DnaShapeBakeWidget(DnaTab):
         confirm = QtWidgets.QMessageBox.warning(
             self,
             "confirm",
-            "This will bake rig in the scene to shapes as defined by dna file and config:\n\n{}\n\n{}\n\nContinue?".format(
+            "This will bake the rig in the scene as defined by dna file and config:\n\n{}\n\n{}\n\nContinue?".format(
                 dna_path, bake_config_file
             ),
             QtWidgets.QMessageBox.Ok | QtWidgets.QMessageBox.Cancel
@@ -1794,14 +1957,17 @@ class DnaShapeBakeWidget(DnaTab):
         if confirm is QtWidgets.QMessageBox.Cancel:
             return False
 
-        mhShapeBake.bake_shapes_from_dna_v2(
+        mhBakeRig.bake_shapes_from_dna_v2(
             dna_path,
             bake_config_file,
+            bake_shapes=self.bake_shapes_checkbox.isChecked(),
             calculate_psds=self.calculate_psd_deltas_checkbox.isChecked(),
             connect_shapes=self.connect_shapes_checkbox.isChecked(),
+            connect_joints=self.connect_joints_checkbox.isChecked(),
             optimise=self.optimise_checkbox.isChecked(),
+            cleanup=self.cleanup_checkbox.isChecked(),
             expressions_node="CTRL_expressions",
-            use_combo_network=False,
+            use_combo_network=self.use_combo_network_checkbox.isChecked(),
         )
 
         QtWidgets.QMessageBox.information(
@@ -1814,11 +1980,9 @@ class DnaShapeBakeWidget(DnaTab):
         return True
 
     def _disconnect_clicked(self):
-        bake_config_file = self.config_file_widget.path
-
         try:
-            mhShapeBake.disconnect(
-                bake_config_file,
+            mhBakeRig.disconnect(
+                self.path_manager.bake_config_path,
                 disconnect_targets=self.disconnect_targets_checkbox.isChecked(),
                 disconnect_joints=self.disconnect_joints_checkbox.isChecked(),
                 delete_combo_network=self.delete_combo_network_checkbox.isChecked(),
@@ -1837,7 +2001,7 @@ class DnaShapeBakeWidget(DnaTab):
 
         # get paths
         dna_path = self.dna_file_combo.get_path()
-        bake_config_file = self.config_file_widget.path
+        bake_config_file = self.path_manager.bake_config_path
 
         # check we have paths
         if not dna_path:
@@ -1878,7 +2042,7 @@ class DnaShapeBakeWidget(DnaTab):
 
         # reconnect
         try:
-            mhShapeBake.reconnect(
+            mhBakeRig.reconnect(
                 poses,
                 psd_poses,
                 joints_attr_defaults,
@@ -1902,6 +2066,16 @@ class DnaShapeBakeWidget(DnaTab):
 
         return True
 
+    def _bake_driven_clicked(self):
+        mhBlendshape.bake_blendshape_driven_mesh(
+            self.driver_bs_node_widget.node,
+            self.driven_mesh_widget.node,
+            cleanup=self.bake_driven_cleanup_checkbox.isChecked(),
+            skip_static=self.bake_driven_skip_static_checkbox.isChecked(),
+            connect=self.bake_driven_connect_checkbox.isChecked(),
+            targets_only=self.bake_driven_targets_only_checkbox.isChecked()
+        )
+
     def update_assets(self):
         self.dna_file_combo.update_assets()
         return True
@@ -1923,7 +2097,7 @@ class DnaSculptWidget(DnaTab):
         self.export_objs_btn.clicked.connect(self._export_objs_clicked)
 
         # import objs (with prefix)
-        self.import_prefix = mhWidgets.LabelledLineEdit("import prefix", default="sculpt")
+        self.import_prefix = mhWidgets.LabelledLineEdit("import prefix", default="sculpt_")
         self.import_objs_btn = QtWidgets.QPushButton("import objs")
         self.import_objs_btn.clicked.connect(self._import_objs_clicked)
 
@@ -2055,8 +2229,8 @@ class DnaSculptWidget(DnaTab):
 
         prefix = self.import_prefix.text
 
-        if prefix:
-            prefix += "_"
+        # if prefix:
+        #     prefix += "_"
 
         bs_node = self.bs_node_widget.node
 
@@ -2116,17 +2290,26 @@ class DnaModWidget(
         self.dna_files_dir_widget = mhWidgets.DirWidget("Dna Files Dir")
 
         self.input_file_widget = mhWidgets.PathOpenWidget("Input DNA")
+        self.input_file_widget.filter = "dna files (*.dna)"
+
         self.output_file_widget = mhWidgets.PathSaveWidget("Output DNA")
+        self.output_file_widget.filter = "dna files (*.dna)"
+
+        self.bake_config_file_widget = mhWidgets.PathOpenWidget("bake config")
+        self.bake_config_file_widget.filter = "json files (*.json)"
+        self.bake_config_file_widget.path = self.project.bake_config_path
 
         self.dna_assets_dir_widget.PATH_CHANGED.connect(self.paths_changed)
         self.dna_files_dir_widget.PATH_CHANGED.connect(self.paths_changed)
         self.input_file_widget.PATH_CHANGED.connect(self.paths_changed)
         self.output_file_widget.PATH_CHANGED.connect(self.paths_changed)
+        self.bake_config_file_widget.PATH_CHANGED.connect(self.paths_changed)
 
         config_lyt.addWidget(self.dna_assets_dir_widget)
         config_lyt.addWidget(self.dna_files_dir_widget)
         config_lyt.addWidget(self.input_file_widget)
         config_lyt.addWidget(self.output_file_widget)
+        config_lyt.addWidget(self.bake_config_file_widget)
 
         lyt.addWidget(self.config_group_box)
 
@@ -2137,7 +2320,7 @@ class DnaModWidget(
         self.transfer_widget = DnaTransferWidget(self.project)
         self.merge_widget = DnaMergeWidget(self.project)
         self.poses_widget = DnaPosesWidget(self.project)
-        self.shape_bake_widget = DnaShapeBakeWidget(self.project)
+        self.shape_bake_widget = DnaBakeRigWidget(self.project)
         self.sculpt_widget = DnaSculptWidget(self.project)
         self.qc_widget = DnaQCWidget(self.project)
 
@@ -2145,7 +2328,7 @@ class DnaModWidget(
         self.tabs.addTab(self.transfer_widget, "transfer")
         self.tabs.addTab(self.merge_widget, "merge")
         self.tabs.addTab(self.poses_widget, "edit poses")
-        self.tabs.addTab(self.shape_bake_widget, "bake shapes")
+        self.tabs.addTab(self.shape_bake_widget, "bake rig")
         self.tabs.addTab(self.sculpt_widget, "sculpt")
         self.tabs.addTab(self.qc_widget, "QC")
 
@@ -2158,6 +2341,7 @@ class DnaModWidget(
         self.project.dna_files_path = self.dna_files_dir_widget.path
         self.project.input_dna_path = self.input_file_widget.path
         self.project.output_dna_path = self.output_file_widget.path
+        self.project.bake_config_path = self.bake_config_file_widget.path
 
         # update widgets
         self.build_widget.update_assets()

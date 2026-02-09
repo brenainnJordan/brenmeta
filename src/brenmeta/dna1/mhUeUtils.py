@@ -100,23 +100,23 @@ def key_pose_attrs():
 
     return True
 
-
-def create_materials():
-    for mesh in cmds.listRelatives("head_lod0_grp"):
-
-        name = mesh.split("_")[0]
-
-        shading_node = cmds.shadingNode("lambert", name="{}_material".format(name), asShader=True)
-
-        set_node = cmds.sets(
-            name="{}_shadingGroup".format(name), renderable=True, noSurfaceShader=True, empty=True
-        )
-
-        cmds.connectAttr(
-            "{}.outColor".format(shading_node),
-            "{}.surfaceShader".format(set_node)
-        )
-
-        cmds.sets(mesh, edit=True, forceElement=set_node)
-
-    return True
+#
+# def create_materials():
+#     for mesh in cmds.listRelatives("head_lod0_grp"):
+#
+#         name = mesh.split("_")[0]
+#
+#         shading_node = cmds.shadingNode("lambert", name="{}_material".format(name), asShader=True)
+#
+#         set_node = cmds.sets(
+#             name="{}_shadingGroup".format(name), renderable=True, noSurfaceShader=True, empty=True
+#         )
+#
+#         cmds.connectAttr(
+#             "{}.outColor".format(shading_node),
+#             "{}.surfaceShader".format(set_node)
+#         )
+#
+#         cmds.sets(mesh, edit=True, forceElement=set_node)
+#
+#     return True

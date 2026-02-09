@@ -1,6 +1,9 @@
 {
   "mesh_blendshapes": [
-    ["head_lod0_mesh", "head_lod0_mesh_blendShape"]
+    ["head_lod0_mesh", "head_lod0_blendShape"],
+    ["eyeEdge_lod0_mesh", "eyeEdge_lod0_blendShape"],
+    ["cartilage_lod0_mesh", "cartilage_lod0_blendShape"],
+    ["eyeshell_lod0_mesh", "eyeshell_lod0_blendShape"]
   ],
   "shapes": [
     "eyeSquintL",
@@ -277,9 +280,6 @@
   ],
   "delete": [
     "eyelashes_lod0_mesh",
-    "eyeEdge_lod0_mesh",
-    "cartilage_lod0_mesh",
-    "eyeshell_lod0_mesh",
     "head_lod1_grp",
     "head_lod2_grp",
     "head_lod3_grp",
