@@ -492,17 +492,34 @@ def get_target_delta(bs_node, target, in_between=None, as_numpy=False):
         return delta
 
 
-def get_summed_deltas(bs_node, targets):
-    """TODO in-betweens
+def get_summed_deltas(blendshape_targets):
+    """
+    TODO in-betweens
     """
     deltas = [
-        get_target_delta(bs_node, target, as_numpy=True) for target in targets
+        get_target_delta(bs_node, target, as_numpy=True)
+        for bs_node, target in blendshape_targets
     ]
 
-    if len(targets) == 1:
+    # check for empty deltas
+    deltas = [delta for delta in deltas if delta is not None]
+
+    if not deltas:
+        return None
+
+    # check for deltas with different point counts
+    point_counts = set([
+        len(delta) for delta in deltas
+    ])
+
+    if len(point_counts) > 1:
+        min_point_count = min(point_counts)
+        deltas = [delta[:min_point_count] for delta in deltas]
+
+    # return data
+    if len(deltas) == 1:
         return deltas[0]
     else:
-        deltas = [delta for delta in deltas if delta is not None]
         return numpy.sum(deltas, axis=0)
 
 
@@ -539,7 +556,18 @@ def set_target_delta(bs_node, target, delta, in_between=None, optimise=False, th
     target_plugs.points.setMObject(point_data.object())
     target_plugs.components.setMObject(OpenMaya.MObject())
 
-    # delta_count = len(delta)
+    # check delta point count
+    base_mesh = mhMayaUtils.get_orig_mesh(bs_node)
+    point_count = cmds.polyEvaluate(base_mesh, vertex=True)
+
+    delta_count = len(delta)
+
+    if delta_count > point_count:
+        delta = delta[:point_count]
+    elif delta_count < point_count:
+        raise mhCore.MHError(
+            "Delta point count mismatch: {}".format(bs_node, target)
+        )
 
     # optimise
     if optimise:
@@ -858,8 +886,9 @@ def create_proxy_combo(bs_node, targets, name=None, create_sculpt_target=True, r
     if name:
         proxy_combo = name
     else:
-        proxy_combo = "_".join(target_names)
-        proxy_combo = "{}_proxyCombo".format(proxy_combo)
+        proxy_combo = "proxyCombo"
+        # proxy_combo = "_".join(target_names)
+        # proxy_combo = "{}_proxyCombo".format(proxy_combo)
 
     # get ref target indices
     ref_indices = []
@@ -883,9 +912,11 @@ def create_proxy_combo(bs_node, targets, name=None, create_sculpt_target=True, r
             )
 
     # create mesh
-    target_transform, target_shape = mhMayaUtils.duplicate_orig_mesh(bs_node, proxy_combo, parent=None)
+    m_transform, m_shape = mhMayaUtils.duplicate_orig_mesh(bs_node, proxy_combo, parent=None)
 
-    target_mesh_fn = OpenMaya.MFnMesh(target_shape)
+    proxy_combo = OpenMaya.MFnDependencyNode(m_transform).name()
+
+    target_mesh_fn = OpenMaya.MFnMesh(m_shape)
     point_count = target_mesh_fn.numVertices
 
     # sum target deltas
@@ -931,11 +962,11 @@ def create_proxy_combo(bs_node, targets, name=None, create_sculpt_target=True, r
 
         set_target_delta(target_bs_node, "comboDelta", summed_delta)
 
-        if ref_indices:
-            create_empty_target(
-                proxy_combo, target_bs_node, "refDelta", default=1.0
-            )
+        create_empty_target(
+            proxy_combo, target_bs_node, "refDelta", default=1.0
+        )
 
+        if ref_indices:
             set_target_delta(target_bs_node, "refDelta", summed_ref_delta)
 
     else:
@@ -1155,15 +1186,13 @@ def apply_proxy_combo_sl(rebuild=True):
 def add_deltas_sl():
     """Add deltas of selected targets and apply to last selected target
     """
-    targets, in_betweens = get_selected_shape_editor_targets(force_single_bs_node=True)
+    blendshape_targets, in_betweens = get_selected_shape_editor_targets(force_single_bs_node=False)
 
-    bs_node = targets[0][0]
+    deltas = get_summed_deltas(blendshape_targets)
 
-    target_indices = [i[1] for i in targets]
+    bs_node, target_index = blendshape_targets[-1]
 
-    deltas = get_summed_deltas(bs_node, target_indices)
-
-    set_target_delta(bs_node, target_indices[-1], deltas)
+    set_target_delta(bs_node, target_index, deltas)
 
     return True
 
@@ -1171,18 +1200,16 @@ def add_deltas_sl():
 def subtract_deltas_sl():
     """Sum deltas of selected targets except for the last selected target and subtract from last target
     """
-    targets, in_betweens = get_selected_shape_editor_targets(force_single_bs_node=True)
+    blendshape_targets, in_betweens = get_selected_shape_editor_targets(force_single_bs_node=True)
 
-    bs_node = targets[0][0]
+    summed_deltas = get_summed_deltas(blendshape_targets[:-1])
 
-    target_indices = [i[1] for i in targets]
+    bs_node, target_index = blendshape_targets[-1]
 
-    summed_deltas = get_summed_deltas(bs_node, target_indices[:-1])
-
-    deltas = get_target_delta(bs_node, target_indices[-1], as_numpy=True)
+    deltas = get_target_delta(bs_node, target_index, as_numpy=True)
     deltas -= summed_deltas
 
-    set_target_delta(bs_node, target_indices[-1], deltas)
+    set_target_delta(bs_node, target_index, deltas)
 
     return True
 

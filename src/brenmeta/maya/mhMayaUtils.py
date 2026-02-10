@@ -303,10 +303,12 @@ def duplicate_orig_mesh(deformer, name, parent=None):
     else:
         parent = OpenMaya.MObject.kNullObj
 
-    transform = dag_fn.create("transform", name=name, parent=parent)
+    m_transform = dag_fn.create("transform", name=name, parent=parent)
 
+    name = OpenMaya.MFnDependencyNode(m_transform).name()
+    
     mesh_fn = OpenMaya.MFnMesh()
-    shape = mesh_fn.copy(orig_mesh_object, parent=transform)
+    m_shape = mesh_fn.copy(orig_mesh_object, parent=m_transform)
     mesh_fn.name()
     mesh_fn.setName("{}Shape".format(name))
 
@@ -314,7 +316,7 @@ def duplicate_orig_mesh(deformer, name, parent=None):
         mesh_fn.partialPathName(), edit=True, forceElement="initialShadingGroup"
     )
 
-    return transform, shape
+    return m_transform, m_shape
 
 
 def get_average_position(positions):
@@ -556,6 +558,7 @@ def get_furthest_intersection(mesh_fn, ray_start, ray_vector, both_directions=Fa
 def export_meshes_to_objs(meshes, directory, prefix="", suffix="", overwrite=False, verbose=True):
     """
     TODO metadata file
+    TODO progress bar
     """
     for mesh in meshes:
         if "|" in mesh:
@@ -593,6 +596,8 @@ def export_meshes_to_objs(meshes, directory, prefix="", suffix="", overwrite=Fal
 
 
 def import_objs(directory, prefix=None, verbose=True):
+    # TODO progress bar
+
     # get obj files
     contents = os.listdir(directory)
 
@@ -608,15 +613,6 @@ def import_objs(directory, prefix=None, verbose=True):
             continue
 
         file_paths.append(path)
-
-    # import objs
-    # if prefix:
-    #     file_kwargs = {
-    #         "renameAll": True,
-    #         "renamingPrefix": prefix,
-    #     }
-    # else:
-    #     file_kwargs = {}
 
     for file_path in file_paths:
         if verbose:
