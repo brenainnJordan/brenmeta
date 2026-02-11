@@ -306,7 +306,7 @@ def duplicate_orig_mesh(deformer, name, parent=None):
     m_transform = dag_fn.create("transform", name=name, parent=parent)
 
     name = OpenMaya.MFnDependencyNode(m_transform).name()
-    
+
     mesh_fn = OpenMaya.MFnMesh()
     m_shape = mesh_fn.copy(orig_mesh_object, parent=m_transform)
     mesh_fn.name()

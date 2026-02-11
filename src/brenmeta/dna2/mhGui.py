@@ -2141,9 +2141,13 @@ class DnaSculptWidget(DnaTab):
         self.apply_proxy_combo_btn = QtWidgets.QPushButton("Apply")
         self.apply_proxy_combo_btn.clicked.connect(self._apply_proxy_combo_clicked)
 
+        self.meta_data_btn = QtWidgets.QPushButton("meta data")
+        self.meta_data_btn.clicked.connect(self._meta_data_clicked)
+
         proxy_combo_btn_lyt = QtWidgets.QHBoxLayout()
         proxy_combo_btn_lyt.addWidget(self.create_proxy_combo_btn)
         proxy_combo_btn_lyt.addWidget(self.apply_proxy_combo_btn)
+        proxy_combo_btn_lyt.addWidget(self.meta_data_btn)
 
         proxy_combo_lyt = QtWidgets.QVBoxLayout()
         proxy_combo_lyt.addWidget(self.proxy_combo_label)
@@ -2165,9 +2169,13 @@ class DnaSculptWidget(DnaTab):
         self.subtract_deltas_btn = QtWidgets.QPushButton("Subtract")
         self.subtract_deltas_btn.clicked.connect(self._subtract_deltas_clicked)
 
+        self.reset_deltas_btn = QtWidgets.QPushButton("Reset")
+        self.reset_deltas_btn.clicked.connect(self._reset_deltas_clicked)
+
         deltas_btn_lyt = QtWidgets.QHBoxLayout()
         deltas_btn_lyt.addWidget(self.add_deltas_btn)
         deltas_btn_lyt.addWidget(self.subtract_deltas_btn)
+        deltas_btn_lyt.addWidget(self.reset_deltas_btn)
 
         deltas_lyt = QtWidgets.QVBoxLayout()
         deltas_lyt.addWidget(self.deltas_label)
@@ -2258,6 +2266,14 @@ class DnaSculptWidget(DnaTab):
 
     def _subtract_deltas_clicked(self):
         mhBlendshape.subtract_deltas_sl()
+
+    def _reset_deltas_clicked(self):
+        mhBlendshape.reset_target_sl()
+
+    def _meta_data_clicked(self):
+        mhBlendshape.print_selected_shape_editor_targets(
+            as_list=True, target_weights=True
+        )
 
 
 class DnaModWidget(

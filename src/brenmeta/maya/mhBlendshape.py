@@ -492,7 +492,7 @@ def get_target_delta(bs_node, target, in_between=None, as_numpy=False):
         return delta
 
 
-def get_summed_deltas(blendshape_targets):
+def get_summed_deltas(blendshape_targets, use_target_weight=False):
     """
     TODO in-betweens
     """
@@ -500,6 +500,22 @@ def get_summed_deltas(blendshape_targets):
         get_target_delta(bs_node, target, as_numpy=True)
         for bs_node, target in blendshape_targets
     ]
+
+    if use_target_weight:
+        target_weights = [
+            cmds.getAttr("{}.w[{}]".format(bs_node, target))
+            if isinstance(target, int)
+            else
+            cmds.getAttr("{}.{}".format(bs_node, target))
+            for bs_node, target in blendshape_targets
+        ]
+
+        deltas = [
+            (delta * target_weight) if delta is not None else None
+            for delta, target_weight in zip(
+                deltas, target_weights
+            )
+        ]
 
     # check for empty deltas
     deltas = [delta for delta in deltas if delta is not None]
@@ -984,7 +1000,7 @@ def create_proxy_combo(bs_node, targets, name=None, create_sculpt_target=True, r
 
     meta_data = {
         "blendShape": bs_node,
-        "targets": targets,
+        "target_names": target_names,
         "target_indices": target_indices,
         "target_weights": target_weights,
         "ref_targets": ref_names,
@@ -999,6 +1015,23 @@ def create_proxy_combo(bs_node, targets, name=None, create_sculpt_target=True, r
         meta_data,
         type="string"
     )
+
+    # add meta data per target to allow for overrides
+    for target_name, target_weight in zip(target_names, target_weights):
+        cmds.addAttr(
+            proxy_combo,
+            longName=target_name,
+            dataType="string"
+        )
+
+        meta_data = [(target_name, target_weight)]
+        meta_data = json.dumps(meta_data)
+
+        cmds.setAttr(
+            "{}.{}".format(proxy_combo, target_name),
+            meta_data,
+            type="string"
+        )
 
     return proxy_combo
 
@@ -1016,7 +1049,7 @@ def create_proxy_combo_sl():
     return create_proxy_combo(bs_node, target_indices)
 
 
-def apply_proxy_combo(proxy_combo, rebuild=True, verbose=True):
+def apply_proxy_combo(proxy_combo, rebuild=True, verbose=True, sum_combo_targets=True):
     """Distributes the combo sculpt deltas across the original targets.
 
     Deltas are automatically weighted per target
@@ -1028,15 +1061,25 @@ def apply_proxy_combo(proxy_combo, rebuild=True, verbose=True):
 
     point_count = cmds.polyEvaluate(proxy_combo, vertex=True)
 
+    # get meta data
     meta_data = cmds.getAttr("{}.source_shapes".format(proxy_combo))
     meta_data = json.loads(meta_data)
 
     bs_node = meta_data["blendShape"]
+    target_names = meta_data["target_names"]
     target_indices = meta_data["target_indices"]
     target_weights = meta_data["target_weights"]
     ref_names = meta_data["ref_targets"]
     ref_indices = meta_data["ref_indices"]
     ref_weights = meta_data["ref_weights"]
+
+    # get meta data per target
+    targets_meta_data = []
+
+    for target_name in target_names:
+        target_meta_data = cmds.getAttr("{}.{}".format(proxy_combo, target_name))
+        target_meta_data = json.loads(target_meta_data)
+        targets_meta_data.append(target_meta_data)
 
     # get sculpt delta
     sculpt_bs_node = "{}_blendShape".format(proxy_combo)
@@ -1051,27 +1094,40 @@ def apply_proxy_combo(proxy_combo, rebuild=True, verbose=True):
     if sculpt_delta is None:
         return None
 
-    # get existing deltas
-    deltas = []
-    delta_magnitudes = []
+    # get delta weights per target
+    targets_delta_weights = []
 
-    summed_delta = numpy.array([[0.0, 0.0, 0.0] for _ in range(point_count)])
-    summed_delta_magnitude = numpy.zeros(point_count)
+    for target_meta_data in targets_meta_data:
+        target_delta_weights = numpy.zeros(point_count)
 
-    for target_index, target_weight in zip(target_indices, target_weights):
-        if is_combo(bs_node, target_index):
-            delta = get_summed_combo_delta(bs_node, target_index)
-        else:
-            delta = get_target_delta(bs_node, target_index, as_numpy=True)
+        # calculate weights per contributing target
+        for target_name, target_weight in target_meta_data:
+            if is_combo(bs_node, target_name) and sum_combo_targets:
+                delta = get_summed_combo_delta(bs_node, target_name)
+            else:
+                delta = get_target_delta(bs_node, target_name, as_numpy=True)
 
-        deltas.append(delta)
-        delta_magnitude = numpy.linalg.norm(delta, axis=1)
-        delta_magnitudes.append(delta_magnitude)
-        summed_delta_magnitude += delta_magnitude * target_weight
+            target_delta_weights = numpy.linalg.norm(delta, axis=1)
+            target_delta_weights += (target_delta_weights * target_weight)
+
+        targets_delta_weights.append(target_delta_weights)
+
+    # normalize weights
+    summed_delta_weights = numpy.sum(targets_delta_weights, axis=0)
+
+    targets_delta_weights = [
+        numpy.divide(
+            target_delta_weights,
+            summed_delta_weights,
+            out=numpy.zeros_like(target_delta_weights, dtype=float),
+            where=summed_delta_weights != 0
+        )
+        for target_delta_weights in targets_delta_weights
+    ]
 
     # calculate weights and split sculpt deltas
     if rebuild:
-        group = "{}_extracted".format(proxy_combo)
+        group = "{}_rebuilt_targets".format(bs_node)
 
         if not cmds.objExists(group):
             cmds.createNode("transform", name=group)
@@ -1079,8 +1135,8 @@ def apply_proxy_combo(proxy_combo, rebuild=True, verbose=True):
     else:
         group = None
 
-    for target_index, target_weight, delta, delta_magnitude in zip(
-            target_indices, target_weights, deltas, delta_magnitudes
+    for target_index, target_weight, target_delta_weights in zip(
+            target_indices, target_weights, targets_delta_weights
     ):
         target_plugs = BlendshapeTargetPlugs(bs_node, target_index)
         inbetween_values, inbetween_indices = target_plugs.get_inbetween_values()
@@ -1088,20 +1144,15 @@ def apply_proxy_combo(proxy_combo, rebuild=True, verbose=True):
         if verbose:
             LOG.info("  distributing delta to target: {}".format(target_plugs.target_alias))
 
-        # Calculate sculpt weights for this target by
-        # determining how much it contributed to the combined shape:
-        # divide delta magnitude by the total summed delta magnitude
-        # (only where delta > 0, defaulting to 0)
-        weights = numpy.divide(
-            delta_magnitude,
-            summed_delta_magnitude,
-            out=numpy.zeros_like(delta_magnitude, dtype=float),
-            where=summed_delta_magnitude != 0
+        # multiply delta by weights
+        target_delta_weights = numpy.reshape(
+            numpy.repeat(target_delta_weights, 3), [point_count, 3]
         )
 
-        weights = numpy.reshape(numpy.repeat(weights, 3), [point_count, 3])
+        split_delta = sculpt_delta * target_delta_weights
 
-        split_delta = sculpt_delta * weights
+        # compensate for target weight
+        split_delta *= 1.0/target_weight
 
         if rebuild:
             # rebuild target and apply split sculpt as a blendshape
@@ -1128,6 +1179,8 @@ def apply_proxy_combo(proxy_combo, rebuild=True, verbose=True):
 
         else:
             # apply split delta directly
+            # TODO test
+            delta = get_target_delta(bs_node, target_index, as_numpy=True)
             delta += split_delta
             set_target_delta(bs_node, target_index, delta)
 
@@ -1163,7 +1216,9 @@ def apply_proxy_combo(proxy_combo, rebuild=True, verbose=True):
 
             else:
                 # apply split delta directly
-                inbetween_delta = split_delta * inbetween_value
+                # TODO test
+                inbetween_delta = get_target_delta(bs_node, target_index, in_between=in_between, as_numpy=True)
+                inbetween_delta += (split_delta * inbetween_value)
                 set_target_delta(bs_node, target_index, delta + inbetween_delta, in_between=in_between)
 
     return True
@@ -1183,12 +1238,12 @@ def apply_proxy_combo_sl(rebuild=True):
 
     return True
 
-def add_deltas_sl():
+def add_deltas_sl(use_target_weight=True):
     """Add deltas of selected targets and apply to last selected target
     """
     blendshape_targets, in_betweens = get_selected_shape_editor_targets(force_single_bs_node=False)
 
-    deltas = get_summed_deltas(blendshape_targets)
+    deltas = get_summed_deltas(blendshape_targets, use_target_weight=use_target_weight)
 
     bs_node, target_index = blendshape_targets[-1]
 
@@ -1197,12 +1252,12 @@ def add_deltas_sl():
     return True
 
 
-def subtract_deltas_sl():
+def subtract_deltas_sl(use_target_weight=True):
     """Sum deltas of selected targets except for the last selected target and subtract from last target
     """
-    blendshape_targets, in_betweens = get_selected_shape_editor_targets(force_single_bs_node=True)
+    blendshape_targets, in_betweens = get_selected_shape_editor_targets(force_single_bs_node=False)
 
-    summed_deltas = get_summed_deltas(blendshape_targets[:-1])
+    summed_deltas = get_summed_deltas(blendshape_targets[:-1], use_target_weight=use_target_weight)
 
     bs_node, target_index = blendshape_targets[-1]
 
@@ -1213,6 +1268,46 @@ def subtract_deltas_sl():
 
     return True
 
+def reset_target_sl():
+    """
+    Note with the native maya command if in-between is None
+    then the target and all in-betweens will be reset.
+
+    If we only want to reset the target and leave the in-betweens
+    as is then use reset_blendshape_target_data.
+
+    """
+    blendshape_targets, in_betweens = get_selected_shape_editor_targets(force_single_bs_node=True)
+
+    for bs_node, target_index in blendshape_targets:
+        target_name = get_blendshape_weight_alias(bs_node, target_index)
+
+        LOG.info(
+            "Resetting target delta {} ({})".format(target_name, bs_node)
+        )
+
+        cmds.blendShape(
+            bs_node,
+            edit=True,
+            resetTargetDelta=[0, target_index],
+        )
+
+    if in_betweens:
+        for bs_node, target_index, ib_index in in_betweens:
+            target_name = get_blendshape_weight_alias(bs_node, target_index)
+
+            LOG.info(
+                "Resetting target in-between delta {} {} ({})".format(target_name, ib_index, bs_node)
+            )
+
+            cmds.blendShape(
+                bs_node,
+                edit=True,
+                resetTargetDelta=[0, target_index],
+                inBetweenIndex=ib_index
+            )
+
+    return True
 
 def bake_blendshape_driven_mesh(
         driver_bs_node, driven_mesh, cleanup=True, skip_static=True, connect=True, targets_only=False
@@ -1324,5 +1419,47 @@ def bake_blendshape_driven_mesh(
         cmds.delete(driven_mesh)
         cmds.rename(base_mesh, driven_mesh)
         cmds.delete(target_group)
+
+    return True
+
+
+def print_selected_shape_editor_targets(target_weights=True, as_list=True):
+    """
+    """
+    targets, in_betweens = get_selected_shape_editor_targets()
+
+    if as_list:
+        data = []
+    else:
+        data = ""
+
+    for bs_node, target_index in targets:
+        aliases = get_blendshape_weight_aliases(bs_node, as_dict=True)
+
+        if target_weights:
+            weight = cmds.getAttr("{}.w[{}]".format(bs_node, target_index))
+
+            if as_list:
+                data.append([aliases[target_index], weight])
+            else:
+                data += '{} {}\n'.format(aliases[target_index], weight)
+        else:
+            if as_list:
+                data.append(aliases[target_index])
+            else:
+                data += '{}\n'.format(aliases[target_index])
+
+    if as_list:
+        data = json.dumps(data)
+
+    if in_betweens:
+        data += "\nIn betweens:\n"
+
+    for bs_node, target_index, ib_index in in_betweens:
+        # TODO use alias for plug
+        aliases = get_blendshape_weight_aliases(bs_node, as_dict=True)
+        data += '{} IB {},'.format(aliases[target_index], ib_index)
+
+    print(data)
 
     return True
