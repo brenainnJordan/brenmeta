@@ -330,9 +330,15 @@ class BlendshapeTargetPlugs(object):
         if isinstance(target, str):
             self.target_alias = target
             self.target = get_blendshape_target_index(self.bs_fn.name(), target)
-        else:
+
+            if self.target is None:
+                raise mhCore.MHError("target not found: {} {}".format(bs_node, target))
+
+        elif isinstance(target, int):
             self.target_alias = get_blendshape_weight_alias(self.bs_fn.name(), target)
             self.target = target
+        else:
+            raise mhCore.MHError("target not recognised: {} {}".format(bs_node, target))
 
         self.mesh_object = self.bs_fn.getOutputGeometry()[0]
 
@@ -875,7 +881,17 @@ def apply_sculpts(bs_node, sculpts, sculpt_prefix, rebuild=True):
     return True
 
 
-def create_proxy_combo(bs_node, targets, name=None, create_sculpt_target=True, ref_targets=None, sum_combos=False):
+def create_proxy_combo(
+        bs_node,
+        targets,
+        name=None,
+        create_sculpt_target=True,
+        sculpt=None,
+        ref_targets=None,
+        find_ref_targets=False,
+        sum_combos=False,
+        weight_overrides=None,
+):
     """Create a mesh that combines the given targets.
     Optionally with a sculpt target blendshape.
     """
@@ -903,8 +919,18 @@ def create_proxy_combo(bs_node, targets, name=None, create_sculpt_target=True, r
         proxy_combo = name
     else:
         proxy_combo = "proxyCombo"
-        # proxy_combo = "_".join(target_names)
-        # proxy_combo = "{}_proxyCombo".format(proxy_combo)
+
+    # find other targets that are currently active
+    if find_ref_targets:
+        if not ref_targets:
+            ref_targets = []
+
+        for target in get_blendshape_weight_aliases(bs_node):
+            if target in ref_targets + targets:
+                continue
+
+            if cmds.getAttr("{}.{}".format(bs_node, target)) > 0.0:
+                ref_targets.append(target)
 
     # get ref target indices
     ref_indices = []
@@ -935,6 +961,8 @@ def create_proxy_combo(bs_node, targets, name=None, create_sculpt_target=True, r
     target_mesh_fn = OpenMaya.MFnMesh(m_shape)
     point_count = target_mesh_fn.numVertices
 
+    neutral_points = mhMayaUtils.get_points(proxy_combo, as_numpy=True)
+
     # sum target deltas
     summed_delta = numpy.array([[0.0, 0.0, 0.0] for _ in range(point_count)])
 
@@ -958,7 +986,7 @@ def create_proxy_combo(bs_node, targets, name=None, create_sculpt_target=True, r
                 delta = get_target_delta(bs_node, target_index, as_numpy=True)
 
             if delta is not None:
-                summed_ref_delta += delta *target_weight
+                summed_ref_delta += delta * target_weight
     else:
         summed_ref_delta = None
 
@@ -984,6 +1012,17 @@ def create_proxy_combo(bs_node, targets, name=None, create_sculpt_target=True, r
 
         if ref_indices:
             set_target_delta(target_bs_node, "refDelta", summed_ref_delta)
+
+        if sculpt:
+            sculpt_points = mhMayaUtils.get_points(sculpt, as_numpy=True)
+            sculpt_delta = sculpt_points - neutral_points
+
+            sculpt_delta -= summed_delta
+
+            if summed_ref_delta is not None:
+                sculpt_delta -= summed_ref_delta
+
+            set_target_delta(target_bs_node, "sculpt", sculpt_delta)
 
     else:
         # set points directly
@@ -1025,6 +1064,11 @@ def create_proxy_combo(bs_node, targets, name=None, create_sculpt_target=True, r
         )
 
         meta_data = [(target_name, target_weight)]
+
+        if weight_overrides:
+            if target_name in weight_overrides:
+                meta_data = weight_overrides[target_name]
+
         meta_data = json.dumps(meta_data)
 
         cmds.setAttr(
@@ -1049,7 +1093,96 @@ def create_proxy_combo_sl():
     return create_proxy_combo(bs_node, target_indices)
 
 
-def apply_proxy_combo(proxy_combo, rebuild=True, verbose=True, sum_combo_targets=True):
+class ProxyComboConfig(object):
+    """Convenience object to load and manage bake config data
+
+    """
+
+    def __init__(self):
+        self.bs_node = None
+        self.name = None
+        self.frame = None
+        self.control_values = None
+        self.targets = None
+        self.ref_targets = None
+        self.find_ref_targets = False
+        self.sculpt = None
+        self.weight_overrides = None
+        self.sum_combos = False
+
+    @classmethod
+    def load(cls, file_path):
+
+        data_list = None
+
+        with open(file_path, 'r') as f:
+            if f:
+                data_list = json.load(f)
+
+        if not data_list:
+            raise mhCore.MHError(
+                "Failed to load config: {}".format(file_path)
+            )
+
+        configs = []
+
+        for data in data_list:
+            config = cls()
+
+            for key in [
+                "bs_node",
+                "name",
+                "frame",
+                "control_values",
+                "targets",
+                "ref_targets",
+                "find_ref_targets",
+                "sculpt",
+                "weight_overrides",
+                "sum_combos"
+            ]:
+                if key in data:
+                    setattr(config, key, data[key])
+
+            if config.name is None and config.frame is not None:
+                config.name = "f{}_proxyCombo".format(config.frame)
+
+            configs.append(config)
+
+        return configs
+
+
+def batch_create_proxy_combos(batch_config_file):
+
+    configs = ProxyComboConfig.load(batch_config_file)
+    proxy_combos = []
+
+    for config in configs:
+        if config.frame is not None:
+            cmds.currentTime(config.frame)
+
+        if config.control_values:
+            for control, value in config.control_values.items():
+                cmds.setAttr(control, value)
+
+        proxy_combo = create_proxy_combo(
+            config.bs_node,
+            config.targets,
+            name=config.name,
+            create_sculpt_target=True,
+            sculpt=config.sculpt,
+            ref_targets=config.ref_targets,
+            find_ref_targets=config.find_ref_targets,
+            sum_combos=config.sum_combos,
+            weight_overrides=config.weight_overrides,
+        )
+
+        proxy_combos.append(proxy_combo)
+
+    return True
+
+
+def apply_proxy_combo(proxy_combo, rebuild=True, verbose=True, sum_combo_targets=True, validate_result=False, match_threshold=0.001):
     """Distributes the combo sculpt deltas across the original targets.
 
     Deltas are automatically weighted per target
@@ -1072,6 +1205,8 @@ def apply_proxy_combo(proxy_combo, rebuild=True, verbose=True, sum_combo_targets
     ref_names = meta_data["ref_targets"]
     ref_indices = meta_data["ref_indices"]
     ref_weights = meta_data["ref_weights"]
+
+    mesh = cmds.blendShape(bs_node, query=True, geometry=True)[0]
 
     # get meta data per target
     targets_meta_data = []
@@ -1152,7 +1287,7 @@ def apply_proxy_combo(proxy_combo, rebuild=True, verbose=True, sum_combo_targets
         split_delta = sculpt_delta * target_delta_weights
 
         # compensate for target weight
-        split_delta *= 1.0/target_weight
+        split_delta *= 1.0 / target_weight
 
         if rebuild:
             # rebuild target and apply split sculpt as a blendshape
@@ -1163,6 +1298,17 @@ def apply_proxy_combo(proxy_combo, rebuild=True, verbose=True, sum_combo_targets
 
                 cmds.parent(target_mesh, group)
 
+            else:
+                # target already rebuilt
+                target_mesh = get_blendshape_weight_alias(bs_node, target_index)
+
+            # create blendshape node if it doesn't already exist
+            target_bs_nodes = find_mesh_blendshape_nodes(target_mesh)
+
+            if target_bs_nodes:
+                # TODO what should we do in this case?
+                target_bs_node = target_bs_nodes[0]
+            else:
                 target_bs_node = cmds.deformer(
                     target_mesh, type="blendShape", name="{}_blendShape".format(target_mesh)
                 )[0]
@@ -1170,11 +1316,8 @@ def apply_proxy_combo(proxy_combo, rebuild=True, verbose=True, sum_combo_targets
                 create_empty_target(
                     target_mesh, target_bs_node, "sculpt", default=1.0
                 )
-            else:
-                # target already rebuilt
-                target_mesh = get_blendshape_weight_alias(bs_node, target_index)
-                target_bs_node = "{}_blendShape".format(target_mesh)
 
+            # apply target
             set_target_delta(target_bs_node, 0, split_delta)
 
         else:
@@ -1221,6 +1364,19 @@ def apply_proxy_combo(proxy_combo, rebuild=True, verbose=True, sum_combo_targets
                 inbetween_delta += (split_delta * inbetween_value)
                 set_target_delta(bs_node, target_index, delta + inbetween_delta, in_between=in_between)
 
+    if validate_result:
+        proxy_combo_points = mhMayaUtils.get_points(proxy_combo, as_numpy=True)
+        rig_mesh_points = mhMayaUtils.get_points(mesh, as_numpy=True)
+        result_delta = rig_mesh_points - proxy_combo_points
+        result_delta_lengths = numpy.linalg.norm(result_delta, axis=1)
+        diff_value = sum(result_delta_lengths)
+
+        if diff_value > match_threshold:
+            LOG.warning("Proxy combo result not matched: {} {}".format(proxy_combo, diff_value))
+            return diff_value
+        else:
+            LOG.info("Proxy combo result matched: {}".format(proxy_combo))
+
     return True
 
 
@@ -1237,6 +1393,7 @@ def apply_proxy_combo_sl(rebuild=True):
     apply_proxy_combo(proxy_combo, rebuild=rebuild)
 
     return True
+
 
 def add_deltas_sl(use_target_weight=True):
     """Add deltas of selected targets and apply to last selected target
@@ -1267,6 +1424,7 @@ def subtract_deltas_sl(use_target_weight=True):
     set_target_delta(bs_node, target_index, deltas)
 
     return True
+
 
 def reset_target_sl():
     """
@@ -1308,6 +1466,7 @@ def reset_target_sl():
             )
 
     return True
+
 
 def bake_blendshape_driven_mesh(
         driver_bs_node, driven_mesh, cleanup=True, skip_static=True, connect=True, targets_only=False
