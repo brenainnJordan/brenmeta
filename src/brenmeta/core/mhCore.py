@@ -354,13 +354,23 @@ def add_additional_combo_poses(poses, psd_poses, additional_combos, joints_attr_
         combo.input_poses = [pose_dict[pose_name] for pose_name in pose_names]
         combo.input_weights = [1.0] * len(pose_names)
 
+        combo.update_name(override=True)
+
+        if combo.pose.name in pose_dict:
+            LOG.info("existing combo found, skipping: {}".format(combo.pose.name))
+            continue
+
         psd_poses[combo.pose.index] = combo
         poses.append(combo.pose)
         new_psd_poses.append(combo)
-
-        combo.update_name(override=True)
+        pose_dict[combo.pose.name] = combo.pose
 
     return poses, psd_poses, new_psd_poses
+
+
+def add_combo_pose_permutations(poses, psd_poses, joints_attr_defaults, pose_names, permutation_count):
+    # TODO
+    pass
 
 
 class Project(object):
@@ -370,7 +380,6 @@ class Project(object):
         self.dna_assets_path = None
         self.dna_files_path = None
         self.bake_config_path = os.path.join(DATA_DIR, "configs", "bake_config.json")
-
 
     def get_dna_files(self):
         generic_assets = None

@@ -364,6 +364,7 @@ class DnaTransferWidget(DnaTab):
             "eyeRight_lod0_mesh",
         )
 
+
 class DnaInspectWidget(QtWidgets.QMainWindow):
     """
     inspect PSDs
@@ -561,8 +562,7 @@ class DnaBuildWidget(DnaTab):
 
         self.dna_file_combo = mhWidgets.DnaPathManagerWidget(path_manager, "dna file")
 
-        # TODO more options
-        # self.full_rig_checkbox = QtWidgets.QCheckBox("full rig")
+        self.gui_override_widget = mhWidgets.PathOpenWidget("gui override")
 
         self.partial_rig_group_box = QtWidgets.QGroupBox("Partial Rig")
         self.partial_rig_group_box.setCheckable(True)
@@ -589,6 +589,7 @@ class DnaBuildWidget(DnaTab):
         self.build_btn.clicked.connect(self.build_rig)
 
         build_lyt.addWidget(self.dna_file_combo)
+        build_lyt.addWidget(self.gui_override_widget)
         build_lyt.addWidget(self.inspect_btn)
         build_lyt.addWidget(self.partial_rig_group_box)
         build_lyt.addWidget(self.build_btn)
@@ -850,9 +851,6 @@ class DnaBuildWidget(DnaTab):
             self.error(err)
             return False
 
-        # build_mode = str(self.dna_file_combo.currentText())
-        # dna_path = self.path_manager.get_path(build_mode)
-
         dna_path = self.dna_file_combo.get_path()
 
         if not os.path.exists(dna_path):
@@ -891,6 +889,7 @@ class DnaBuildWidget(DnaTab):
                 add_blend_shapes=True,
                 lod=None,
                 scene_up="y",
+                gui_ctrls_path=self.gui_override_widget.path
             )
 
         return True
@@ -1724,7 +1723,6 @@ class DnaMergeWidget(DnaTab):
         return True
 
 
-
 class DnaBakeRigWidget(DnaTab):
     def __init__(self, path_manager, parent=None):
         super(DnaBakeRigWidget, self).__init__(path_manager, parent=parent)
@@ -2144,16 +2142,50 @@ class DnaSculptWidget(DnaTab):
         self.meta_data_btn = QtWidgets.QPushButton("meta data")
         self.meta_data_btn.clicked.connect(self._meta_data_clicked)
 
-        proxy_combo_btn_lyt = QtWidgets.QHBoxLayout()
-        proxy_combo_btn_lyt.addWidget(self.create_proxy_combo_btn)
-        proxy_combo_btn_lyt.addWidget(self.apply_proxy_combo_btn)
-        proxy_combo_btn_lyt.addWidget(self.meta_data_btn)
+        btn_lyt = QtWidgets.QHBoxLayout()
+        btn_lyt.addWidget(self.create_proxy_combo_btn)
+        btn_lyt.addWidget(self.apply_proxy_combo_btn)
+        btn_lyt.addWidget(self.meta_data_btn)
 
         proxy_combo_lyt = QtWidgets.QVBoxLayout()
         proxy_combo_lyt.addWidget(self.proxy_combo_label)
-        proxy_combo_lyt.addLayout(proxy_combo_btn_lyt)
+        proxy_combo_lyt.addLayout(btn_lyt)
 
         self.proxy_combos_box.setLayout(proxy_combo_lyt)
+
+        # batch proxy combos
+        self.batch_proxy_combos_box = QtWidgets.QGroupBox("Batch Proxy Combos")
+
+        self.batch_proxy_combo_label = QtWidgets.QLabel(
+            "Batch create or apply proxy combos from config json file\n"
+            "An example config file can be found here:\n"
+            "brenmeta/data/configs/example_proxy_combo_config.json"
+        )
+
+        self.batch_proxy_combo_create_widget = mhWidgets.PathOpenWidget("Config")
+        self.batch_proxy_combo_create_widget.filter = "json files (*.json)"
+
+        self.match_threshold_spin = mhWidgets.LabelledDoubleSpinBox(
+            "match threshold", label_width=100, default=0.01, minimum=0.0, maximum=10.0
+        )
+
+        self.batch_create_proxy_combo_btn = QtWidgets.QPushButton("Create")
+        self.batch_create_proxy_combo_btn.clicked.connect(self._batch_create_proxy_combos)
+
+        self.batch_apply_proxy_combo_btn = QtWidgets.QPushButton("Apply")
+        self.batch_apply_proxy_combo_btn.clicked.connect(self._batch_apply_proxy_combos)
+
+        btn_lyt = QtWidgets.QHBoxLayout()
+        btn_lyt.addWidget(self.batch_create_proxy_combo_btn)
+        btn_lyt.addWidget(self.batch_apply_proxy_combo_btn)
+
+        proxy_combo_lyt = QtWidgets.QVBoxLayout()
+        proxy_combo_lyt.addWidget(self.batch_proxy_combo_label)
+        proxy_combo_lyt.addWidget(self.batch_proxy_combo_create_widget)
+        proxy_combo_lyt.addWidget(self.match_threshold_spin)
+        proxy_combo_lyt.addLayout(btn_lyt)
+
+        self.batch_proxy_combos_box.setLayout(proxy_combo_lyt)
 
         # deltas
         self.deltas_box = QtWidgets.QGroupBox("Deltas")
@@ -2189,6 +2221,7 @@ class DnaSculptWidget(DnaTab):
 
         lyt.addWidget(self.io_box)
         lyt.addWidget(self.proxy_combos_box)
+        lyt.addWidget(self.batch_proxy_combos_box)
         lyt.addWidget(self.deltas_box)
         lyt.addStretch()
 
@@ -2260,6 +2293,39 @@ class DnaSculptWidget(DnaTab):
 
     def _apply_proxy_combo_clicked(self):
         mhBlendshape.apply_proxy_combo_sl()
+
+    def _batch_create_proxy_combos(self):
+        config_file = self.batch_proxy_combo_create_widget.path
+
+        if not os.path.exists(config_file):
+            self.error("Config file not found: {}".format(config_file))
+
+        mhBlendshape.batch_create_proxy_combos(config_file)
+
+        QtWidgets.QMessageBox.information(
+            self,
+            "Success",
+            "Proxy Combo batch complete",
+            QtWidgets.QMessageBox.Ok
+        )
+
+    def _batch_apply_proxy_combos(self):
+        config_file = self.batch_proxy_combo_create_widget.path
+
+        if not os.path.exists(config_file):
+            self.error("Config file not found: {}".format(config_file))
+
+        mhBlendshape.batch_apply_proxy_combos(
+            config_file,
+            match_threshold=self.match_threshold_spin.spin_box.value(),
+        )
+
+        QtWidgets.QMessageBox.information(
+            self,
+            "Success",
+            "Proxy Combo batch complete",
+            QtWidgets.QMessageBox.Ok
+        )
 
     def _add_deltas_clicked(self):
         mhBlendshape.add_deltas_sl()

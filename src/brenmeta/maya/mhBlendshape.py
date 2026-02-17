@@ -891,6 +891,7 @@ def create_proxy_combo(
         find_ref_targets=False,
         sum_combos=False,
         weight_overrides=None,
+        verbose=True
 ):
     """Create a mesh that combines the given targets.
     Optionally with a sculpt target blendshape.
@@ -920,6 +921,9 @@ def create_proxy_combo(
     else:
         proxy_combo = "proxyCombo"
 
+    if verbose:
+        LOG.info("Creating proxy combo: {}".format(name))
+
     # find other targets that are currently active
     if find_ref_targets:
         if not ref_targets:
@@ -931,6 +935,8 @@ def create_proxy_combo(
 
             if cmds.getAttr("{}.{}".format(bs_node, target)) > 0.0:
                 ref_targets.append(target)
+                if verbose:
+                    LOG.info("  ref target: {}".format(target))
 
     # get ref target indices
     ref_indices = []
@@ -1077,6 +1083,9 @@ def create_proxy_combo(
             type="string"
         )
 
+    if verbose:
+        LOG.info("Proxy combo created: {}".format(name))
+
     return proxy_combo
 
 
@@ -1157,7 +1166,27 @@ def batch_create_proxy_combos(batch_config_file):
     configs = ProxyComboConfig.load(batch_config_file)
     proxy_combos = []
 
-    for config in configs:
+    # start progress bar
+    gMainProgressBar = mel.eval('$tmp = $gMainProgressBar')
+
+    cmds.progressBar(
+        gMainProgressBar,
+        edit=True,
+        beginProgress=True,
+        isInterruptable=True,
+        status='Creating proxy combos...',
+        maxValue=len(configs)
+    )
+
+    # create targets
+    driven_targets = []
+
+    for i, config in enumerate(configs):
+        if cmds.progressBar(gMainProgressBar, query=True, isCancelled=True):
+            return False
+
+        cmds.progressBar(gMainProgressBar, edit=True, step=1)
+
         if config.frame is not None:
             cmds.currentTime(config.frame)
 
@@ -1178,6 +1207,58 @@ def batch_create_proxy_combos(batch_config_file):
         )
 
         proxy_combos.append(proxy_combo)
+
+    cmds.progressBar(gMainProgressBar, edit=True, endProgress=True)
+
+    return True
+
+
+def batch_apply_proxy_combos(batch_config_file, match_threshold=0.001):
+
+    configs = ProxyComboConfig.load(batch_config_file)
+
+    # start progress bar
+    gMainProgressBar = mel.eval('$tmp = $gMainProgressBar')
+
+    cmds.progressBar(
+        gMainProgressBar,
+        edit=True,
+        beginProgress=True,
+        isInterruptable=True,
+        status='Applying proxy combos...',
+        maxValue=len(configs)
+    )
+
+    # create targets
+    driven_targets = []
+
+    for i, config in enumerate(configs):
+        if cmds.progressBar(gMainProgressBar, query=True, isCancelled=True):
+            return False
+
+        cmds.progressBar(gMainProgressBar, edit=True, step=1)
+
+        if not cmds.objExists(config.name):
+            cmds.warning("Proxy combo not found: {}".format(config.name))
+            continue
+
+        if config.frame is not None:
+            cmds.currentTime(config.frame)
+
+        if config.control_values:
+            for control, value in config.control_values.items():
+                cmds.setAttr(control, value)
+
+        apply_proxy_combo(
+            config.name,
+            rebuild=True,
+            verbose=True,
+            sum_combo_targets=False,
+            validate_result=True,
+            match_threshold=match_threshold
+        )
+
+    cmds.progressBar(gMainProgressBar, edit=True, endProgress=True)
 
     return True
 
@@ -1365,17 +1446,15 @@ def apply_proxy_combo(proxy_combo, rebuild=True, verbose=True, sum_combo_targets
                 set_target_delta(bs_node, target_index, delta + inbetween_delta, in_between=in_between)
 
     if validate_result:
-        proxy_combo_points = mhMayaUtils.get_points(proxy_combo, as_numpy=True)
-        rig_mesh_points = mhMayaUtils.get_points(mesh, as_numpy=True)
-        result_delta = rig_mesh_points - proxy_combo_points
-        result_delta_lengths = numpy.linalg.norm(result_delta, axis=1)
-        diff_value = sum(result_delta_lengths)
+        match_value = mhMayaUtils.meshes_equal(
+            proxy_combo, mesh, match_threshold=match_threshold
+        )
 
-        if diff_value > match_threshold:
-            LOG.warning("Proxy combo result not matched: {} {}".format(proxy_combo, diff_value))
-            return diff_value
-        else:
+        if match_value is True:
             LOG.info("Proxy combo result matched: {}".format(proxy_combo))
+        else:
+            LOG.warning("Proxy combo result not matched: {} {}".format(proxy_combo, match_value))
+            return match_value
 
     return True
 

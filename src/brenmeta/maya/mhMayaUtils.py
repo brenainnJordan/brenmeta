@@ -560,7 +560,26 @@ def export_meshes_to_objs(meshes, directory, prefix="", suffix="", overwrite=Fal
     TODO metadata file
     TODO progress bar
     """
+
+    # start progress bar
+    gMainProgressBar = mel.eval('$tmp = $gMainProgressBar')
+
+    cmds.progressBar(
+        gMainProgressBar,
+        edit=True,
+        beginProgress=True,
+        isInterruptable=True,
+        status='Exporting OBJ files...',
+        maxValue=len(meshes)
+    )
+
+    # export files
     for mesh in meshes:
+        if cmds.progressBar(gMainProgressBar, query=True, isCancelled=True):
+            return False
+
+        cmds.progressBar(gMainProgressBar, edit=True, step=1)
+
         if "|" in mesh:
             mesh_name = mesh.split("|")[-1]
         else:
@@ -587,6 +606,8 @@ def export_meshes_to_objs(meshes, directory, prefix="", suffix="", overwrite=Fal
             exportSelected=True
         )
 
+    cmds.progressBar(gMainProgressBar, edit=True, endProgress=True)
+
     cmds.select(meshes)
 
     if verbose:
@@ -596,7 +617,7 @@ def export_meshes_to_objs(meshes, directory, prefix="", suffix="", overwrite=Fal
 
 
 def import_objs(directory, prefix=None, verbose=True):
-    # TODO progress bar
+    # TODO load OBJ plugin
 
     # get obj files
     contents = os.listdir(directory)
@@ -614,7 +635,25 @@ def import_objs(directory, prefix=None, verbose=True):
 
         file_paths.append(path)
 
+    # start progress bar
+    gMainProgressBar = mel.eval('$tmp = $gMainProgressBar')
+
+    cmds.progressBar(
+        gMainProgressBar,
+        edit=True,
+        beginProgress=True,
+        isInterruptable=True,
+        status='Importing OBJ files...',
+        maxValue=len(file_paths)
+    )
+
+    # import files
     for file_path in file_paths:
+        if cmds.progressBar(gMainProgressBar, query=True, isCancelled=True):
+            return False
+
+        cmds.progressBar(gMainProgressBar, edit=True, step=1)
+
         if verbose:
             LOG.info("Importing file: {}".format(file_path))
 
@@ -642,6 +681,8 @@ def import_objs(directory, prefix=None, verbose=True):
                 new_name = "{}{}".format(prefix, new_name)
 
             cmds.rename(new_node, new_name)
+
+    cmds.progressBar(gMainProgressBar, edit=True, endProgress=True)
 
     return True
 
@@ -674,3 +715,18 @@ def create_materials_for_hierarchy(root_node, material_type, suffix=None):
         create_material(name, material_type, suffix=suffix, meshes=mesh)
 
     return True
+
+
+def meshes_equal(mesh_a, mesh_b, match_threshold=0.01):
+    """Compare mesh points to see if they are the same (within threshold)
+    """
+    mesh_a_points = get_points(mesh_a, as_numpy=True)
+    mesh_b_points = get_points(mesh_b, as_numpy=True)
+    delta = mesh_b_points - mesh_a_points
+    delta_lengths = numpy.linalg.norm(delta, axis=1)
+    diff_value = sum(delta_lengths)
+
+    if diff_value > match_threshold:
+        return diff_value
+    else:
+        return True
