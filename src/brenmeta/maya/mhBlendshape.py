@@ -255,11 +255,24 @@ def add_in_between_target(bs_node, base_mesh, target, in_between_target, in_betw
             "Target not found, cannot add inbetween: {}.{}".format(bs_node, target)
         )
 
-    cmds.blendShape(
-        bs_node,
-        edit=True,
-        target=(base_mesh, target_index, in_between_target, in_between_value)
-    )
+    if in_between_target is None:
+        dummy_target = "dummyTarget"
+
+        mhMayaUtils.duplicate_orig_mesh(bs_node, dummy_target)
+
+        cmds.blendShape(
+            bs_node,
+            edit=True,
+            target=(base_mesh, target_index, dummy_target, in_between_value)
+        )
+
+        cmds.delete(dummy_target)
+    else:
+        cmds.blendShape(
+            bs_node,
+            edit=True,
+            target=(base_mesh, target_index, in_between_target, in_between_value)
+        )
 
     return True
 

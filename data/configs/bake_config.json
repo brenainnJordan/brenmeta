@@ -7,7 +7,25 @@
   ],
   "shapes": [
     "eyeSquintL",
-    "eyeSquintR"
+    "eyeSquintR",
+    ["headTiltForwards", 1],
+    ["headTiltBack", 1],
+    ["headTiltLeft", 1],
+    ["headTiltRight", 1],
+    ["headTurnLeft", 1],
+    ["headTurnRight", 1],
+    ["neck2TiltForwards", 1],
+    ["neck2TiltBack", 1],
+    ["neck2TiltLeft", 1],
+    ["neck2TiltRight", 1],
+    ["neck2TurnLeft", 1],
+    ["neck2TurnRight", 1],
+    ["neck1TiltForwards", 1],
+    ["neck1TiltBack", 1],
+    ["neck1TiltLeft", 1],
+    ["neck1TiltRight", 1],
+    ["neck1TurnLeft", 1],
+    ["neck1TurnRight", 1]
   ],
   "in_betweens": {
     "eyeBlinkL": 3,
@@ -292,5 +310,151 @@
     "FACIAL_C_Neck2Root",
     "FACIAL_C_Neck1Root",
     "FACIAL_C_FacialRoot"
+  ],
+  "readers": [
+    {
+      "name": "headTiltForwards",
+      "transform": "head",
+      "parent_space_transform": "neck_02",
+      "rotation": [0.0, 0.0, -50.0],
+      "vector": [0.0, -1.0, 0.0],
+      "smooth": true
+    },
+    {
+      "name": "headTiltBack",
+      "transform": "head",
+      "parent_space_transform": "neck_02",
+      "rotation": [0.0, 0.0, 50.0],
+      "vector": [0.0, -1.0, 0.0],
+      "smooth": true
+    },
+    {
+      "name": "headTurnLeft",
+      "transform": "head",
+      "parent_space_transform": "neck_02",
+      "rotation": [60.0, 0.0, 0.0],
+      "vector": [0.0, -1.0, 0.0],
+      "smooth": true
+    },
+    {
+      "name": "headTurnRight",
+      "transform": "head",
+      "parent_space_transform": "neck_02",
+      "rotation": [-60.0, 0.0, 0.0],
+      "vector": [0.0, -1.0, 0.0],
+      "smooth": true
+    },
+    {
+      "name": "headTiltLeft",
+      "transform": "head",
+      "parent_space_transform": "neck_02",
+      "rotation": [0.0, 40.0, 0.0],
+      "vector": [1.0, 0.0, 0.0],
+      "smooth": true
+    },
+    {
+      "name": "headTiltRight",
+      "transform": "head",
+      "parent_space_transform": "neck_02",
+      "rotation": [0.0, -40.0, 0.0],
+      "vector": [1.0, 0.0, 0.0],
+      "smooth": true
+    },
+    {
+      "name": "neck2TiltForwards",
+      "transform": "neck_02",
+      "parent_space_transform": "neck_01",
+      "rotation": [0.0, 0.0, -50.0],
+      "vector": [0.0, -1.0, 0.0],
+      "smooth": true
+    },
+    {
+      "name": "neck2TiltBack",
+      "transform": "neck_02",
+      "parent_space_transform": "neck_01",
+      "rotation": [0.0, 0.0, 50.0],
+      "vector": [0.0, -1.0, 0.0],
+      "smooth": true
+    },
+    {
+      "name": "neck2TurnLeft",
+      "transform": "neck_02",
+      "parent_space_transform": "neck_01",
+      "rotation": [60.0, 0.0, 0.0],
+      "vector": [0.0, -1.0, 0.0],
+      "smooth": true
+    },
+    {
+      "name": "neck2TurnRight",
+      "transform": "neck_02",
+      "parent_space_transform": "neck_01",
+      "rotation": [-60.0, 0.0, 0.0],
+      "vector": [0.0, -1.0, 0.0],
+      "smooth": true
+    },
+    {
+      "name": "neck2TiltLeft",
+      "transform": "neck_02",
+      "parent_space_transform": "neck_01",
+      "rotation": [0.0, 40.0, 0.0],
+      "vector": [1.0, 0.0, 0.0],
+      "smooth": true
+    },
+    {
+      "name": "neck2TiltRight",
+      "transform": "neck_02",
+      "parent_space_transform": "neck_01",
+      "rotation": [0.0, -40.0, 0.0],
+      "vector": [1.0, 0.0, 0.0],
+      "smooth": true
+    },
+    {
+      "name": "neck1TiltForwards",
+      "transform": "neck_01",
+      "parent_space_transform": "spine_05",
+      "rotation": [0.0, 0.0, -50.0],
+      "vector": [0.0, -1.0, 0.0],
+      "smooth": true
+    },
+    {
+      "name": "neck1TiltBack",
+      "transform": "neck_01",
+      "parent_space_transform": "spine_05",
+      "rotation": [0.0, 0.0, 50.0],
+      "vector": [0.0, -1.0, 0.0],
+      "smooth": true
+    },
+    {
+      "name": "neck1TurnLeft",
+      "transform": "neck_01",
+      "parent_space_transform": "spine_05",
+      "rotation": [60.0, 0.0, 0.0],
+      "vector": [0.0, -1.0, 0.0],
+      "smooth": true
+    },
+    {
+      "name": "neck1TurnRight",
+      "transform": "neck_01",
+      "parent_space_transform": "spine_05",
+      "rotation": [-60.0, 0.0, 0.0],
+      "vector": [0.0, -1.0, 0.0],
+      "smooth": true
+    },
+    {
+      "name": "neck1TiltLeft",
+      "transform": "neck_01",
+      "parent_space_transform": "spine_05",
+      "rotation": [0.0, 40.0, 0.0],
+      "vector": [1.0, 0.0, 0.0],
+      "smooth": true
+    },
+    {
+      "name": "neck1TiltRight",
+      "transform": "neck_01",
+      "parent_space_transform": "spine_05",
+      "rotation": [0.0, -40.0, 0.0],
+      "vector": [1.0, 0.0, 0.0],
+      "smooth": true
+    }
   ]
 }

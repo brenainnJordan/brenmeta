@@ -36,7 +36,7 @@ from brenmeta.maya.mhMayaUtils import points_equal
 LOG = mhCore.get_basic_logger(__name__)
 
 COMBO_NET = "combo_network"
-
+READER_GROUP = "reader_grp"
 
 class BakeConfig(object):
     """Convenience object to load and manage bake config data
@@ -91,6 +91,7 @@ class BakeConfig(object):
         self.keep_joints = None
         self.delete = None
         self.root_joints = None
+        self.readers = None
 
     @classmethod
     def load(cls, file_path):
@@ -108,12 +109,25 @@ class BakeConfig(object):
             )
 
         config.mesh_blendshapes = data["mesh_blendshapes"]
-        config.shapes = data["shapes"]
+        # config.shapes = data["shapes"]
         config.in_betweens = data["in_betweens"]
         config.pose_joints = data["pose_joints"]
         config.keep_joints = data["keep_joints"]
         config.delete = data["delete"]
         config.root_joints = data["root_joints"]
+        config.readers = data["readers"]
+
+        # parse additional shapes and optionally their in-betweens
+        if data["shapes"]:
+            config.shapes = []
+
+            for shape in data["shapes"]:
+                if isinstance(shape, list):
+                    shape, in_betweens = shape
+                    config.shapes.append(shape)
+                    config.in_betweens[shape] = in_betweens
+                else:
+                    config.shapes.append(shape)
 
         config.combos = [
             combo for combo_data in data["combos"]
@@ -276,7 +290,172 @@ def break_joint_connections(root_joints):
     return True
 
 
-def create_driver_logic(poses, psd_poses, expressions_node, additional_shapes=None, use_combo_network=True):
+def create_cone_reader(transform, parent_space_transform, name, vector, rotation, group, smooth=True):
+    """
+    TODO connect message attributes so nodes can be safely deleted later
+    """
+
+    default_transform = "{}_readerDefault_grp".format(transform)
+
+    if not cmds.objExists(default_transform):
+        cmds.createNode(
+            "transform", name=default_transform, parent=group
+        )
+
+        matrix = cmds.xform(transform, query=True, matrix=True, worldSpace=True)
+        cmds.xform(default_transform, matrix=matrix, worldSpace=True)
+
+        cmds.parentConstraint(
+            parent_space_transform, default_transform, maintainOffset=True
+        )
+
+    cone_transform = cmds.createNode(
+        "transform",
+        name="{}_readerCone_grp".format(name),
+        parent=default_transform
+    )
+
+    cmds.xform(cone_transform, rotation=rotation)
+
+    # default vector
+    default_vector_product = cmds.createNode(
+        "vectorProduct", name="{}_default_vectorProduct".format(name)
+    )
+
+    cmds.setAttr("{}.input1".format(default_vector_product), *vector)
+
+    cmds.connectAttr(
+        "{}.worldMatrix[0]".format(default_transform),
+        "{}.matrix".format(default_vector_product)
+    )
+
+    cmds.setAttr("{}.operation".format(default_vector_product), 3)
+
+    # transform vector
+    transform_vector_product = cmds.createNode(
+        "vectorProduct", name="{}_transform_vectorProduct".format(name)
+    )
+
+    cmds.setAttr("{}.input1".format(transform_vector_product), *vector)
+
+    cmds.connectAttr(
+        "{}.worldMatrix[0]".format(transform),
+        "{}.matrix".format(transform_vector_product)
+    )
+
+    cmds.setAttr("{}.operation".format(transform_vector_product), 3)
+
+    # cone vector
+    cone_vector_product = cmds.createNode(
+        "vectorProduct", name="{}_cone_vectorProduct".format(name)
+    )
+
+    cmds.setAttr("{}.input1".format(cone_vector_product), *vector)
+
+    cmds.connectAttr(
+        "{}.worldMatrix[0]".format(cone_transform),
+        "{}.matrix".format(cone_vector_product)
+    )
+
+    cmds.setAttr("{}.operation".format(cone_vector_product), 3)
+
+    # cone angle
+    cone_angle_between = cmds.createNode(
+        "angleBetween", name="{}_cone_angleBetween".format(name)
+    )
+
+    cmds.connectAttr(
+        "{}.output".format(transform_vector_product),
+        "{}.vector1".format(cone_angle_between)
+    )
+
+    cmds.connectAttr(
+        "{}.output".format(cone_vector_product),
+        "{}.vector2".format(cone_angle_between)
+    )
+
+    # default angle
+    default_angle_between = cmds.createNode(
+        "angleBetween", name="{}_default_angleBetween".format(name)
+    )
+
+    cmds.connectAttr(
+        "{}.output".format(default_vector_product),
+        "{}.vector1".format(default_angle_between)
+    )
+
+    cmds.connectAttr(
+        "{}.output".format(cone_vector_product),
+        "{}.vector2".format(default_angle_between)
+    )
+
+    # remap
+    remap = cmds.createNode(
+        "remapValue",
+        name="{}_reader_remapValue".format(name)
+    )
+
+    cmds.connectAttr(
+        "{}.angle".format(default_angle_between),
+        "{}.inputMin".format(remap)
+    )
+
+    cmds.connectAttr(
+        "{}.angle".format(cone_angle_between),
+        "{}.inputValue".format(remap)
+    )
+
+    cmds.setAttr(
+        "{}.inputMax".format(remap), 0.0
+    )
+
+    cmds.setAttr(
+        "{}.outputMin".format(remap), 0.0
+    )
+
+    cmds.setAttr(
+        "{}.outputMax".format(remap), 1.0
+    )
+
+    if smooth:
+        cmds.setAttr(
+            "{}.value[0].value_Interp".format(remap), 2
+        )
+
+    # connect message attributes for reference
+    if not cmds.attributeQuery("nodes", node=group, exists=True):
+        cmds.addAttr(
+            group,
+            longName="nodes",
+            attributeType="message"
+        )
+
+    for node in [
+        default_vector_product,
+        transform_vector_product,
+        cone_vector_product,
+        default_angle_between,
+        cone_angle_between,
+        remap,
+    ]:
+        cmds.addAttr(
+            node,
+            longName="reader_group",
+            attributeType="message"
+        )
+
+        cmds.connectAttr(
+            "{}.nodes".format(group),
+            "{}.reader_group".format(node)
+        )
+
+    return "{}.outValue".format(remap)
+
+
+
+def create_driver_logic(
+        poses, psd_poses, expressions_node, additional_shapes=None, use_combo_network=True, reader_configs=None
+):
     # get expressions
     expressions = cmds.listAttr(expressions_node, userDefined=True)
 
@@ -357,6 +536,32 @@ def create_driver_logic(poses, psd_poses, expressions_node, additional_shapes=No
         else:
             # map to combo node directly
             driver_mapping[psd_pose.pose.name] = "{}.outputWeight".format(combo_node)
+
+    # create readers
+    if reader_configs:
+        group = "headRig_grp"
+
+        reader_group = cmds.createNode(
+            "transform",
+            name=READER_GROUP,
+            parent=group
+        )
+
+        for reader_config in reader_configs:
+            driver_attr = create_cone_reader(
+                reader_config["transform"],
+                reader_config["parent_space_transform"],
+                reader_config["name"],
+                reader_config["vector"],
+                reader_config["rotation"],
+                reader_group,
+                smooth=reader_config["smooth"],
+            )
+
+            cmds.connectAttr(
+                driver_attr,
+                "{}.{}".format(expressions_node, reader_config["name"])
+            )
 
     return driver_mapping
 
@@ -793,6 +998,7 @@ def bake_rig(
             expressions_node,
             additional_shapes=bake_config.shapes,
             use_combo_network=use_combo_network,
+            reader_configs=bake_config.readers
         )
     else:
         driver_mapping = None
@@ -829,6 +1035,7 @@ def disconnect(
         disconnect_targets=True,
         disconnect_joints=True,
         delete_combo_network=True,
+        delete_readers=True,
         verbose=True
 ):
     # load config
@@ -839,6 +1046,9 @@ def disconnect(
     # disconnect blendshapes
     if disconnect_targets:
         for bs_node in bs_nodes:
+            if not cmds.objExists(bs_node):
+                continue
+
             if verbose:
                 LOG.info("Disconnecting blendshape targets: {}".format(bs_node))
 
@@ -870,6 +1080,22 @@ def disconnect(
 
             cmds.delete(COMBO_NET)
 
+    if delete_readers:
+        # delete readers
+        if cmds.objExists(READER_GROUP):
+            nodes = cmds.listConnections("{}.nodes".format(READER_GROUP))
+
+            if nodes:
+                if verbose:
+                    LOG.info("deleting reader nodes")
+
+                cmds.delete(nodes)
+
+            if verbose:
+                LOG.info("deleting node: {}".format(READER_GROUP))
+
+            cmds.delete(READER_GROUP)
+
     return True
 
 
@@ -889,7 +1115,9 @@ def reconnect(
     # load config
     bake_config = BakeConfig.load(config_file_path)
 
-    bs_nodes = [bs_node for mesh, bs_node in bake_config.mesh_blendshapes]
+    bs_nodes = [
+        bs_node for mesh, bs_node in bake_config.mesh_blendshapes if cmds.objExists(bs_node)
+    ]
 
     # create additional poses
     if bake_config.shapes:
@@ -917,7 +1145,8 @@ def reconnect(
         psd_poses,
         expressions_node,
         additional_shapes=bake_config.shapes,
-        use_combo_network=use_combo_network
+        use_combo_network=use_combo_network,
+        reader_configs=bake_config.readers
     )
 
     # add missing targets
@@ -937,6 +1166,18 @@ def reconnect(
                 mhBlendshape.create_empty_target(
                     base_mesh, bs_node, shape_name, default=0.0
                 )
+
+                # add in-betweens
+                if shape_name in bake_config.in_betweens:
+                    ib_count = bake_config.in_betweens[shape_name]
+
+                    for ib_index in range(ib_count):
+                        ib_value = float(ib_index + 1) / float(ib_count + 1)
+                        ib_value = round(ib_value, 3)
+
+                        mhBlendshape.add_in_between_target(
+                            bs_node, base_mesh, shape_name, None, ib_value
+                        )
 
     # connect expression attrs
     if reconnect_targets:
