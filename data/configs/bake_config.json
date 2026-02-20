@@ -8,19 +8,19 @@
   "shapes": [
     "eyeSquintL",
     "eyeSquintR",
-    ["headTiltForwards", 1],
+    ["headTiltForward", 1],
     ["headTiltBack", 1],
     ["headTiltLeft", 1],
     ["headTiltRight", 1],
     ["headTurnLeft", 1],
     ["headTurnRight", 1],
-    ["neck2TiltForwards", 1],
+    ["neck2TiltForward", 1],
     ["neck2TiltBack", 1],
     ["neck2TiltLeft", 1],
     ["neck2TiltRight", 1],
     ["neck2TurnLeft", 1],
     ["neck2TurnRight", 1],
-    ["neck1TiltForwards", 1],
+    ["neck1TiltForward", 1],
     ["neck1TiltBack", 1],
     ["neck1TiltLeft", 1],
     ["neck1TiltRight", 1],
@@ -258,6 +258,23 @@
         ["eyeCheekRaiseR", "eyeLookUpR", "eyeBlinkR"],
         ["eyeCheekRaiseR", "eyeLookDownR", "eyeBlinkR"]
       ]
+    },
+    {
+      "description": "head and neck rotations",
+      "enabled": true,
+      "combos": [
+        ["headTiltForward", "neck2TiltBack"],
+        ["headTiltForward", "neck1TiltBack"],
+        ["headTiltBack", "neck2TiltForward"],
+        ["headTiltBack", "neck1TiltForward"],
+        ["headTiltForward", "neck1TiltForward"],
+        ["headTiltForward", "neck2TiltForward"],
+        ["neck2TiltForward", "neck2TiltForward"],
+        ["headTiltForward", "neck1TiltForward", "neck2TiltForward"],
+        ["headTiltBack", "neck1TiltBack"],
+        ["headTiltBack", "neck2TiltBack"],
+        ["headTiltBack", "neck1TiltBack", "neck2TiltBack"]
+      ]
     }
   ],
   "pose_joints": [
@@ -294,7 +311,11 @@
     "neck_02",
     "neck_01",
     "spine_05",
-    "spine_04"
+    "spine_04",
+    "clavicle_l",
+    "clavicle_r",
+    "upperarm_l",
+    "upperarm_r"
   ],
   "delete": [
     "eyelashes_lod0_mesh",
@@ -313,7 +334,7 @@
   ],
   "readers": [
     {
-      "name": "headTiltForwards",
+      "name": "headTiltForward",
       "transform": "head",
       "parent_space_transform": "neck_02",
       "rotation": [0.0, 0.0, -50.0],
@@ -361,7 +382,7 @@
       "smooth": true
     },
     {
-      "name": "neck2TiltForwards",
+      "name": "neck2TiltForward",
       "transform": "neck_02",
       "parent_space_transform": "neck_01",
       "rotation": [0.0, 0.0, -50.0],
@@ -409,7 +430,7 @@
       "smooth": true
     },
     {
-      "name": "neck1TiltForwards",
+      "name": "neck1TiltForward",
       "transform": "neck_01",
       "parent_space_transform": "spine_05",
       "rotation": [0.0, 0.0, -50.0],
