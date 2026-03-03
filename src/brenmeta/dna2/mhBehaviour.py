@@ -87,6 +87,11 @@ def get_joint_defaults(reader):
         translation = reader.getNeutralJointTranslation(i)
 
         for axis, value in zip("xyz", translation):
+            if value is None:
+                raise mhCore.MHError(
+                    "neutral joint translation is None: {}".format(joint)
+                )
+
             joints_attr_defaults["{}.t{}".format(joint, axis)] = value
 
             # add default rotation and scale for redundancy

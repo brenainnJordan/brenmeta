@@ -169,7 +169,14 @@ class Pose(object):
 
     def reset_joints(self):
         for attr, value in self.defaults.items():
-            cmds.setAttr(attr, value)
+            if not cmds.objExists(attr):
+                continue
+
+            try:
+                cmds.setAttr(attr, value)
+            except RuntimeError as err:
+                LOG.warning("failed to reset joint attr: {}".format(attr))
+                continue
 
         return True
 
