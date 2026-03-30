@@ -1290,8 +1290,14 @@ mhBlendshape.extract_pose_correctives(
 
         pose_name = pose.name
 
+        relevant_shapes = [pose_name]
+
         if i in psd_poses:
             pose = psd_poses[i]
+
+            relevant_shapes += [
+                input_pose.name for input_pose in pose.get_all_input_poses()
+            ]
 
         if not pose.affects_joints(driven_joints):
             continue
@@ -1314,10 +1320,11 @@ mhBlendshape.extract_pose_correctives(
                 ib_value = None
                 ib_index = None
 
-            # pose joints and turn on shape
+            # pose joints and turn on shape(s)
             pose.pose_joints(blend=value)
 
-            cmds.setAttr("{}.{}".format(bs_node, pose_name), value)
+            for shape in relevant_shapes:
+                cmds.setAttr("{}.{}".format(bs_node, shape), value)
 
             # extract corrective
             inverted = cmds.invertShape(skinned_mesh, mesh)
@@ -1339,9 +1346,11 @@ mhBlendshape.extract_pose_correctives(
             if index == 1:
                 correctives_dict[pose_name] = inverted
 
-            # reset joints and shape
+            # reset joints and shape(s)
             pose.reset_joints()
-            cmds.setAttr("{}.{}".format(bs_node, pose_name), 0.0)
+
+            for shape in relevant_shapes:
+                cmds.setAttr("{}.{}".format(bs_node, shape), 0.0)
 
     # calculate PSD targets
     # do this in order of least combos to most combos
@@ -1357,7 +1366,7 @@ mhBlendshape.extract_pose_correctives(
 
             LOG.info("  {}".format(pose.pose.name))
 
-            cmds.duplicate(inverted)
+            # cmds.duplicate(inverted)
 
             points = mhMayaUtils.get_points(inverted, as_numpy=True)
             delta = points - orig_points
