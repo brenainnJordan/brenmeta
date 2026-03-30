@@ -24,7 +24,7 @@ import numpy
 
 from maya.api import OpenMaya
 from maya.api import OpenMayaAnim
-from maya import cmds
+from maya import cmds, mel
 
 from brenmeta.core import mhCore
 
@@ -244,7 +244,7 @@ def get_points(mesh, space=OpenMaya.MSpace.kObject, as_numpy=False, trim=True, b
 def set_points(mesh, points):
     if isinstance(points, numpy.ndarray):
         points = OpenMaya.MPointArray([
-            OpenMaya.MPoint(point) for point in np_points
+            OpenMaya.MPoint(point) for point in points
         ])
 
     # get dag
@@ -730,3 +730,60 @@ def meshes_equal(mesh_a, mesh_b, match_threshold=0.01):
         return diff_value
     else:
         return True
+
+
+def find_related_skin_cluster(mesh):
+    skin_cluster = mel.eval("findRelatedSkinCluster " + mesh)
+
+    if skin_cluster == "":
+        return None
+    else:
+        return skin_cluster
+
+
+def disconnect_attrs(node, attrs):
+    attr_cons = {}
+
+    for attr in attrs:
+        attr = "{}.{}".format(node, attr)
+
+        cons = cmds.listConnections(
+            attr, source=True, destination=False, plugs=True
+        )
+
+        if cons:
+            attr_cons[attr] = cons[0]
+            cmds.disconnectAttr(cons[0], attr)
+
+    return attr_cons
+
+
+def disconnect_transforms(transforms):
+    transform_cons = {}
+
+    for transform in transforms:
+        for channel in "trs":
+            attrs = [channel]
+
+            for axis in "xyz":
+                attrs.append("{}{}".format(channel, axis))
+
+            transform_cons.update(
+                disconnect_attrs(transform, attrs)
+            )
+
+    return transform_cons
+
+
+def get_all_parents(transform, parents=None):
+    parent = cmds.listRelatives(transform, parent=True)
+
+    if parent:
+        if not parents:
+            parents = parent
+        else:
+            parents += parent
+
+        parents = get_all_parents(parent, parents=parents)
+
+    return parents

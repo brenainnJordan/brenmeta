@@ -163,6 +163,9 @@ class Pose(object):
 
     def pose_joints(self, blend=1.0):
         for attr, value in self.get_values(absolute=True, blend=blend).items():
+            if not cmds.objExists(attr):
+                continue
+
             cmds.setAttr(attr, value)
 
         return True
@@ -170,6 +173,9 @@ class Pose(object):
     def reset_joints(self):
         for attr, value in self.defaults.items():
             if not cmds.objExists(attr):
+                continue
+
+            if value is None:
                 continue
 
             try:
@@ -205,6 +211,24 @@ class Pose(object):
             self.deltas[pose_attr] *= value
 
         return True
+
+    def affects_joint(self, joint):
+        for attr in self.deltas.keys():
+            attr_joint, attr = attr.split(".")
+
+            if attr_joint == joint:
+                return True
+
+        return False
+
+    def affects_joints(self, joints):
+        for attr in self.deltas.keys():
+            attr_joint, attr = attr.split(".")
+
+            if attr_joint in joints:
+                return True
+
+        return False
 
 
 class PSDPose(object):
@@ -274,12 +298,18 @@ class PSDPose(object):
 
     def pose_joints(self, summed=True, blend=1.0):
         for attr, value in self.get_values(summed=summed, absolute=True, blend=blend).items():
+            if not cmds.objExists(attr):
+                continue
+
             cmds.setAttr(attr, value)
 
         return True
 
     def reset_joints(self):
         for attr, value in self.get_defaults().items():
+            if not cmds.objExists(attr):
+                continue
+
             cmds.setAttr(attr, value)
 
         return True
@@ -322,6 +352,20 @@ class PSDPose(object):
             self.pose.name = "{}_{}".format(self.pose.name, "".join(sorted(sides)))
 
         return self.pose.name
+
+    def affects_joint(self, joints):
+        for pose in self.get_all_input_poses():
+            if pose.affects_joint(joints):
+                return True
+
+        return False
+
+    def affects_joints(self, joints):
+        for pose in self.get_all_input_poses():
+            if pose.affects_joints(joints):
+                return True
+
+        return False
 
 
 def add_additional_poses(poses, pose_names, joints_attr_defaults):

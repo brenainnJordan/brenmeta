@@ -168,12 +168,14 @@ def get_blendshape_target_index(bs_node, target_name):
 def parse_target_arg(bs_node, target):
     if isinstance(target, str):
         target_index = get_blendshape_target_index(bs_node, target)
-    else:
-        # TODO check
+        target_name = target
+    elif isinstance(target, int):
         target_index = target
-        target = get_blendshape_weight_alias(bs_node, target_index)
+        target_name = get_blendshape_weight_alias(bs_node, target_index)
+    else:
+        mhCore.MHError("target not recognised: {} {}".format(bs_node, target))
 
-    return target, target_index
+    return target_name, target_index
 
 
 def is_combo(bs_node, target):
@@ -323,6 +325,52 @@ def create_empty_target(base_mesh, bs_node, name, default=0.0):
     )
 
     return index
+
+
+def rebuild_target(bs_node, target, parent=None, create_blendshape=False, inbetween_value=None):
+    target_name, target_index = parse_target_arg(bs_node, target)
+
+    if inbetween_value is None:
+        # rebuild target
+        rebuild_result = cmds.sculptTarget(bs_node, edit=True, regenerate=True, target=target_index)
+
+        if rebuild_result:
+            target_mesh = rebuild_result[0]
+        else:
+            # target already rebuilt
+            target_mesh = target_name
+    else:
+        # rebuild inbetween target
+        rebuild_result = cmds.sculptTarget(
+            bs_node, edit=True, regenerate=True, target=target_index, inbetweenWeight=inbetween_value
+        )
+
+        target_mesh = "{}_{}".format(target_name, str(inbetween_value).replace(".", "_"))
+
+        if rebuild_result:
+            target_mesh = cmds.rename(rebuild_result[0], target_mesh)
+        else:
+            # TODOcheck name matches
+            pass
+
+    if parent:
+        cmds.parent(target_mesh, parent)
+
+    if create_blendshape:
+        # create blendshape node if it doesn't already exist
+        target_bs_nodes = find_mesh_blendshape_nodes(target_mesh)
+
+        if target_bs_nodes:
+            # TODO what should we do in this case?
+            target_bs_node = target_bs_nodes[0]
+        else:
+            target_bs_node = cmds.deformer(
+                target_mesh, type="blendShape", name="{}_blendShape".format(target_mesh)
+            )[0]
+
+        return target_mesh, target_bs_node
+    else:
+        return target_mesh
 
 
 class BlendshapeTargetPlugs(object):
@@ -1714,3 +1762,4 @@ def print_selected_shape_editor_targets(target_weights=True, as_list=True):
     print(data)
 
     return True
+

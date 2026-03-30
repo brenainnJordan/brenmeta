@@ -38,6 +38,7 @@ LOG = mhCore.get_basic_logger(__name__)
 COMBO_NET = "combo_network"
 READER_GROUP = "reader_grp"
 
+
 class BakeConfig(object):
     """Convenience object to load and manage bake config data
 
@@ -450,7 +451,6 @@ def create_cone_reader(transform, parent_space_transform, name, vector, rotation
         )
 
     return "{}.outValue".format(remap)
-
 
 
 def create_driver_logic(
@@ -951,7 +951,6 @@ def bake_rig(
     if bake_shapes:
         LOG.info("Disconnecting joints...")
 
-
         LOG.info("Baking shapes...")
 
         base_meshes, bs_nodes, target_groups = bake_shapes_from_poses(
@@ -1023,7 +1022,10 @@ def bake_rig(
         )
 
         if bake_config.delete:
-            cmds.delete(bake_config.delete)
+            delete_nodes = [i for i in bake_config.delete if cmds.objExists(i)]
+
+            if delete_nodes:
+                cmds.delete(delete_nodes)
 
     LOG.info("done.")
 
@@ -1192,3 +1194,236 @@ def reconnect(
 
     return True
 
+
+def extract_pose_correctives(poses, psd_poses, mesh, bs_node, skinned_mesh, rebuild=True):
+    """
+import dna
+import dnacalib2
+from mh_assemble_lib.model.dnalib import DNAReader, Layer
+
+from brenmeta.maya import mhBlendshape
+from brenmeta.dna2 import mhBehaviour
+
+dna_path = r"D:\Projects\3d\metahuman\scansoup\head_016_male\head_016_male_01.dna"
+mesh = "head_lod0_mesh"
+bs_node = "head_lod0_blendShape"
+skinned_mesh = "head_lod0_skinned"
+
+dna_obj = DNAReader.read(dna_path, Layer.all)
+calib_reader = dnacalib2.DNACalibDNAReader(dna_obj._reader)
+
+poses = mhBehaviour.get_all_poses(calib_reader)
+psd_poses = mhBehaviour.get_psd_poses(calib_reader, poses, override_name=True)
+joints_attr_defaults = mhBehaviour.get_joint_defaults(calib_reader)
+
+mhBlendshape.extract_pose_correctives(
+    poses, psd_poses, mesh, bs_node, skinned_mesh, rebuild=True
+)
+
+    """
+    # check mesh and skinned mesh are different
+    if mesh == skinned_mesh:
+        raise mhCore.MHError("Mesh and Skinned Mesh cannot be the same")
+
+    # get skinned joints
+    skin_cluster = mhMayaUtils.find_related_skin_cluster(skinned_mesh)
+
+    driven_joints = cmds.skinCluster(skin_cluster, query=True, influence=True)
+
+    # get targets
+    targets = mhBlendshape.get_blendshape_weight_aliases(bs_node)
+
+    # get points
+    orig_mesh = mhMayaUtils.get_orig_mesh(bs_node, as_name=True)
+    orig_points = mhMayaUtils.get_points(orig_mesh, as_numpy=True)
+
+    # get parent of joints
+    driven_joints = set(driven_joints)
+
+    for joint in list(driven_joints):
+        parents = mhMayaUtils.get_all_parents(joint)
+        print(parents)
+        driven_joints.update(parents)
+
+    driven_joints = list(driven_joints)
+
+    LOG.info("driven joints: {}".format(driven_joints))
+
+    # temporarily disconnect all joints and targets in the scene
+    LOG.info("disconnecting joints and targets")
+    all_joints = cmds.ls(type="joint")
+    joint_cons = mhMayaUtils.disconnect_transforms(all_joints)
+    target_cons = mhMayaUtils.disconnect_attrs(bs_node, targets)
+
+    # create groups
+    group = cmds.createNode("transform", name="correctives_grp")
+
+    if rebuild:
+        target_group = cmds.createNode("transform", name="target_grp")
+    else:
+        target_group = None
+
+    # start progress bar
+    gMainProgressBar = mel.eval('$tmp = $gMainProgressBar')
+
+    cmds.progressBar(
+        gMainProgressBar,
+        edit=True,
+        beginProgress=True,
+        isInterruptable=True,
+        status='Extracting correctives...',
+        maxValue=len(poses)
+    )
+
+    # loop through poses
+    correctives = []
+    correctives_dict = {}
+
+    for i, pose in enumerate(poses):
+        if cmds.progressBar(gMainProgressBar, query=True, isCancelled=True):
+            return False
+
+        cmds.progressBar(gMainProgressBar, edit=True, step=1)
+
+        if pose.name not in targets:
+            continue
+
+        pose_name = pose.name
+
+        if i in psd_poses:
+            pose = psd_poses[i]
+
+        if not pose.affects_joints(driven_joints):
+            continue
+
+        # get data
+        target_index = mhBlendshape.get_blendshape_target_index(bs_node, pose_name)
+        plugs = mhBlendshape.BlendshapeTargetPlugs(bs_node, target_index)
+        ib_values, ib_indices = plugs.get_inbetween_values()
+
+        # loop through full value and inbetween values
+        values = [1.0] + ib_values
+
+        for index, value in enumerate(values):
+            LOG.info("extracting corrective: {} at {}".format(pose_name, value))
+
+            if value != 1.0:
+                ib_value = value
+                ib_index = index - 1
+            else:
+                ib_value = None
+                ib_index = None
+
+            # pose joints and turn on shape
+            pose.pose_joints(blend=value)
+
+            cmds.setAttr("{}.{}".format(bs_node, pose_name), value)
+
+            # extract corrective
+            inverted = cmds.invertShape(skinned_mesh, mesh)
+
+            if ib_index is not None:
+                inverted = cmds.rename(inverted, "{}_IB{}_corrective".format(pose_name, ib_index))
+            else:
+                inverted = cmds.rename(inverted, "{}_corrective".format(pose_name))
+
+            cmds.parent(inverted, group)
+
+            cmds.sets(inverted, edit=True, forceElement="initialShadingGroup")
+
+            # add to list
+            correctives.append(
+                (pose, target_index, ib_index, ib_value, inverted)
+            )
+
+            if index == 1:
+                correctives_dict[pose_name] = inverted
+
+            # reset joints and shape
+            pose.reset_joints()
+            cmds.setAttr("{}.{}".format(bs_node, pose_name), 0.0)
+
+    # calculate PSD targets
+    # do this in order of least combos to most combos
+    LOG.info("Calculating PSD deltas")
+
+    for combo_count in range(2, 10):
+        for pose, target_index, ib_index, ib_value, inverted in correctives:
+            if not isinstance(pose, mhCore.PSDPose):
+                continue
+
+            if len(pose.input_poses) != combo_count:
+                continue
+
+            LOG.info("  {}".format(pose.pose.name))
+
+            cmds.duplicate(inverted)
+
+            points = mhMayaUtils.get_points(inverted, as_numpy=True)
+            delta = points - orig_points
+
+            # src_targets = [
+            #     input_pose.name for input_pose in pose.get_all_input_poses()
+            # ]
+
+            # TODO figure out what I'm doing wrong here!
+            targets_deltas = []
+
+            for input_pose in pose.get_all_input_poses():
+                target = input_pose.name
+
+                if target in correctives_dict:
+                    target_points = mhMayaUtils.get_points(correctives_dict[target], as_numpy=True)
+                    target_delta = target_points - orig_points
+                else:
+                    target_delta = mhBlendshape.get_target_delta(bs_node, target, as_numpy=True)
+
+                targets_deltas.append(target_delta)
+
+            src_delta = numpy.sum(targets_deltas, axis=0)
+
+            # points = orig_points + delta - src_delta
+            points -= src_delta
+
+            mhMayaUtils.set_points(inverted, points)
+
+    # apply correctives
+    LOG.info("applying correctives")
+
+    for pose, target_index, ib_index, ib_value, inverted in correctives:
+        if rebuild:
+            # apply corrective as blendshape
+            target_mesh, target_bs_node = mhBlendshape.rebuild_target(
+                bs_node, target_index, parent=target_group, create_blendshape=True, inbetween_value=ib_value
+            )
+
+            mhBlendshape.append_blendshape_targets(
+                target_bs_node, target_mesh, inverted, default_weight=1.0
+            )
+
+        else:
+            # apply corrective delta directly
+            # TODO test!
+            inverted_points = mhMayaUtils.get_points(inverted, as_numpy=True)
+            delta = inverted_points - orig_points
+            mhBlendshape.set_target_delta(bs_node, target_index, delta, in_between=ib_index)
+
+    # complete process
+    cmds.progressBar(gMainProgressBar, edit=True, endProgress=True)
+
+    # reconnect joints
+    LOG.info("reconnecting joints and targets")
+
+    for attr, cons in joint_cons.items():
+        cmds.connectAttr(cons, attr)
+
+    for attr, cons in target_cons.items():
+        cmds.connectAttr(cons, attr)
+
+    # transfer skin weights
+    # TODO
+
+    # return
+    LOG.info("Done")
+
+    return True
