@@ -60,6 +60,7 @@
       "description": "jawOpen first order combos",
       "enabled": true,
       "combos": [
+        ["jawOpen", "jawLeft"],
         ["jawOpen", "teethFwdD"],
         ["jawOpen", "teethBackD"],
         ["jawOpen", "teethUpD"],

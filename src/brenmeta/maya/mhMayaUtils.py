@@ -787,3 +787,48 @@ def get_all_parents(transform, parents=None):
         parents = get_all_parents(parent, parents=parents)
 
     return parents
+
+def transfer_skin(src_mesh, dst_mesh):
+    # get skin cluster
+    src_skin = find_related_skin_cluster(src_mesh)
+
+    # get weights
+    src_mesh_dag = parse_dag_path(src_mesh)
+    src_m_skin = parse_m_object(src_skin)
+
+    components = OpenMaya.MObject()
+    src_m_skin = OpenMayaAnim.MFnSkinCluster(src_m_skin)
+    weights, influence_count = src_m_skin.getWeights(src_mesh_dag, components)
+
+    # assign dst skin
+    src_influences = cmds.skinCluster(src_skin, query=True, influence=True)
+
+    dst_skin = cmds.skinCluster(
+        src_influences,
+        dst_mesh,
+        toSelectedBones=True,
+        name="{}_skinCluster".format(dst_mesh)
+    )[0]
+
+    # set weights
+    dst_mesh_dag = parse_dag_path(dst_mesh)
+    dst_mesh_fn = OpenMaya.MFnMesh(dst_mesh_dag)
+    dst_m_skin = parse_m_object(dst_skin)
+
+    point_count = dst_mesh_fn.numVertices
+    vertex_ids = [i for i in range(point_count)]
+
+    component = OpenMaya.MFnSingleIndexedComponent()
+    component.create(OpenMaya.MFn.kMeshVertComponent)
+    component.addElements(vertex_ids)
+    components = component.object()
+
+    dst_m_skin = OpenMayaAnim.MFnSkinCluster(dst_m_skin)
+
+    influences = OpenMaya.MIntArray(range(len(dst_m_skin.influenceObjects())))
+
+    dst_m_skin.setWeights(
+        dst_mesh_dag, components, influences, weights
+    )
+
+    return True

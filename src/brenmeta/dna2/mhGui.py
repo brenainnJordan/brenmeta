@@ -1733,17 +1733,30 @@ class DnaBakeRigWidget(DnaTab):
 
         self.dna_file_combo = mhWidgets.DnaPathManagerWidget(self.path_manager, "dna file")
 
-        # self.config_file_widget = mhWidgets.PathOpenWidget("bake config")
-        # self.config_file_widget.filter = "json files (*.json)"
-        # self.config_file_widget.path = self.path_manager.bake_config_path
-
         self.inspect_config_btn = QtWidgets.QPushButton("inspect bake config")
         self.inspect_config_btn.clicked.connect(self._inspect_clicked)
 
-        # bake group box
-        self.bake_group_box = QtWidgets.QGroupBox("bake")
+        self.tabs = QtWidgets.QTabWidget()
+
+        # build
+        self.bake_tab = QtWidgets.QWidget()
         bake_lyt = QtWidgets.QVBoxLayout()
-        self.bake_group_box.setLayout(bake_lyt)
+        self.bake_tab.setLayout(bake_lyt)
+
+        self.build_label = QtWidgets.QLabel(
+            "This process will take the 'live' metahuman rig and bake it fully to blendshapes.\n"
+            "\n"
+            "All poses and combos present in the dna file will be baked and rig logic reproduced.\n"
+            "\n"
+            "Use the bake config file to add new combos or extra shapes, in-betweens, etc.\n"
+            "\n"
+            "Joints used to drive the other meshes such as the teeth and eyes will be kept,\n"
+            "all redundant joints are deleted, unless specified in the config file.\n"
+            "\n"
+            "Neck corrective readers and targets are also added, as defined by the config file.\n"
+        )
+
+        bake_lyt.addWidget(self.build_label)
 
         self.bake_shapes_checkbox = QtWidgets.QCheckBox("bake shapes")
         self.calculate_psd_deltas_checkbox = QtWidgets.QCheckBox("calculate psd deltas")
@@ -1770,6 +1783,14 @@ class DnaBakeRigWidget(DnaTab):
         self.build_btn.clicked.connect(self._build_clicked)
 
         bake_lyt.addWidget(self.build_btn)
+        bake_lyt.addStretch()
+
+        self.tabs.addTab(self.bake_tab, "build")
+
+        # edit tab
+        self.edit_tab = QtWidgets.QWidget()
+        edit_lyt = QtWidgets.QVBoxLayout()
+        self.edit_tab.setLayout(edit_lyt)
 
         # disconnect group box
         self.disconnect_group_box = QtWidgets.QGroupBox("disconnect")
@@ -1855,18 +1876,55 @@ class DnaBakeRigWidget(DnaTab):
         bake_driven_lyt.addWidget(self.bake_driven_cleanup_checkbox)
         bake_driven_lyt.addWidget(self.bake_driven_btn)
 
+
+        # extract pose correctives group box
+        self.extract_correctives_group_box = QtWidgets.QGroupBox("extract correctives")
+
+        extract_correctives_lyt = QtWidgets.QVBoxLayout()
+        self.extract_correctives_group_box.setLayout(extract_correctives_lyt)
+
+        self.correctives_mesh_widget = mhWidgets.NodeLineEdit(
+            default="head_lod0_mesh", label="mesh", label_width=100
+        )
+
+        self.correctives_bs_node_widget = mhWidgets.NodeLineEdit(
+            default="head_lod0_blendShape", label="blendshape", label_width=100
+        )
+
+        self.correctives_skinned_mesh_widget = mhWidgets.NodeLineEdit(
+            label="skinned mesh", label_width=100
+        )
+
+        self.extract_correctives_cleanup_checkbox = QtWidgets.QCheckBox("cleanup")
+
+        self.extract_correctives_cleanup_checkbox.setChecked(True)
+
+        self.extract_correctives_btn = QtWidgets.QPushButton("extract correctives")
+        self.extract_correctives_btn.clicked.connect(self._extract_correctives_clicked)
+
+        extract_correctives_lyt.addWidget(self.correctives_mesh_widget)
+        extract_correctives_lyt.addWidget(self.correctives_bs_node_widget)
+        extract_correctives_lyt.addWidget(self.correctives_skinned_mesh_widget)
+        extract_correctives_lyt.addWidget(self.extract_correctives_cleanup_checkbox)
+        extract_correctives_lyt.addWidget(self.extract_correctives_btn)
+
+        # edit layout
+        edit_lyt.addWidget(self.disconnect_group_box)
+        edit_lyt.addWidget(self.reconnect_group_box)
+        edit_lyt.addWidget(self.bake_driven_group_box)
+        edit_lyt.addWidget(self.extract_correctives_group_box)
+        edit_lyt.addStretch()
+
+        self.tabs.addTab(self.edit_tab, "edit")
+        self.tabs.setCurrentIndex(0)
+
         # create layout
         lyt = QtWidgets.QVBoxLayout()
         self.setLayout(lyt)
 
         lyt.addWidget(self.dna_file_combo)
-        # lyt.addWidget(self.config_file_widget)
         lyt.addWidget(self.inspect_config_btn)
-        lyt.addWidget(self.bake_group_box)
-        lyt.addWidget(self.disconnect_group_box)
-        lyt.addWidget(self.reconnect_group_box)
-        lyt.addWidget(self.bake_driven_group_box)
-        lyt.addStretch()
+        lyt.addWidget(self.tabs)
 
     def _inspect_clicked(self):
         """
@@ -2073,6 +2131,62 @@ class DnaBakeRigWidget(DnaTab):
             connect=self.bake_driven_connect_checkbox.isChecked(),
             targets_only=self.bake_driven_targets_only_checkbox.isChecked()
         )
+
+    def _extract_correctives_clicked(self):
+
+        # get paths
+        dna_path = self.dna_file_combo.get_path()
+        bake_config_file = self.path_manager.bake_config_path
+
+        # check we have paths
+        if not dna_path:
+            self.error("No source DNA path given")
+            return False
+
+        if not bake_config_file:
+            self.error("No bake config path given")
+            return False
+
+        # confirm with user
+        confirm = QtWidgets.QMessageBox.warning(
+            self,
+            "confirm",
+            "This will extract correctives in the scene as defined by dna file, config and skinned mesh:\n\n{}\n\n{}\n\n{}\n\nContinue?".format(
+                dna_path, bake_config_file, self.correctives_skinned_mesh_widget.node
+            ),
+            QtWidgets.QMessageBox.Ok | QtWidgets.QMessageBox.Cancel
+        )
+
+        if confirm is QtWidgets.QMessageBox.Cancel:
+            return False
+
+
+        try:
+            poses, psd_poses, joints_attr_defaults, bake_config = mhBakeRig.load_poses_v2(
+                dna_path, bake_config_file
+            )
+
+            mhBakeRig.extract_pose_correctives(
+                poses,
+                psd_poses,
+                self.correctives_mesh_widget.node,
+                self.correctives_bs_node_widget.node,
+                self.correctives_skinned_mesh_widget.node,
+                bake_config,
+                cleanup=self.extract_correctives_cleanup_checkbox.isChecked()
+            )
+
+            QtWidgets.QMessageBox.information(
+                self,
+                "Success",
+                "Extract correctives complete",
+                QtWidgets.QMessageBox.Ok
+            )
+
+        except Exception as err:
+            self.error(err)
+
+        return True
 
     def update_assets(self):
         self.dna_file_combo.update_assets()

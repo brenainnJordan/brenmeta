@@ -314,10 +314,13 @@ class PSDPose(object):
 
         return True
 
-    def get_all_input_poses(self):
+    def get_all_input_poses(self, include_psds=False):
         poses = set(self.input_poses)
 
         for input_psd_pose in self.input_psd_poses:
+            if include_psds:
+                poses.add(input_psd_pose.pose)
+
             poses.update(input_psd_pose.get_all_input_poses())
 
         # sort by index
