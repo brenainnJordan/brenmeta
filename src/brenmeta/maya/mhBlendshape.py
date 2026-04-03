@@ -159,7 +159,7 @@ def get_blendshape_target_index(bs_node, target_name):
     # aliases = get_blendshape_weight_aliases(bs_node)
     weight_indices = cmds.getAttr("{}.weight".format(bs_node), multiIndices=True)
 
-    for target_index, weight_index in weight_indices:
+    for target_index, weight_index in enumerate(weight_indices):
         alias = cmds.aliasAttr("{}.weight[{}]".format(bs_node, i), query=True)
         if target_name == alias:
             return target_index, weight_index
