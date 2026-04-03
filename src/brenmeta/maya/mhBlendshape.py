@@ -146,8 +146,10 @@ def get_blendshape_weight_aliases(bs_node, as_dict=False):
 
 
 def get_blendshape_weight_alias(bs_node, target_index):
+    weight_indices = cmds.getAttr("{}.weight".format(bs_node), multiIndices=True)
+
     alias = cmds.aliasAttr(
-        "{}.weight[{}]".format(bs_node, target_index), query=True
+        "{}.weight[{}]".format(bs_node, weight_indices[target_index]), query=True
     )
 
     return alias
@@ -157,17 +159,17 @@ def get_blendshape_target_index(bs_node, target_name):
     # aliases = get_blendshape_weight_aliases(bs_node)
     weight_indices = cmds.getAttr("{}.weight".format(bs_node), multiIndices=True)
 
-    for i in weight_indices:
+    for target_index, weight_index in weight_indices:
         alias = cmds.aliasAttr("{}.weight[{}]".format(bs_node, i), query=True)
         if target_name == alias:
-            return i
+            return target_index, weight_index
 
-    return None
+    return None, None
 
 
 def parse_target_arg(bs_node, target):
     if isinstance(target, str):
-        target_index = get_blendshape_target_index(bs_node, target)
+        target_index, weight_index = get_blendshape_target_index(bs_node, target)
         target_name = target
     elif isinstance(target, int):
         target_index = target
@@ -250,7 +252,7 @@ def append_blendshape_targets(bs_node, base_mesh, target, default_weight=0.0):
 
 
 def add_in_between_target(bs_node, base_mesh, target, in_between_target, in_between_value):
-    target_index = get_blendshape_target_index(bs_node, target)
+    target_index, weight_index = get_blendshape_target_index(bs_node, target)
 
     if target_index is None:
         raise mhCore.MHError(
@@ -390,7 +392,7 @@ class BlendshapeTargetPlugs(object):
 
         if isinstance(target, str):
             self.target_alias = target
-            self.target = get_blendshape_target_index(self.bs_fn.name(), target)
+            self.target, self.weight_index = get_blendshape_target_index(self.bs_fn.name(), target)
 
             if self.target is None:
                 raise mhCore.MHError("target not found: {} {}".format(bs_node, target))
@@ -398,6 +400,7 @@ class BlendshapeTargetPlugs(object):
         elif isinstance(target, int):
             self.target_alias = get_blendshape_weight_alias(self.bs_fn.name(), target)
             self.target = target
+            _, self.weight_index = get_blendshape_target_index(self.bs_fn.name(), target)
         else:
             raise mhCore.MHError("target not recognised: {} {}".format(bs_node, target))
 
@@ -925,7 +928,7 @@ def apply_sculpts(bs_node, sculpts, sculpt_prefix, rebuild=True):
         for sculpt in sorted_sculpts[token_count]:
             target = sculpt[len(sculpt_prefix):]
 
-            if get_blendshape_target_index(bs_node, target) is None:
+            if get_blendshape_target_index(bs_node, target)[0] is None:
                 LOG.warning("Target not found: {} -> {}.{}".format(sculpt, bs_node, target))
                 continue
 
@@ -964,7 +967,7 @@ def create_proxy_combo(
 
     for target in targets:
         if isinstance(target, str):
-            target_index = get_blendshape_target_index(bs_node, target)
+            target_index, weight_index = get_blendshape_target_index(bs_node, target)
             target_name = target
         else:
             target_index = target
@@ -1007,7 +1010,7 @@ def create_proxy_combo(
     if ref_targets:
         for target in ref_targets:
             if isinstance(target, str):
-                target_index = get_blendshape_target_index(bs_node, target)
+                target_index, weight_index = get_blendshape_target_index(bs_node, target)
                 target_name = target
             else:
                 target_index = target

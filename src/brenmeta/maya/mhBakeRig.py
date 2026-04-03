@@ -1219,7 +1219,7 @@ def reconnect(
             new_shapes += [psd_pose.pose.name for psd_pose in new_psd_poses]
 
             for shape_name in new_shapes:
-                if mhBlendshape.get_blendshape_target_index(bs_node, shape_name) is not None:
+                if mhBlendshape.get_blendshape_target_index(bs_node, shape_name)[0] is not None:
                     continue
 
                 LOG.info("Adding target: {}.{}".format(bs_node, shape_name))
@@ -1358,7 +1358,7 @@ def extract_pose_correctives(
             psd_poses_to_calculate[i] = pose
 
         # get data
-        target_index = mhBlendshape.get_blendshape_target_index(bs_node, pose_name)
+        target_index, weight_index = mhBlendshape.get_blendshape_target_index(bs_node, pose_name)
         plugs = mhBlendshape.BlendshapeTargetPlugs(bs_node, target_index)
         ib_values, ib_indices = plugs.get_inbetween_values()
 
@@ -1413,7 +1413,7 @@ def extract_pose_correctives(
         if not pose.affects_joints(driven_joints):
             continue
 
-        target_index = mhBlendshape.get_blendshape_target_index(bs_node, pose_name)
+        target_index, weight_index = mhBlendshape.get_blendshape_target_index(bs_node, pose_name)
 
         cmds.blendShape(
             bs_node,
@@ -1470,7 +1470,7 @@ def extract_pose_correctives(
             LOG.info("  {}".format(pose_name))
 
             # get data
-            target_index = mhBlendshape.get_blendshape_target_index(bs_node, pose_name)
+            target_index, weight_index = mhBlendshape.get_blendshape_target_index(bs_node, pose_name)
             plugs = mhBlendshape.BlendshapeTargetPlugs(bs_node, target_index)
             ib_values, ib_indices = plugs.get_inbetween_values()
 
@@ -1518,7 +1518,7 @@ def extract_pose_correctives(
     LOG.info("applying correctives")
 
     for pose_name, corrective_data in correctives_dict.items():
-        target_index = mhBlendshape.get_blendshape_target_index(bs_node, pose_name)
+        target_index, weight_index = mhBlendshape.get_blendshape_target_index(bs_node, pose_name)
 
         for value, ib_index, corrective in corrective_data:
             # apply corrective delta directly
