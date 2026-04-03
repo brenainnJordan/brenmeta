@@ -116,7 +116,9 @@ class BakeConfig(object):
         config.keep_joints = data["keep_joints"]
         config.delete = data["delete"]
         config.root_joints = data["root_joints"]
-        config.readers = data["readers"]
+
+        if "readers" in data:
+            config.readers = data["readers"]
 
         # parse additional shapes and optionally their in-betweens
         if data["shapes"]:
@@ -890,6 +892,10 @@ def calculate_psd_deltas(bs_node, psd_poses, in_betweens, detailed_verbose=True,
             pose.name for pose in psd_pose.input_poses if pose.name in all_targets
         ]
 
+        if not src_targets:
+            LOG.warning("No source targets found: {}".format(psd_pose.pose.name))
+            continue
+
         if detailed_verbose:
             LOG.info("    {}".format(psd_pose.pose.name))
 
@@ -1290,6 +1296,11 @@ def extract_pose_correctives(
     # get targets
     targets = mhBlendshape.get_blendshape_weight_aliases(bs_node)
 
+    if len(targets) > len(poses):
+        LOG.warning("There are more targets than poses: {} targets({}) {} poses".format(
+            len(targets), bs_node, len(poses)
+        ))
+
     # get points
     orig_mesh = mhMayaUtils.get_orig_mesh(bs_node, as_name=True)
     orig_points = mhMayaUtils.get_points(orig_mesh, as_numpy=True)
@@ -1354,7 +1365,7 @@ def extract_pose_correctives(
         if not pose.affects_joints(driven_joints):
             continue
 
-        if i in psd_poses:
+        if i in psd_poses and len(relevant_shapes) > 1:
             psd_poses_to_calculate[i] = pose
 
         # get data

@@ -146,7 +146,10 @@ def get_blendshape_weight_aliases(bs_node, as_dict=False):
 
 
 def get_blendshape_weight_alias(bs_node, target_index):
-    # weight_indices = cmds.getAttr("{}.weight".format(bs_node), multiIndices=True)
+    weight_indices = cmds.getAttr("{}.weight".format(bs_node), multiIndices=True)
+
+    if target_index not in weight_indices:
+        raise mhCore.MHError("Target index not found: {} {}".format(bs_node, target_index))
 
     alias = cmds.aliasAttr(
         "{}.weight[{}]".format(bs_node, target_index), query=True
@@ -379,7 +382,7 @@ class BlendshapeTargetPlugs(object):
     """
     """
 
-    def __init__(self, bs_node, target, in_between=None):
+    def __init__(self, bs_node, target, in_between=None, init=True):
 
         self.in_between = in_between
 
@@ -438,11 +441,17 @@ class BlendshapeTargetPlugs(object):
                 self.input_target_item_indexed = self.input_target_item.elementByLogicalIndex(
                     item_indices[-1]
                 )
-        else:
-            LOG.info("WARNING target has no existing input items: {} - {}".format(self.target, self.target_alias))
+        elif init:
+            LOG.info("WARNING target has no existing input items, initializing new element: {} - {}".format(
+                self.target, self.target_alias)
+            )
 
             self.input_target_item_indexed = self.input_target_item.elementByLogicalIndex(
                 6000
+            )
+        else:
+            raise mhCore.MHError("Blendshape target has no input target items: {} index:{} alias:{}".format(
+                bs_node, self.target, self.target_alias)
             )
 
         self.input_geom = self.input_target_item_indexed.child(0)

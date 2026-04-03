@@ -20,6 +20,7 @@
 """
 
 import os
+import traceback
 
 from maya import cmds
 from maya import OpenMayaUI
@@ -66,6 +67,8 @@ class DnaTab(QtWidgets.QWidget):
 
     def error(self, err):
         # TODO traceback
+
+        print(traceback.format_exc())
 
         LOG.critical(str(err))
 
@@ -1876,7 +1879,6 @@ class DnaBakeRigWidget(DnaTab):
         bake_driven_lyt.addWidget(self.bake_driven_cleanup_checkbox)
         bake_driven_lyt.addWidget(self.bake_driven_btn)
 
-
         # extract pose correctives group box
         self.extract_correctives_group_box = QtWidgets.QGroupBox("extract correctives")
 
@@ -1931,7 +1933,7 @@ class DnaBakeRigWidget(DnaTab):
         """
         # get paths
         dna_path = self.dna_file_combo.get_path()
-        bake_config_file = self.config_file_widget.path
+        bake_config_file = self.path_manager.bake_config_path
 
         # check we have paths
         if not dna_path:
@@ -1977,7 +1979,31 @@ class DnaBakeRigWidget(DnaTab):
         new_targets = list(bake_config.shapes)
         new_targets += [psd_pose.pose.name for psd_pose in new_psd_poses]
 
-        target_text = "\n".join(new_targets)
+        target_text = (
+            "meshes: \n{}  \n\n"
+            "\n"
+            "total targets: {}\n\n"
+            "additional shapes: {}\n\n"
+            "readers: {}\n\n"
+            "new targets:\n  "
+            "{}\n"
+            "\n"
+        ).format(
+            "\n  ".join([a for a, b in bake_config.mesh_blendshapes]),
+            len(new_targets),
+            len(bake_config.shapes),
+            len(bake_config.readers),
+            "\n  ".join(new_targets)
+        )
+
+        # self.mesh_blendshapes = None
+        # self.shapes = None
+        # self.in_betweens = None
+        # self.pose_joints = None
+        # self.keep_joints = None
+        # self.delete = None
+        # self.root_joints = None
+        # self.readers = None
 
         dialog = mhWidgets.DebugDialog(target_text, parent=self)
         dialog.setWindowTitle("Bake debug")
@@ -2159,7 +2185,6 @@ class DnaBakeRigWidget(DnaTab):
 
         if confirm is QtWidgets.QMessageBox.Cancel:
             return False
-
 
         try:
             poses, psd_poses, joints_attr_defaults, bake_config = mhBakeRig.load_poses_v2(
