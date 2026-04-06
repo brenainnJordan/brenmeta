@@ -867,6 +867,15 @@ def bake_shapes_from_poses(mesh_blendshapes, poses, psd_poses, in_betweens, deta
 
 
 def calculate_psd_deltas(bs_node, psd_poses, in_betweens, detailed_verbose=True, optimise=True, calculate_inputs=True):
+    """
+    Note we always use the pose names to find the targets instead of the pose index
+    as the target index may not match the corresponding pose
+    (for example if targets have been added or removed)
+
+    In the case that targets have been renamed, and the pose name no longer matches,
+    it's better to fail and stop the process, than continue and have unexpected results.
+
+    """
     gMainProgressBar = mel.eval('$tmp = $gMainProgressBar')
 
     all_targets = mhBlendshape.get_blendshape_weight_aliases(bs_node)
@@ -1319,7 +1328,8 @@ def extract_pose_correctives(
 
     for joint in list(driven_joints):
         parents = mhMayaUtils.get_all_parents(joint)
-        driven_joints.update(parents)
+        parent_joints = cmds.ls(parents, type="joint")
+        driven_joints.update(parent_joints)
 
     driven_joints = list(driven_joints)
 

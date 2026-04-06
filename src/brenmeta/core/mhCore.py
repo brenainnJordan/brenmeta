@@ -213,7 +213,10 @@ class Pose(object):
         return True
 
     def affects_joint(self, joint):
-        for attr in self.deltas.keys():
+        for attr, value in self.deltas.items():
+            if value == 0.0:
+                continue
+
             attr_joint, attr = attr.split(".")
 
             if attr_joint == joint:
