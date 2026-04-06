@@ -427,6 +427,33 @@ def add_combo_pose_permutations(poses, psd_poses, joints_attr_defaults, pose_nam
     pass
 
 
+def update_input_psd_poses(psd_poses):
+    """add input psds for 3+ way combos
+    """
+    for psd_pose in psd_poses.values():
+        if len(psd_pose.input_poses) < 3:
+            continue
+
+        for input_psd_pose in psd_poses.values():
+            if input_psd_pose is psd_pose:
+                continue
+
+            if input_psd_pose in psd_pose.input_psd_poses:
+                continue
+
+            if len(input_psd_pose.input_poses) >= len(psd_pose.input_poses):
+                continue
+
+            # check if all input_psd_pose input poses are contained
+            # within the input psd poses for this psd
+            if all([
+                pose in psd_pose.input_poses for pose in input_psd_pose.input_poses
+            ]):
+                psd_pose.input_psd_poses.append(input_psd_pose)
+
+    return psd_poses
+
+
 class Project(object):
     def __init__(self):
         self.input_dna_path = None

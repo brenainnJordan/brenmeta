@@ -1537,6 +1537,8 @@ class DnaQCWidget(DnaTab):
                         poses, psd_poses, bake_config.combos, joints_attr_defaults
                     )
 
+                    mhCore.update_input_psd_poses(psd_poses)
+
                 # # get additional combos from mhBakeRig global attr for now
                 # # TODO refactor tool to make this more global
                 # from brenmeta.maya import mhBakeRig
@@ -1975,6 +1977,8 @@ class DnaBakeRigWidget(DnaTab):
         _, _, new_psd_poses = mhCore.add_additional_combo_poses(
             poses, psd_poses, bake_config.combos, joints_attr_defaults
         )
+
+        mhCore.update_input_psd_poses(psd_poses)
 
         new_targets = list(bake_config.shapes)
         new_targets += [psd_pose.pose.name for psd_pose in new_psd_poses]

@@ -190,6 +190,8 @@ def load_poses_v2(dna_file, bake_config_file):
             poses, psd_poses, bake_config.combos, joints_attr_defaults
         )
 
+        mhCore.update_input_psd_poses(psd_poses)
+
     return poses, psd_poses, joints_attr_defaults, bake_config
 
 
@@ -946,6 +948,10 @@ def calculate_psd_deltas(bs_node, psd_poses, in_betweens, detailed_verbose=True,
                     pose.pose.index for pose in psd_pose.input_psd_poses
                 ]
 
+                if not src_targets:
+                    LOG.warning("No input psd poses found: {}".format(psd_pose.pose.name))
+                    continue
+
                 if detailed_verbose:
                     LOG.info("    {}".format(psd_pose.pose.name))
 
@@ -1007,6 +1013,8 @@ def bake_rig(
         mhCore.add_additional_combo_poses(
             poses, psd_poses, bake_config.combos, joints_attr_defaults
         )
+
+        mhCore.update_input_psd_poses(psd_poses)
 
     # break joint connections
     if bake_shapes or connect_joints:
@@ -1201,6 +1209,9 @@ def reconnect(
         _, _, new_psd_poses = mhCore.add_additional_combo_poses(
             poses, psd_poses, bake_config.combos, joints_attr_defaults
         )
+
+        mhCore.update_input_psd_poses(psd_poses)
+
     else:
         new_psd_poses = []
 
