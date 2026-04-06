@@ -944,8 +944,11 @@ def calculate_psd_deltas(bs_node, psd_poses, in_betweens, detailed_verbose=True,
                 if len(psd_pose.input_poses) != combo_count:
                     continue
 
+                if psd_pose.pose.name not in all_targets:
+                    continue
+
                 src_targets = [
-                    pose.pose.index for pose in psd_pose.input_psd_poses
+                    pose.pose.name for pose in psd_pose.input_psd_poses
                 ]
 
                 if not src_targets:
@@ -954,12 +957,7 @@ def calculate_psd_deltas(bs_node, psd_poses, in_betweens, detailed_verbose=True,
 
                 if detailed_verbose:
                     LOG.info("    {}".format(psd_pose.pose.name))
-
-                    src_target_names = [
-                        pose.pose.name for pose in psd_pose.input_psd_poses
-                    ]
-
-                    LOG.info("      - {}".format(src_target_names))
+                    LOG.info("      - {}".format(src_targets))
 
                 weights = [1.0] * len(src_targets)
 
@@ -967,7 +965,7 @@ def calculate_psd_deltas(bs_node, psd_poses, in_betweens, detailed_verbose=True,
                     bs_node,
                     src_targets,
                     weights,
-                    psd_pose.pose.index,
+                    psd_pose.pose.name,
                     optimise=optimise,
                 )
 
