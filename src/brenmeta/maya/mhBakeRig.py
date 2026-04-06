@@ -1345,6 +1345,28 @@ def extract_pose_correctives(
     sculpts_group = cmds.createNode("transform", name="sculpts_grp")
     correctives_group = cmds.createNode("transform", name="correctives_grp")
 
+    # determine which poses affect driven joints
+    LOG.info("Driver poses:")
+
+    driver_poses = {}
+
+    for i, pose in enumerate(poses):
+        if pose.name not in targets:
+            continue
+
+        pose_name = pose.name
+        relevant_shapes = [pose_name]
+
+        if i in psd_poses:
+            pose = psd_poses[i]
+
+        if not pose.affects_joints(driven_joints):
+            continue
+
+        driver_poses[i] = pose
+
+        LOG.info("  {}".format(pose))
+
     # extract "sculpts" from shapes
     LOG.info("Extracting sculpts...")
 
@@ -1356,36 +1378,54 @@ def extract_pose_correctives(
         beginProgress=True,
         isInterruptable=True,
         status='Extracting sculpts...',
-        maxValue=len(poses)
+        maxValue=len(driver_poses)
     )
 
     sculpts_dict = {}
     psd_poses_to_calculate = {}
 
-    for i, pose in enumerate(poses):
+    # for i, pose in enumerate(poses):
+    #     if cmds.progressBar(gMainProgressBar, query=True, isCancelled=True):
+    #         return False
+    #
+    #     cmds.progressBar(gMainProgressBar, edit=True, step=1)
+    #
+    #     if pose.name not in targets:
+    #         continue
+    #
+    #     pose_name = pose.name
+    #     relevant_shapes = [pose_name]
+    #
+    #     if i in psd_poses:
+    #         pose = psd_poses[i]
+    #
+    #         relevant_shapes += [
+    #             input_pose.name for input_pose in pose.get_all_input_poses(include_psds=True)
+    #         ]
+    #
+    #     if not pose.affects_joints(driven_joints):
+    #         continue
+
+    for i, pose in driver_poses.items():
         if cmds.progressBar(gMainProgressBar, query=True, isCancelled=True):
             return False
 
         cmds.progressBar(gMainProgressBar, edit=True, step=1)
 
-        if pose.name not in targets:
-            continue
-
-        pose_name = pose.name
-        relevant_shapes = [pose_name]
-
-        if i in psd_poses:
-            pose = psd_poses[i]
+        if isinstance(pose, mhCore.PSDPose):
+            pose_name = pose.pose.name
+            relevant_shapes = [pose_name]
 
             relevant_shapes += [
                 input_pose.name for input_pose in pose.get_all_input_poses(include_psds=True)
             ]
 
-        if not pose.affects_joints(driven_joints):
-            continue
+            if len(relevant_shapes) > 1:
+                psd_poses_to_calculate[i] = pose
 
-        if i in psd_poses and len(relevant_shapes) > 1:
-            psd_poses_to_calculate[i] = pose
+        else:
+            pose_name = pose.name
+            relevant_shapes = [pose_name]
 
         # get data
         logical_index, target_index = mhBlendshape.get_blendshape_target_index(bs_node, pose_name)
@@ -1431,17 +1471,11 @@ def extract_pose_correctives(
     # reset deltas on all relevant targets
     LOG.info("Resetting deltas...")
 
-    for i, pose in enumerate(poses):
-        if pose.name not in targets:
-            continue
-
-        pose_name = pose.name
-
-        if i in psd_poses:
-            pose = psd_poses[i]
-
-        if not pose.affects_joints(driven_joints):
-            continue
+    for pose in driver_poses.values():
+        if isinstance(pose, mhCore.PSDPose):
+            pose_name = pose.pose.name
+        else:
+            pose_name = pose.name
 
         logical_index, target_index = mhBlendshape.get_blendshape_target_index(bs_node, pose_name)
 
@@ -1462,23 +1496,20 @@ def extract_pose_correctives(
         beginProgress=True,
         isInterruptable=True,
         status='Extracting correctives...',
-        maxValue=len(poses)
+        maxValue=len(driver_poses)
     )
 
     correctives_dict = {}
 
     for combo_count in range(1, 10):
-        for i, pose in enumerate(poses):
+        for i, pose in driver_poses.items():
             if cmds.progressBar(gMainProgressBar, query=True, isCancelled=True):
                 return False
 
-            pose_name = pose.name
-
-            if pose.name not in targets:
-                continue
-
-            if i in psd_poses:
-                pose = psd_poses[i]
+            if isinstance(pose, mhCore.PSDPose):
+                pose_name = pose.pose.name
+            else:
+                pose_name = pose.name
 
             if combo_count == 1:
                 # primary only, skip combos
@@ -1493,9 +1524,6 @@ def extract_pose_correctives(
                     continue
 
             cmds.progressBar(gMainProgressBar, edit=True, step=1)
-
-            if not pose.affects_joints(driven_joints):
-                continue
 
             LOG.info("  {}".format(pose_name))
 
