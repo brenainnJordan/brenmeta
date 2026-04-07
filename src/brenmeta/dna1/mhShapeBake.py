@@ -290,6 +290,7 @@ bmMhFaceShapeBake.bake_shapes(
 
     for pose_index, pose in enumerate(poses):
         if cmds.progressBar(gMainProgressBar, query=True, isCancelled=True):
+            cmds.progressBar(gMainProgressBar, edit=True, endProgress=True)
             return False
 
         cmds.progressBar(gMainProgressBar, edit=True, step=1)
@@ -361,6 +362,7 @@ bmMhFaceShapeBake.bake_shapes(
 
         for pose_index, psd_pose in psd_poses.items():
             if cmds.progressBar(gMainProgressBar, query=True, isCancelled=True):
+                cmds.progressBar(gMainProgressBar, edit=True, endProgress=True)
                 return False
 
             cmds.progressBar(gMainProgressBar, edit=True, step=1)

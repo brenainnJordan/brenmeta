@@ -122,7 +122,12 @@ class PathWidgetBase(LabelledLineEdit):
 
     @property
     def path(self):
-        return self.line_edit.text()
+        path = self.line_edit.text()
+
+        if not path:
+            return None
+        else:
+            return path
 
     @path.setter
     def path(self, value):

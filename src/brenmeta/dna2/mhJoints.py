@@ -33,18 +33,26 @@ def get_joint_index(reader, joint_name):
 
 
 def reset_scene_joint_xforms(reader, err=False):
+    missing_joints = False
+
     for i in range(reader.getJointCount()):
         joint = reader.getJointName(i)
 
         if not cmds.objExists(joint):
             if err:
                 raise mhCore.MHError("Joint not found: {}".format(joint))
+            else:
+                missing_joints = True
+                continue
 
         translation = reader.getNeutralJointTranslation(i)
 
         cmds.xform(
             joint, translation=translation, rotation=(0, 0, 0)
         )
+
+    if missing_joints:
+        LOG.warning("Some joints were not found")
 
     return True
 

@@ -36,6 +36,7 @@ from brenmeta.maya.mhMayaUtils import points_equal
 LOG = mhCore.get_basic_logger(__name__)
 
 COMBO_NET = "combo_network"
+READER_GROUP = "reader_grp"
 
 
 class BakeConfig(object):
@@ -91,6 +92,7 @@ class BakeConfig(object):
         self.keep_joints = None
         self.delete = None
         self.root_joints = None
+        self.readers = None
 
     @classmethod
     def load(cls, file_path):
@@ -108,12 +110,27 @@ class BakeConfig(object):
             )
 
         config.mesh_blendshapes = data["mesh_blendshapes"]
-        config.shapes = data["shapes"]
+        # config.shapes = data["shapes"]
         config.in_betweens = data["in_betweens"]
         config.pose_joints = data["pose_joints"]
         config.keep_joints = data["keep_joints"]
         config.delete = data["delete"]
         config.root_joints = data["root_joints"]
+
+        if "readers" in data:
+            config.readers = data["readers"]
+
+        # parse additional shapes and optionally their in-betweens
+        if data["shapes"]:
+            config.shapes = []
+
+            for shape in data["shapes"]:
+                if isinstance(shape, list):
+                    shape, in_betweens = shape
+                    config.shapes.append(shape)
+                    config.in_betweens[shape] = in_betweens
+                else:
+                    config.shapes.append(shape)
 
         config.combos = [
             combo for combo_data in data["combos"]
@@ -128,6 +145,54 @@ def delete_redundant_joints(keep_joints, pose_joints):
     joints = cmds.ls(type="joint")
     joints = [i for i in joints if i not in keep_joints + pose_joints]
     cmds.delete(joints)
+
+
+def load_poses_v2(dna_file, bake_config_file):
+    from brenmeta.dna2 import mhBehaviour
+    from brenmeta.dna2 import mhSrc
+
+    import dnacalib2
+    from mh_assemble_lib.model.dnalib import DNAReader, Layer
+
+    mhSrc.validate_plugin()
+
+    # load dna data
+    LOG.info("Loading dna: {}".format(dna_file))
+
+    dna_obj = DNAReader.read(dna_file, Layer.all)
+
+    LOG.info("Getting reader...")
+    calib_reader = dnacalib2.DNACalibDNAReader(dna_obj._reader)
+
+    # get pose data
+    LOG.info("Getting pose data...")
+
+    poses = mhBehaviour.get_all_poses(calib_reader)
+    psd_poses = mhBehaviour.get_psd_poses(calib_reader, poses)
+    joints_attr_defaults = mhBehaviour.get_joint_defaults(calib_reader)
+
+    # load bake config
+    bake_config = BakeConfig.load(bake_config_file)
+
+    # create additional poses
+    if bake_config.shapes:
+        LOG.info("Adding additional poses...")
+
+        mhCore.add_additional_poses(
+            poses, bake_config.shapes, joints_attr_defaults
+        )
+
+    # create additional combos
+    if bake_config.combos:
+        LOG.info("Adding additional combo poses...")
+
+        mhCore.add_additional_combo_poses(
+            poses, psd_poses, bake_config.combos, joints_attr_defaults
+        )
+
+        mhCore.update_input_psd_poses(psd_poses)
+
+    return poses, psd_poses, joints_attr_defaults, bake_config
 
 
 def bake_shapes_from_dna_v1(
@@ -276,7 +341,171 @@ def break_joint_connections(root_joints):
     return True
 
 
-def create_driver_logic(poses, psd_poses, expressions_node, additional_shapes=None, use_combo_network=True):
+def create_cone_reader(transform, parent_space_transform, name, vector, rotation, group, smooth=True):
+    """
+    TODO connect message attributes so nodes can be safely deleted later
+    """
+
+    default_transform = "{}_readerDefault_grp".format(transform)
+
+    if not cmds.objExists(default_transform):
+        cmds.createNode(
+            "transform", name=default_transform, parent=group
+        )
+
+        matrix = cmds.xform(transform, query=True, matrix=True, worldSpace=True)
+        cmds.xform(default_transform, matrix=matrix, worldSpace=True)
+
+        cmds.parentConstraint(
+            parent_space_transform, default_transform, maintainOffset=True
+        )
+
+    cone_transform = cmds.createNode(
+        "transform",
+        name="{}_readerCone_grp".format(name),
+        parent=default_transform
+    )
+
+    cmds.xform(cone_transform, rotation=rotation)
+
+    # default vector
+    default_vector_product = cmds.createNode(
+        "vectorProduct", name="{}_default_vectorProduct".format(name)
+    )
+
+    cmds.setAttr("{}.input1".format(default_vector_product), *vector)
+
+    cmds.connectAttr(
+        "{}.worldMatrix[0]".format(default_transform),
+        "{}.matrix".format(default_vector_product)
+    )
+
+    cmds.setAttr("{}.operation".format(default_vector_product), 3)
+
+    # transform vector
+    transform_vector_product = cmds.createNode(
+        "vectorProduct", name="{}_transform_vectorProduct".format(name)
+    )
+
+    cmds.setAttr("{}.input1".format(transform_vector_product), *vector)
+
+    cmds.connectAttr(
+        "{}.worldMatrix[0]".format(transform),
+        "{}.matrix".format(transform_vector_product)
+    )
+
+    cmds.setAttr("{}.operation".format(transform_vector_product), 3)
+
+    # cone vector
+    cone_vector_product = cmds.createNode(
+        "vectorProduct", name="{}_cone_vectorProduct".format(name)
+    )
+
+    cmds.setAttr("{}.input1".format(cone_vector_product), *vector)
+
+    cmds.connectAttr(
+        "{}.worldMatrix[0]".format(cone_transform),
+        "{}.matrix".format(cone_vector_product)
+    )
+
+    cmds.setAttr("{}.operation".format(cone_vector_product), 3)
+
+    # cone angle
+    cone_angle_between = cmds.createNode(
+        "angleBetween", name="{}_cone_angleBetween".format(name)
+    )
+
+    cmds.connectAttr(
+        "{}.output".format(transform_vector_product),
+        "{}.vector1".format(cone_angle_between)
+    )
+
+    cmds.connectAttr(
+        "{}.output".format(cone_vector_product),
+        "{}.vector2".format(cone_angle_between)
+    )
+
+    # default angle
+    default_angle_between = cmds.createNode(
+        "angleBetween", name="{}_default_angleBetween".format(name)
+    )
+
+    cmds.connectAttr(
+        "{}.output".format(default_vector_product),
+        "{}.vector1".format(default_angle_between)
+    )
+
+    cmds.connectAttr(
+        "{}.output".format(cone_vector_product),
+        "{}.vector2".format(default_angle_between)
+    )
+
+    # remap
+    remap = cmds.createNode(
+        "remapValue",
+        name="{}_reader_remapValue".format(name)
+    )
+
+    cmds.connectAttr(
+        "{}.angle".format(default_angle_between),
+        "{}.inputMin".format(remap)
+    )
+
+    cmds.connectAttr(
+        "{}.angle".format(cone_angle_between),
+        "{}.inputValue".format(remap)
+    )
+
+    cmds.setAttr(
+        "{}.inputMax".format(remap), 0.0
+    )
+
+    cmds.setAttr(
+        "{}.outputMin".format(remap), 0.0
+    )
+
+    cmds.setAttr(
+        "{}.outputMax".format(remap), 1.0
+    )
+
+    if smooth:
+        cmds.setAttr(
+            "{}.value[0].value_Interp".format(remap), 2
+        )
+
+    # connect message attributes for reference
+    if not cmds.attributeQuery("nodes", node=group, exists=True):
+        cmds.addAttr(
+            group,
+            longName="nodes",
+            attributeType="message"
+        )
+
+    for node in [
+        default_vector_product,
+        transform_vector_product,
+        cone_vector_product,
+        default_angle_between,
+        cone_angle_between,
+        remap,
+    ]:
+        cmds.addAttr(
+            node,
+            longName="reader_group",
+            attributeType="message"
+        )
+
+        cmds.connectAttr(
+            "{}.nodes".format(group),
+            "{}.reader_group".format(node)
+        )
+
+    return "{}.outValue".format(remap)
+
+
+def create_driver_logic(
+        poses, psd_poses, expressions_node, additional_shapes=None, use_combo_network=True, reader_configs=None
+):
     # get expressions
     expressions = cmds.listAttr(expressions_node, userDefined=True)
 
@@ -357,6 +586,32 @@ def create_driver_logic(poses, psd_poses, expressions_node, additional_shapes=No
         else:
             # map to combo node directly
             driver_mapping[psd_pose.pose.name] = "{}.outputWeight".format(combo_node)
+
+    # create readers
+    if reader_configs:
+        group = "headRig_grp"
+
+        reader_group = cmds.createNode(
+            "transform",
+            name=READER_GROUP,
+            parent=group
+        )
+
+        for reader_config in reader_configs:
+            driver_attr = create_cone_reader(
+                reader_config["transform"],
+                reader_config["parent_space_transform"],
+                reader_config["name"],
+                reader_config["vector"],
+                reader_config["rotation"],
+                reader_group,
+                smooth=reader_config["smooth"],
+            )
+
+            cmds.connectAttr(
+                driver_attr,
+                "{}.{}".format(expressions_node, reader_config["name"])
+            )
 
     return driver_mapping
 
@@ -531,6 +786,7 @@ def bake_shapes_from_poses(mesh_blendshapes, poses, psd_poses, in_betweens, deta
 
     for pose_index, pose in enumerate(poses):
         if cmds.progressBar(gMainProgressBar, query=True, isCancelled=True):
+            cmds.progressBar(gMainProgressBar, edit=True, endProgress=True)
             return False
 
         cmds.progressBar(gMainProgressBar, edit=True, step=1)
@@ -611,7 +867,16 @@ def bake_shapes_from_poses(mesh_blendshapes, poses, psd_poses, in_betweens, deta
     return base_meshes, bs_nodes, target_groups
 
 
-def calculate_psd_deltas(bs_node, psd_poses, in_betweens, detailed_verbose=True, optimise=True):
+def calculate_psd_deltas(bs_node, psd_poses, in_betweens, detailed_verbose=True, optimise=True, calculate_inputs=True):
+    """
+    Note we always use the pose names to find the targets instead of the pose index
+    as the target index may not match the corresponding pose
+    (for example if targets have been added or removed)
+
+    In the case that targets have been renamed, and the pose name no longer matches,
+    it's better to fail and stop the process, than continue and have unexpected results.
+
+    """
     gMainProgressBar = mel.eval('$tmp = $gMainProgressBar')
 
     all_targets = mhBlendshape.get_blendshape_weight_aliases(bs_node)
@@ -627,6 +892,7 @@ def calculate_psd_deltas(bs_node, psd_poses, in_betweens, detailed_verbose=True,
 
     for pose_index, psd_pose in psd_poses.items():
         if cmds.progressBar(gMainProgressBar, query=True, isCancelled=True):
+            cmds.progressBar(gMainProgressBar, edit=True, endProgress=True)
             return False
 
         cmds.progressBar(gMainProgressBar, edit=True, step=1)
@@ -635,12 +901,22 @@ def calculate_psd_deltas(bs_node, psd_poses, in_betweens, detailed_verbose=True,
         if psd_pose.pose.name not in all_targets:
             continue
 
-        if detailed_verbose:
-            LOG.info("    {}".format(psd_pose.pose.name))
-
         src_targets = [
             pose.name for pose in psd_pose.input_poses if pose.name in all_targets
         ]
+
+        if not src_targets:
+            LOG.warning("No source targets found: {}".format(psd_pose.pose.name))
+            continue
+
+        if detailed_verbose:
+            LOG.info("    {}".format(psd_pose.pose.name))
+
+            src_target_names = [
+                pose.name for pose in psd_pose.input_poses if pose.name in all_targets
+            ]
+
+            LOG.info("      - {}".format(src_target_names))
 
         weights = [1.0] * len(src_targets)
 
@@ -670,30 +946,39 @@ def calculate_psd_deltas(bs_node, psd_poses, in_betweens, detailed_verbose=True,
     cmds.progressBar(gMainProgressBar, edit=True, endProgress=True)
 
     # subtract input psds
-    LOG.info("Calculating input PSD deltas...")
+    if calculate_inputs:
+        LOG.info("Calculating input PSD deltas...")
 
-    # do this in order of least combos to most combos
-    for combo_count in range(3, 10):
-        for psd_pose in psd_poses.values():
-            if len(psd_pose.input_poses) != combo_count:
-                continue
+        # do this in order of least combos to most combos
+        for combo_count in range(3, 10):
+            for psd_pose in psd_poses.values():
+                if len(psd_pose.input_poses) != combo_count:
+                    continue
 
-            if detailed_verbose:
-                LOG.info("    {}".format(psd_pose.pose.name))
+                if psd_pose.pose.name not in all_targets:
+                    continue
 
-            src_targets = [
-                pose.pose.index for pose in psd_pose.input_psd_poses
-            ]
+                src_targets = [
+                    pose.pose.name for pose in psd_pose.input_psd_poses
+                ]
 
-            weights = [1.0] * len(src_targets)
+                if not src_targets:
+                    LOG.warning("No input psd poses found: {}".format(psd_pose.pose.name))
+                    continue
 
-            mhBlendshape.un_combine_deltas(
-                bs_node,
-                src_targets,
-                weights,
-                psd_pose.pose.index,
-                optimise=optimise,
-            )
+                if detailed_verbose:
+                    LOG.info("    {}".format(psd_pose.pose.name))
+                    LOG.info("      - {}".format(src_targets))
+
+                weights = [1.0] * len(src_targets)
+
+                mhBlendshape.un_combine_deltas(
+                    bs_node,
+                    src_targets,
+                    weights,
+                    psd_pose.pose.name,
+                    optimise=optimise,
+                )
 
     return True
 
@@ -738,6 +1023,8 @@ def bake_rig(
             poses, psd_poses, bake_config.combos, joints_attr_defaults
         )
 
+        mhCore.update_input_psd_poses(psd_poses)
+
     # break joint connections
     if bake_shapes or connect_joints:
         break_joint_connections(bake_config.root_joints)
@@ -745,7 +1032,6 @@ def bake_rig(
     # create base mesh and blendshape node
     if bake_shapes:
         LOG.info("Disconnecting joints...")
-
 
         LOG.info("Baking shapes...")
 
@@ -793,6 +1079,7 @@ def bake_rig(
             expressions_node,
             additional_shapes=bake_config.shapes,
             use_combo_network=use_combo_network,
+            reader_configs=bake_config.readers
         )
     else:
         driver_mapping = None
@@ -817,7 +1104,10 @@ def bake_rig(
         )
 
         if bake_config.delete:
-            cmds.delete(bake_config.delete)
+            delete_nodes = [i for i in bake_config.delete if cmds.objExists(i)]
+
+            if delete_nodes:
+                cmds.delete(delete_nodes)
 
     LOG.info("done.")
 
@@ -829,6 +1119,7 @@ def disconnect(
         disconnect_targets=True,
         disconnect_joints=True,
         delete_combo_network=True,
+        delete_readers=True,
         verbose=True
 ):
     # load config
@@ -839,6 +1130,9 @@ def disconnect(
     # disconnect blendshapes
     if disconnect_targets:
         for bs_node in bs_nodes:
+            if not cmds.objExists(bs_node):
+                continue
+
             if verbose:
                 LOG.info("Disconnecting blendshape targets: {}".format(bs_node))
 
@@ -870,6 +1164,22 @@ def disconnect(
 
             cmds.delete(COMBO_NET)
 
+    if delete_readers:
+        # delete readers
+        if cmds.objExists(READER_GROUP):
+            nodes = cmds.listConnections("{}.nodes".format(READER_GROUP))
+
+            if nodes:
+                if verbose:
+                    LOG.info("deleting reader nodes")
+
+                cmds.delete(nodes)
+
+            if verbose:
+                LOG.info("deleting node: {}".format(READER_GROUP))
+
+            cmds.delete(READER_GROUP)
+
     return True
 
 
@@ -889,7 +1199,9 @@ def reconnect(
     # load config
     bake_config = BakeConfig.load(config_file_path)
 
-    bs_nodes = [bs_node for mesh, bs_node in bake_config.mesh_blendshapes]
+    bs_nodes = [
+        bs_node for mesh, bs_node in bake_config.mesh_blendshapes if cmds.objExists(bs_node)
+    ]
 
     # create additional poses
     if bake_config.shapes:
@@ -906,6 +1218,9 @@ def reconnect(
         _, _, new_psd_poses = mhCore.add_additional_combo_poses(
             poses, psd_poses, bake_config.combos, joints_attr_defaults
         )
+
+        mhCore.update_input_psd_poses(psd_poses)
+
     else:
         new_psd_poses = []
 
@@ -917,7 +1232,8 @@ def reconnect(
         psd_poses,
         expressions_node,
         additional_shapes=bake_config.shapes,
-        use_combo_network=use_combo_network
+        use_combo_network=use_combo_network,
+        reader_configs=bake_config.readers
     )
 
     # add missing targets
@@ -929,7 +1245,7 @@ def reconnect(
             new_shapes += [psd_pose.pose.name for psd_pose in new_psd_poses]
 
             for shape_name in new_shapes:
-                if mhBlendshape.get_blendshape_target_index(bs_node, shape_name) is not None:
+                if mhBlendshape.get_blendshape_target_index(bs_node, shape_name)[0] is not None:
                     continue
 
                 LOG.info("Adding target: {}.{}".format(bs_node, shape_name))
@@ -937,6 +1253,18 @@ def reconnect(
                 mhBlendshape.create_empty_target(
                     base_mesh, bs_node, shape_name, default=0.0
                 )
+
+                # add in-betweens
+                if shape_name in bake_config.in_betweens:
+                    ib_count = bake_config.in_betweens[shape_name]
+
+                    for ib_index in range(ib_count):
+                        ib_value = float(ib_index + 1) / float(ib_count + 1)
+                        ib_value = round(ib_value, 3)
+
+                        mhBlendshape.add_in_between_target(
+                            bs_node, base_mesh, shape_name, None, ib_value
+                        )
 
     # connect expression attrs
     if reconnect_targets:
@@ -951,3 +1279,330 @@ def reconnect(
 
     return True
 
+
+def extract_pose_correctives(
+        poses, psd_poses, mesh, bs_node, skinned_mesh, bake_config, cleanup=True
+):
+    """Extracts corrective shapes using given skinned mesh as reference.
+
+    Targets will be replaced with corrective shapes,
+    and skin weights will be transferred to mesh after extraction.
+
+    Only poses that affect the skinned joint hierarchy will be processed.
+
+    TODO option to extract all
+    """
+
+    # check mesh and skinned mesh are different
+    if mesh == skinned_mesh:
+        raise mhCore.MHError("Mesh and Skinned Mesh cannot be the same")
+
+    # check skin clusters
+    existing_skin = mhMayaUtils.find_related_skin_cluster(mesh)
+
+    if existing_skin:
+        raise mhCore.MHError("SkinCluster found on mesh: {}".format(mesh))
+
+    existing_skin = mhMayaUtils.find_related_skin_cluster(skinned_mesh)
+
+    if not existing_skin:
+        raise mhCore.MHError("No skinCluster found on mesh: {}".format(skinned_mesh))
+
+    # get skinned joints
+    skin_cluster = mhMayaUtils.find_related_skin_cluster(skinned_mesh)
+
+    driven_joints = cmds.skinCluster(skin_cluster, query=True, influence=True)
+
+    # get targets
+    targets = mhBlendshape.get_blendshape_weight_aliases(bs_node)
+
+    if len(targets) > len(poses):
+        LOG.warning("There are more targets than poses: {} targets({}) {} poses".format(
+            len(targets), bs_node, len(poses)
+        ))
+
+    # get points
+    orig_mesh = mhMayaUtils.get_orig_mesh(bs_node, as_name=True)
+    orig_points = mhMayaUtils.get_points(orig_mesh, as_numpy=True)
+
+    # get parent of joints
+    driven_joints = set(driven_joints)
+
+    for joint in list(driven_joints):
+        parents = mhMayaUtils.get_all_parents(joint)
+        parent_joints = cmds.ls(parents, type="joint")
+        driven_joints.update(parent_joints)
+
+    driven_joints = list(driven_joints)
+
+    LOG.info("driven joints: {}".format(driven_joints))
+
+    # temporarily disconnect all joints and targets in the scene
+    LOG.info("disconnecting joints and targets")
+    all_joints = cmds.ls(type="joint")
+    joint_cons = mhMayaUtils.disconnect_transforms(all_joints)
+    target_cons = mhMayaUtils.disconnect_attrs(bs_node, targets)
+
+    # create groups
+    sculpts_group = cmds.createNode("transform", name="sculpts_grp")
+    correctives_group = cmds.createNode("transform", name="correctives_grp")
+
+    # determine which poses affect driven joints
+    LOG.info("Driver poses:")
+
+    driver_poses = {}
+
+    for i, pose in enumerate(poses):
+        if pose.name not in targets:
+            continue
+
+        pose_name = pose.name
+        relevant_shapes = [pose_name]
+
+        if i in psd_poses:
+            pose = psd_poses[i]
+
+        if not pose.affects_joints(driven_joints):
+            continue
+
+        driver_poses[i] = pose
+
+        LOG.info("  {}".format(pose))
+
+    # extract "sculpts" from shapes
+    LOG.info("Extracting sculpts...")
+
+    gMainProgressBar = mel.eval('$tmp = $gMainProgressBar')
+
+    cmds.progressBar(
+        gMainProgressBar,
+        edit=True,
+        beginProgress=True,
+        isInterruptable=True,
+        status='Extracting sculpts...',
+        maxValue=len(driver_poses)
+    )
+
+    sculpts_dict = {}
+    psd_poses_to_calculate = {}
+
+    for i, pose in driver_poses.items():
+        if cmds.progressBar(gMainProgressBar, query=True, isCancelled=True):
+            cmds.progressBar(gMainProgressBar, edit=True, endProgress=True)
+            return False
+
+        cmds.progressBar(gMainProgressBar, edit=True, step=1)
+
+        if isinstance(pose, mhCore.PSDPose):
+            pose_name = pose.pose.name
+            relevant_shapes = [pose_name]
+
+            relevant_shapes += [
+                input_pose.name for input_pose in pose.get_all_input_poses(include_psds=True)
+            ]
+
+            if len(relevant_shapes) > 1:
+                psd_poses_to_calculate[i] = pose
+
+        else:
+            pose_name = pose.name
+            relevant_shapes = [pose_name]
+
+        # get data
+        logical_index, target_index = mhBlendshape.get_blendshape_target_index(bs_node, pose_name)
+        plugs = mhBlendshape.BlendshapeTargetPlugs(bs_node, target_index)
+        ib_values, ib_indices = plugs.get_inbetween_values()
+
+        # loop through full value and inbetween values
+        values = [1.0] + ib_values
+
+        sculpts_dict[pose_name] = {}
+
+        for index, value in enumerate(values):
+            LOG.info("extracting sculpt: {} at {}".format(pose_name, value))
+
+            if value != 1.0:
+                ib_value = value
+                ib_index = index - 1
+            else:
+                ib_value = None
+                ib_index = None
+
+            # turn on shape(s)
+            for shape in relevant_shapes:
+                cmds.setAttr("{}.{}".format(bs_node, shape), value)
+
+            # duplicate
+            if ib_index is not None:
+                sculpt = "{}_IB{}_sculpt".format(pose_name, ib_index)
+            else:
+                sculpt = "{}_sculpt".format(pose_name)
+
+            cmds.duplicate(mesh, name=sculpt)
+
+            cmds.parent(sculpt, sculpts_group)
+
+            sculpts_dict[pose_name][value] = sculpt
+
+            for shape in relevant_shapes:
+                cmds.setAttr("{}.{}".format(bs_node, shape), 0.0)
+
+    cmds.progressBar(gMainProgressBar, edit=True, endProgress=True)
+
+    # reset deltas on all relevant targets
+    LOG.info("Resetting deltas...")
+
+    for pose in driver_poses.values():
+        if isinstance(pose, mhCore.PSDPose):
+            pose_name = pose.pose.name
+        else:
+            pose_name = pose.name
+
+        logical_index, target_index = mhBlendshape.get_blendshape_target_index(bs_node, pose_name)
+
+        cmds.blendShape(
+            bs_node,
+            edit=True,
+            resetTargetDelta=[0, target_index],
+        )
+
+    # extract correctives
+    LOG.info("Extracting correctives...")
+
+    gMainProgressBar = mel.eval('$tmp = $gMainProgressBar')
+
+    cmds.progressBar(
+        gMainProgressBar,
+        edit=True,
+        beginProgress=True,
+        isInterruptable=True,
+        status='Extracting correctives...',
+        maxValue=len(driver_poses)
+    )
+
+    correctives_dict = {}
+
+    for combo_count in range(1, 10):
+        for i, pose in driver_poses.items():
+            if cmds.progressBar(gMainProgressBar, query=True, isCancelled=True):
+                cmds.progressBar(gMainProgressBar, edit=True, endProgress=True)
+                return False
+
+            if isinstance(pose, mhCore.PSDPose):
+                pose_name = pose.pose.name
+            else:
+                pose_name = pose.name
+
+            if combo_count == 1:
+                # primary only, skip combos
+                if isinstance(pose, mhCore.PSDPose):
+                    continue
+            else:
+                # combo only, skip primary
+                if not isinstance(pose, mhCore.PSDPose):
+                    continue
+
+                if len(pose.input_poses) != combo_count:
+                    continue
+
+            cmds.progressBar(gMainProgressBar, edit=True, step=1)
+
+            LOG.info("  {}".format(pose_name))
+
+            # get data
+            logical_index, target_index = mhBlendshape.get_blendshape_target_index(bs_node, pose_name)
+            plugs = mhBlendshape.BlendshapeTargetPlugs(bs_node, target_index)
+            ib_values, ib_indices = plugs.get_inbetween_values()
+
+            # loop through full value and inbetween values
+            values = [1.0] + ib_values
+
+            correctives_dict[pose_name] = []
+
+            for index, value in enumerate(values):
+                LOG.info("extracting corrective: {} at {}".format(pose_name, value))
+
+                if value != 1.0:
+                    ib_value = value
+                    ib_index = index - 1
+                else:
+                    ib_value = None
+                    ib_index = None
+
+                # pose joints and turn on input shapes
+                pose.pose_joints(blend=value)
+
+                # get sculpt
+                sculpt = sculpts_dict[pose_name][value]
+
+                # extract corrective
+                corrective = cmds.invertShape(skinned_mesh, sculpt)
+
+                if ib_index is not None:
+                    corrective = cmds.rename(corrective, "{}_IB{}_corrective".format(pose_name, ib_index))
+                else:
+                    corrective = cmds.rename(corrective, "{}_corrective".format(pose_name))
+
+                correctives_dict[pose_name].append((value, ib_index, corrective))
+
+                cmds.parent(corrective, correctives_group)
+
+                cmds.sets(corrective, edit=True, forceElement="initialShadingGroup")
+
+                # reset joints and shapes
+                pose.reset_joints()
+
+    cmds.progressBar(gMainProgressBar, edit=True, endProgress=True)
+
+    # apply correctives
+    LOG.info("applying correctives")
+
+    for pose_name, corrective_data in correctives_dict.items():
+        logical_index, target_index = mhBlendshape.get_blendshape_target_index(bs_node, pose_name)
+
+        for value, ib_index, corrective in corrective_data:
+            # apply corrective delta directly
+            target_points = mhMayaUtils.get_points(corrective, as_numpy=True)
+            delta = target_points - orig_points
+
+            mhBlendshape.set_target_delta(
+                bs_node,
+                target_index,
+                delta,
+                in_between=ib_index
+            )
+
+    # calculate PSD deltas
+    LOG.info("Calculating PSD deltas")
+
+    calculate_psd_deltas(
+        bs_node,
+        psd_poses_to_calculate,
+        bake_config.in_betweens,
+        detailed_verbose=True,
+        optimise=True,
+        calculate_inputs=True
+    )
+
+    # reconnect joints
+    LOG.info("reconnecting joints and targets")
+
+    for attr, cons in joint_cons.items():
+        cmds.connectAttr(cons, attr)
+
+    for attr, cons in target_cons.items():
+        cmds.connectAttr(cons, attr)
+
+    # transfer skin weights
+    LOG.info("Transferring skin weights")
+
+    mhMayaUtils.transfer_skin(skinned_mesh, mesh)
+
+    # cleanup
+    if cleanup:
+        cmds.delete(sculpts_group, correctives_group)
+
+    # return
+    LOG.info("Done")
+
+    return True

@@ -58,6 +58,11 @@ Once installed the tool can be called like this:
 
 Use version=2 for Unreal 5.6 onwards, or version=1 for Unreal 5.5 or older
 
+Please see my youTube channel for instructional videos:
+
+https://www.youtube.com/playlist?list=PL2o2WY-GjmFQ2Fb8EaIqXH1mU5IktSu4t
+
+
 # license
 This tool is provided with a GNU license, and is free to use.
 You may modify or add to the code, but you are expected to contribute back to the source (please do so in a new branch).

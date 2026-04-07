@@ -163,13 +163,26 @@ class Pose(object):
 
     def pose_joints(self, blend=1.0):
         for attr, value in self.get_values(absolute=True, blend=blend).items():
+            if not cmds.objExists(attr):
+                continue
+
             cmds.setAttr(attr, value)
 
         return True
 
     def reset_joints(self):
         for attr, value in self.defaults.items():
-            cmds.setAttr(attr, value)
+            if not cmds.objExists(attr):
+                continue
+
+            if value is None:
+                continue
+
+            try:
+                cmds.setAttr(attr, value)
+            except RuntimeError as err:
+                LOG.warning("failed to reset joint attr: {}".format(attr))
+                continue
 
         return True
 
@@ -198,6 +211,27 @@ class Pose(object):
             self.deltas[pose_attr] *= value
 
         return True
+
+    def affects_joint(self, joint):
+        for attr, value in self.deltas.items():
+            if value == 0.0:
+                continue
+
+            attr_joint, attr = attr.split(".")
+
+            if attr_joint == joint:
+                return True
+
+        return False
+
+    def affects_joints(self, joints):
+        for attr in self.deltas.keys():
+            attr_joint, attr = attr.split(".")
+
+            if attr_joint in joints:
+                return True
+
+        return False
 
 
 class PSDPose(object):
@@ -267,20 +301,29 @@ class PSDPose(object):
 
     def pose_joints(self, summed=True, blend=1.0):
         for attr, value in self.get_values(summed=summed, absolute=True, blend=blend).items():
+            if not cmds.objExists(attr):
+                continue
+
             cmds.setAttr(attr, value)
 
         return True
 
     def reset_joints(self):
         for attr, value in self.get_defaults().items():
+            if not cmds.objExists(attr):
+                continue
+
             cmds.setAttr(attr, value)
 
         return True
 
-    def get_all_input_poses(self):
+    def get_all_input_poses(self, include_psds=False):
         poses = set(self.input_poses)
 
         for input_psd_pose in self.input_psd_poses:
+            if include_psds:
+                poses.add(input_psd_pose.pose)
+
             poses.update(input_psd_pose.get_all_input_poses())
 
         # sort by index
@@ -315,6 +358,20 @@ class PSDPose(object):
             self.pose.name = "{}_{}".format(self.pose.name, "".join(sorted(sides)))
 
         return self.pose.name
+
+    def affects_joint(self, joints):
+        for pose in self.get_all_input_poses():
+            if pose.affects_joint(joints):
+                return True
+
+        return False
+
+    def affects_joints(self, joints):
+        for pose in self.get_all_input_poses():
+            if pose.affects_joints(joints):
+                return True
+
+        return False
 
 
 def add_additional_poses(poses, pose_names, joints_attr_defaults):
@@ -354,13 +411,50 @@ def add_additional_combo_poses(poses, psd_poses, additional_combos, joints_attr_
         combo.input_poses = [pose_dict[pose_name] for pose_name in pose_names]
         combo.input_weights = [1.0] * len(pose_names)
 
+        combo.update_name(override=True)
+
+        if combo.pose.name in pose_dict:
+            LOG.info("existing combo found, skipping: {}".format(combo.pose.name))
+            continue
+
         psd_poses[combo.pose.index] = combo
         poses.append(combo.pose)
         new_psd_poses.append(combo)
-
-        combo.update_name(override=True)
+        pose_dict[combo.pose.name] = combo.pose
 
     return poses, psd_poses, new_psd_poses
+
+
+def add_combo_pose_permutations(poses, psd_poses, joints_attr_defaults, pose_names, permutation_count):
+    # TODO
+    pass
+
+
+def update_input_psd_poses(psd_poses):
+    """add input psds for 3+ way combos
+    """
+    for psd_pose in psd_poses.values():
+        if len(psd_pose.input_poses) < 3:
+            continue
+
+        for input_psd_pose in psd_poses.values():
+            if input_psd_pose is psd_pose:
+                continue
+
+            if input_psd_pose in psd_pose.input_psd_poses:
+                continue
+
+            if len(input_psd_pose.input_poses) >= len(psd_pose.input_poses):
+                continue
+
+            # check if all input_psd_pose input poses are contained
+            # within the input psd poses for this psd
+            if all([
+                pose in psd_pose.input_poses for pose in input_psd_pose.input_poses
+            ]):
+                psd_pose.input_psd_poses.append(input_psd_pose)
+
+    return psd_poses
 
 
 class Project(object):
@@ -370,7 +464,6 @@ class Project(object):
         self.dna_assets_path = None
         self.dna_files_path = None
         self.bake_config_path = os.path.join(DATA_DIR, "configs", "bake_config.json")
-
 
     def get_dna_files(self):
         generic_assets = None

@@ -1,0 +1,13 @@
+[
+  {
+    "bs_node": "head_lod0_subd_blendShape",
+    "frame": 2,
+    "targets": ["browRaiseIn_browRaiseOuter_L", "browRaiseIn_browRaiseOuter_R"],
+    "find_ref_targets": true,
+    "sculpt": "browRaise_sculpt",
+    "weight_overrides": {
+      "browRaiseIn_browRaiseOuter_L": [["browRaiseInL", 1.0], ["browRaiseOuterL", 1.0]],
+      "browRaiseIn_browRaiseOuter_R": [["browRaiseInR", 1.0], ["browRaiseOuterR", 1.0]]
+    }
+  }
+]

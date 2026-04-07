@@ -20,6 +20,7 @@
 """
 
 import os
+import traceback
 
 from maya import cmds
 from maya import OpenMayaUI
@@ -66,6 +67,8 @@ class DnaTab(QtWidgets.QWidget):
 
     def error(self, err):
         # TODO traceback
+
+        print(traceback.format_exc())
 
         LOG.critical(str(err))
 
@@ -364,6 +367,7 @@ class DnaTransferWidget(DnaTab):
             "eyeRight_lod0_mesh",
         )
 
+
 class DnaInspectWidget(QtWidgets.QMainWindow):
     """
     inspect PSDs
@@ -561,8 +565,7 @@ class DnaBuildWidget(DnaTab):
 
         self.dna_file_combo = mhWidgets.DnaPathManagerWidget(path_manager, "dna file")
 
-        # TODO more options
-        # self.full_rig_checkbox = QtWidgets.QCheckBox("full rig")
+        self.gui_override_widget = mhWidgets.PathOpenWidget("gui override")
 
         self.partial_rig_group_box = QtWidgets.QGroupBox("Partial Rig")
         self.partial_rig_group_box.setCheckable(True)
@@ -589,6 +592,7 @@ class DnaBuildWidget(DnaTab):
         self.build_btn.clicked.connect(self.build_rig)
 
         build_lyt.addWidget(self.dna_file_combo)
+        build_lyt.addWidget(self.gui_override_widget)
         build_lyt.addWidget(self.inspect_btn)
         build_lyt.addWidget(self.partial_rig_group_box)
         build_lyt.addWidget(self.build_btn)
@@ -850,9 +854,6 @@ class DnaBuildWidget(DnaTab):
             self.error(err)
             return False
 
-        # build_mode = str(self.dna_file_combo.currentText())
-        # dna_path = self.path_manager.get_path(build_mode)
-
         dna_path = self.dna_file_combo.get_path()
 
         if not os.path.exists(dna_path):
@@ -891,6 +892,7 @@ class DnaBuildWidget(DnaTab):
                 add_blend_shapes=True,
                 lod=None,
                 scene_up="y",
+                gui_ctrls_path=self.gui_override_widget.path
             )
 
         return True
@@ -1535,6 +1537,8 @@ class DnaQCWidget(DnaTab):
                         poses, psd_poses, bake_config.combos, joints_attr_defaults
                     )
 
+                    mhCore.update_input_psd_poses(psd_poses)
+
                 # # get additional combos from mhBakeRig global attr for now
                 # # TODO refactor tool to make this more global
                 # from brenmeta.maya import mhBakeRig
@@ -1724,7 +1728,6 @@ class DnaMergeWidget(DnaTab):
         return True
 
 
-
 class DnaBakeRigWidget(DnaTab):
     def __init__(self, path_manager, parent=None):
         super(DnaBakeRigWidget, self).__init__(path_manager, parent=parent)
@@ -1735,17 +1738,30 @@ class DnaBakeRigWidget(DnaTab):
 
         self.dna_file_combo = mhWidgets.DnaPathManagerWidget(self.path_manager, "dna file")
 
-        # self.config_file_widget = mhWidgets.PathOpenWidget("bake config")
-        # self.config_file_widget.filter = "json files (*.json)"
-        # self.config_file_widget.path = self.path_manager.bake_config_path
-
         self.inspect_config_btn = QtWidgets.QPushButton("inspect bake config")
         self.inspect_config_btn.clicked.connect(self._inspect_clicked)
 
-        # bake group box
-        self.bake_group_box = QtWidgets.QGroupBox("bake")
+        self.tabs = QtWidgets.QTabWidget()
+
+        # build
+        self.bake_tab = QtWidgets.QWidget()
         bake_lyt = QtWidgets.QVBoxLayout()
-        self.bake_group_box.setLayout(bake_lyt)
+        self.bake_tab.setLayout(bake_lyt)
+
+        self.build_label = QtWidgets.QLabel(
+            "This process will take the 'live' metahuman rig and bake it fully to blendshapes.\n"
+            "\n"
+            "All poses and combos present in the dna file will be baked and rig logic reproduced.\n"
+            "\n"
+            "Use the bake config file to add new combos or extra shapes, in-betweens, etc.\n"
+            "\n"
+            "Joints used to drive the other meshes such as the teeth and eyes will be kept,\n"
+            "all redundant joints are deleted, unless specified in the config file.\n"
+            "\n"
+            "Neck corrective readers and targets are also added, as defined by the config file.\n"
+        )
+
+        bake_lyt.addWidget(self.build_label)
 
         self.bake_shapes_checkbox = QtWidgets.QCheckBox("bake shapes")
         self.calculate_psd_deltas_checkbox = QtWidgets.QCheckBox("calculate psd deltas")
@@ -1772,6 +1788,14 @@ class DnaBakeRigWidget(DnaTab):
         self.build_btn.clicked.connect(self._build_clicked)
 
         bake_lyt.addWidget(self.build_btn)
+        bake_lyt.addStretch()
+
+        self.tabs.addTab(self.bake_tab, "build")
+
+        # edit tab
+        self.edit_tab = QtWidgets.QWidget()
+        edit_lyt = QtWidgets.QVBoxLayout()
+        self.edit_tab.setLayout(edit_lyt)
 
         # disconnect group box
         self.disconnect_group_box = QtWidgets.QGroupBox("disconnect")
@@ -1857,25 +1881,61 @@ class DnaBakeRigWidget(DnaTab):
         bake_driven_lyt.addWidget(self.bake_driven_cleanup_checkbox)
         bake_driven_lyt.addWidget(self.bake_driven_btn)
 
+        # extract pose correctives group box
+        self.extract_correctives_group_box = QtWidgets.QGroupBox("extract correctives")
+
+        extract_correctives_lyt = QtWidgets.QVBoxLayout()
+        self.extract_correctives_group_box.setLayout(extract_correctives_lyt)
+
+        self.correctives_mesh_widget = mhWidgets.NodeLineEdit(
+            default="head_lod0_mesh", label="mesh", label_width=100
+        )
+
+        self.correctives_bs_node_widget = mhWidgets.NodeLineEdit(
+            default="head_lod0_blendShape", label="blendshape", label_width=100
+        )
+
+        self.correctives_skinned_mesh_widget = mhWidgets.NodeLineEdit(
+            label="skinned mesh", label_width=100
+        )
+
+        self.extract_correctives_cleanup_checkbox = QtWidgets.QCheckBox("cleanup")
+
+        self.extract_correctives_cleanup_checkbox.setChecked(True)
+
+        self.extract_correctives_btn = QtWidgets.QPushButton("extract correctives")
+        self.extract_correctives_btn.clicked.connect(self._extract_correctives_clicked)
+
+        extract_correctives_lyt.addWidget(self.correctives_mesh_widget)
+        extract_correctives_lyt.addWidget(self.correctives_bs_node_widget)
+        extract_correctives_lyt.addWidget(self.correctives_skinned_mesh_widget)
+        extract_correctives_lyt.addWidget(self.extract_correctives_cleanup_checkbox)
+        extract_correctives_lyt.addWidget(self.extract_correctives_btn)
+
+        # edit layout
+        edit_lyt.addWidget(self.disconnect_group_box)
+        edit_lyt.addWidget(self.reconnect_group_box)
+        edit_lyt.addWidget(self.bake_driven_group_box)
+        edit_lyt.addWidget(self.extract_correctives_group_box)
+        edit_lyt.addStretch()
+
+        self.tabs.addTab(self.edit_tab, "edit")
+        self.tabs.setCurrentIndex(0)
+
         # create layout
         lyt = QtWidgets.QVBoxLayout()
         self.setLayout(lyt)
 
         lyt.addWidget(self.dna_file_combo)
-        # lyt.addWidget(self.config_file_widget)
         lyt.addWidget(self.inspect_config_btn)
-        lyt.addWidget(self.bake_group_box)
-        lyt.addWidget(self.disconnect_group_box)
-        lyt.addWidget(self.reconnect_group_box)
-        lyt.addWidget(self.bake_driven_group_box)
-        lyt.addStretch()
+        lyt.addWidget(self.tabs)
 
     def _inspect_clicked(self):
         """
         """
         # get paths
         dna_path = self.dna_file_combo.get_path()
-        bake_config_file = self.config_file_widget.path
+        bake_config_file = self.path_manager.bake_config_path
 
         # check we have paths
         if not dna_path:
@@ -1918,10 +1978,36 @@ class DnaBakeRigWidget(DnaTab):
             poses, psd_poses, bake_config.combos, joints_attr_defaults
         )
 
+        mhCore.update_input_psd_poses(psd_poses)
+
         new_targets = list(bake_config.shapes)
         new_targets += [psd_pose.pose.name for psd_pose in new_psd_poses]
 
-        target_text = "\n".join(new_targets)
+        target_text = (
+            "meshes: \n{}  \n\n"
+            "\n"
+            "total targets: {}\n\n"
+            "additional shapes: {}\n\n"
+            "readers: {}\n\n"
+            "new targets:\n  "
+            "{}\n"
+            "\n"
+        ).format(
+            "\n  ".join([a for a, b in bake_config.mesh_blendshapes]),
+            len(new_targets),
+            len(bake_config.shapes),
+            len(bake_config.readers),
+            "\n  ".join(new_targets)
+        )
+
+        # self.mesh_blendshapes = None
+        # self.shapes = None
+        # self.in_betweens = None
+        # self.pose_joints = None
+        # self.keep_joints = None
+        # self.delete = None
+        # self.root_joints = None
+        # self.readers = None
 
         dialog = mhWidgets.DebugDialog(target_text, parent=self)
         dialog.setWindowTitle("Bake debug")
@@ -2076,6 +2162,61 @@ class DnaBakeRigWidget(DnaTab):
             targets_only=self.bake_driven_targets_only_checkbox.isChecked()
         )
 
+    def _extract_correctives_clicked(self):
+
+        # get paths
+        dna_path = self.dna_file_combo.get_path()
+        bake_config_file = self.path_manager.bake_config_path
+
+        # check we have paths
+        if not dna_path:
+            self.error("No source DNA path given")
+            return False
+
+        if not bake_config_file:
+            self.error("No bake config path given")
+            return False
+
+        # confirm with user
+        confirm = QtWidgets.QMessageBox.warning(
+            self,
+            "confirm",
+            "This will extract correctives in the scene as defined by dna file, config and skinned mesh:\n\n{}\n\n{}\n\n{}\n\nContinue?".format(
+                dna_path, bake_config_file, self.correctives_skinned_mesh_widget.node
+            ),
+            QtWidgets.QMessageBox.Ok | QtWidgets.QMessageBox.Cancel
+        )
+
+        if confirm is QtWidgets.QMessageBox.Cancel:
+            return False
+
+        try:
+            poses, psd_poses, joints_attr_defaults, bake_config = mhBakeRig.load_poses_v2(
+                dna_path, bake_config_file
+            )
+
+            mhBakeRig.extract_pose_correctives(
+                poses,
+                psd_poses,
+                self.correctives_mesh_widget.node,
+                self.correctives_bs_node_widget.node,
+                self.correctives_skinned_mesh_widget.node,
+                bake_config,
+                cleanup=self.extract_correctives_cleanup_checkbox.isChecked()
+            )
+
+            QtWidgets.QMessageBox.information(
+                self,
+                "Success",
+                "Extract correctives complete",
+                QtWidgets.QMessageBox.Ok
+            )
+
+        except Exception as err:
+            self.error(err)
+
+        return True
+
     def update_assets(self):
         self.dna_file_combo.update_assets()
         return True
@@ -2141,15 +2282,53 @@ class DnaSculptWidget(DnaTab):
         self.apply_proxy_combo_btn = QtWidgets.QPushButton("Apply")
         self.apply_proxy_combo_btn.clicked.connect(self._apply_proxy_combo_clicked)
 
-        proxy_combo_btn_lyt = QtWidgets.QHBoxLayout()
-        proxy_combo_btn_lyt.addWidget(self.create_proxy_combo_btn)
-        proxy_combo_btn_lyt.addWidget(self.apply_proxy_combo_btn)
+        self.meta_data_btn = QtWidgets.QPushButton("meta data")
+        self.meta_data_btn.clicked.connect(self._meta_data_clicked)
+
+        btn_lyt = QtWidgets.QHBoxLayout()
+        btn_lyt.addWidget(self.create_proxy_combo_btn)
+        btn_lyt.addWidget(self.apply_proxy_combo_btn)
+        btn_lyt.addWidget(self.meta_data_btn)
 
         proxy_combo_lyt = QtWidgets.QVBoxLayout()
         proxy_combo_lyt.addWidget(self.proxy_combo_label)
-        proxy_combo_lyt.addLayout(proxy_combo_btn_lyt)
+        proxy_combo_lyt.addLayout(btn_lyt)
 
         self.proxy_combos_box.setLayout(proxy_combo_lyt)
+
+        # batch proxy combos
+        self.batch_proxy_combos_box = QtWidgets.QGroupBox("Batch Proxy Combos")
+
+        self.batch_proxy_combo_label = QtWidgets.QLabel(
+            "Batch create or apply proxy combos from config json file\n"
+            "An example config file can be found here:\n"
+            "brenmeta/data/configs/example_proxy_combo_config.json"
+        )
+
+        self.batch_proxy_combo_create_widget = mhWidgets.PathOpenWidget("Config")
+        self.batch_proxy_combo_create_widget.filter = "json files (*.json)"
+
+        self.match_threshold_spin = mhWidgets.LabelledDoubleSpinBox(
+            "match threshold", label_width=100, default=0.01, minimum=0.0, maximum=10.0
+        )
+
+        self.batch_create_proxy_combo_btn = QtWidgets.QPushButton("Create")
+        self.batch_create_proxy_combo_btn.clicked.connect(self._batch_create_proxy_combos)
+
+        self.batch_apply_proxy_combo_btn = QtWidgets.QPushButton("Apply")
+        self.batch_apply_proxy_combo_btn.clicked.connect(self._batch_apply_proxy_combos)
+
+        btn_lyt = QtWidgets.QHBoxLayout()
+        btn_lyt.addWidget(self.batch_create_proxy_combo_btn)
+        btn_lyt.addWidget(self.batch_apply_proxy_combo_btn)
+
+        proxy_combo_lyt = QtWidgets.QVBoxLayout()
+        proxy_combo_lyt.addWidget(self.batch_proxy_combo_label)
+        proxy_combo_lyt.addWidget(self.batch_proxy_combo_create_widget)
+        proxy_combo_lyt.addWidget(self.match_threshold_spin)
+        proxy_combo_lyt.addLayout(btn_lyt)
+
+        self.batch_proxy_combos_box.setLayout(proxy_combo_lyt)
 
         # deltas
         self.deltas_box = QtWidgets.QGroupBox("Deltas")
@@ -2165,9 +2344,13 @@ class DnaSculptWidget(DnaTab):
         self.subtract_deltas_btn = QtWidgets.QPushButton("Subtract")
         self.subtract_deltas_btn.clicked.connect(self._subtract_deltas_clicked)
 
+        self.reset_deltas_btn = QtWidgets.QPushButton("Reset")
+        self.reset_deltas_btn.clicked.connect(self._reset_deltas_clicked)
+
         deltas_btn_lyt = QtWidgets.QHBoxLayout()
         deltas_btn_lyt.addWidget(self.add_deltas_btn)
         deltas_btn_lyt.addWidget(self.subtract_deltas_btn)
+        deltas_btn_lyt.addWidget(self.reset_deltas_btn)
 
         deltas_lyt = QtWidgets.QVBoxLayout()
         deltas_lyt.addWidget(self.deltas_label)
@@ -2181,6 +2364,7 @@ class DnaSculptWidget(DnaTab):
 
         lyt.addWidget(self.io_box)
         lyt.addWidget(self.proxy_combos_box)
+        lyt.addWidget(self.batch_proxy_combos_box)
         lyt.addWidget(self.deltas_box)
         lyt.addStretch()
 
@@ -2253,11 +2437,52 @@ class DnaSculptWidget(DnaTab):
     def _apply_proxy_combo_clicked(self):
         mhBlendshape.apply_proxy_combo_sl()
 
+    def _batch_create_proxy_combos(self):
+        config_file = self.batch_proxy_combo_create_widget.path
+
+        if not os.path.exists(config_file):
+            self.error("Config file not found: {}".format(config_file))
+
+        mhBlendshape.batch_create_proxy_combos(config_file)
+
+        QtWidgets.QMessageBox.information(
+            self,
+            "Success",
+            "Proxy Combo batch complete",
+            QtWidgets.QMessageBox.Ok
+        )
+
+    def _batch_apply_proxy_combos(self):
+        config_file = self.batch_proxy_combo_create_widget.path
+
+        if not os.path.exists(config_file):
+            self.error("Config file not found: {}".format(config_file))
+
+        mhBlendshape.batch_apply_proxy_combos(
+            config_file,
+            match_threshold=self.match_threshold_spin.spin_box.value(),
+        )
+
+        QtWidgets.QMessageBox.information(
+            self,
+            "Success",
+            "Proxy Combo batch complete",
+            QtWidgets.QMessageBox.Ok
+        )
+
     def _add_deltas_clicked(self):
         mhBlendshape.add_deltas_sl()
 
     def _subtract_deltas_clicked(self):
         mhBlendshape.subtract_deltas_sl()
+
+    def _reset_deltas_clicked(self):
+        mhBlendshape.reset_target_sl()
+
+    def _meta_data_clicked(self):
+        mhBlendshape.print_selected_shape_editor_targets(
+            as_list=True, target_weights=True
+        )
 
 
 class DnaModWidget(

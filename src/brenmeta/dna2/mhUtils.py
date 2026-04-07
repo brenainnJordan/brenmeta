@@ -77,6 +77,7 @@ def import_components(
         add_blend_shapes=True,
         lod=None,
         scene_up="y",
+        gui_ctrls_path=None,
 ):
     dna_obj = DNAReader.read(dna_path, Layer.all)
 
@@ -112,7 +113,11 @@ def import_components(
 
     # set dependencies
     if add_rig_logic:
-        form.gui_ctrls_path = os.path.join(assets_path, "Windows", "head_gui.ma")
+        if gui_ctrls_path:
+            form.gui_ctrls_path = gui_ctrls_path
+        else:
+            form.gui_ctrls_path = os.path.join(assets_path, "Windows", "head_gui.ma")
+
         form.analog_ctrls_path = os.path.join(assets_path, "Windows", "head_ac.ma")
 
         form.aas_path = os.path.join(

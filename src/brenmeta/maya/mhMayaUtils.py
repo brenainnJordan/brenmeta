@@ -24,7 +24,7 @@ import numpy
 
 from maya.api import OpenMaya
 from maya.api import OpenMayaAnim
-from maya import cmds
+from maya import cmds, mel
 
 from brenmeta.core import mhCore
 
@@ -244,7 +244,7 @@ def get_points(mesh, space=OpenMaya.MSpace.kObject, as_numpy=False, trim=True, b
 def set_points(mesh, points):
     if isinstance(points, numpy.ndarray):
         points = OpenMaya.MPointArray([
-            OpenMaya.MPoint(point) for point in np_points
+            OpenMaya.MPoint(point) for point in points
         ])
 
     # get dag
@@ -303,10 +303,12 @@ def duplicate_orig_mesh(deformer, name, parent=None):
     else:
         parent = OpenMaya.MObject.kNullObj
 
-    transform = dag_fn.create("transform", name=name, parent=parent)
+    m_transform = dag_fn.create("transform", name=name, parent=parent)
+
+    name = OpenMaya.MFnDependencyNode(m_transform).name()
 
     mesh_fn = OpenMaya.MFnMesh()
-    shape = mesh_fn.copy(orig_mesh_object, parent=transform)
+    m_shape = mesh_fn.copy(orig_mesh_object, parent=m_transform)
     mesh_fn.name()
     mesh_fn.setName("{}Shape".format(name))
 
@@ -314,7 +316,7 @@ def duplicate_orig_mesh(deformer, name, parent=None):
         mesh_fn.partialPathName(), edit=True, forceElement="initialShadingGroup"
     )
 
-    return transform, shape
+    return m_transform, m_shape
 
 
 def get_average_position(positions):
@@ -556,8 +558,29 @@ def get_furthest_intersection(mesh_fn, ray_start, ray_vector, both_directions=Fa
 def export_meshes_to_objs(meshes, directory, prefix="", suffix="", overwrite=False, verbose=True):
     """
     TODO metadata file
+    TODO progress bar
     """
+
+    # start progress bar
+    gMainProgressBar = mel.eval('$tmp = $gMainProgressBar')
+
+    cmds.progressBar(
+        gMainProgressBar,
+        edit=True,
+        beginProgress=True,
+        isInterruptable=True,
+        status='Exporting OBJ files...',
+        maxValue=len(meshes)
+    )
+
+    # export files
     for mesh in meshes:
+        if cmds.progressBar(gMainProgressBar, query=True, isCancelled=True):
+            cmds.progressBar(gMainProgressBar, edit=True, endProgress=True)
+            return False
+
+        cmds.progressBar(gMainProgressBar, edit=True, step=1)
+
         if "|" in mesh:
             mesh_name = mesh.split("|")[-1]
         else:
@@ -584,6 +607,8 @@ def export_meshes_to_objs(meshes, directory, prefix="", suffix="", overwrite=Fal
             exportSelected=True
         )
 
+    cmds.progressBar(gMainProgressBar, edit=True, endProgress=True)
+
     cmds.select(meshes)
 
     if verbose:
@@ -593,6 +618,8 @@ def export_meshes_to_objs(meshes, directory, prefix="", suffix="", overwrite=Fal
 
 
 def import_objs(directory, prefix=None, verbose=True):
+    # TODO load OBJ plugin
+
     # get obj files
     contents = os.listdir(directory)
 
@@ -609,16 +636,26 @@ def import_objs(directory, prefix=None, verbose=True):
 
         file_paths.append(path)
 
-    # import objs
-    # if prefix:
-    #     file_kwargs = {
-    #         "renameAll": True,
-    #         "renamingPrefix": prefix,
-    #     }
-    # else:
-    #     file_kwargs = {}
+    # start progress bar
+    gMainProgressBar = mel.eval('$tmp = $gMainProgressBar')
 
+    cmds.progressBar(
+        gMainProgressBar,
+        edit=True,
+        beginProgress=True,
+        isInterruptable=True,
+        status='Importing OBJ files...',
+        maxValue=len(file_paths)
+    )
+
+    # import files
     for file_path in file_paths:
+        if cmds.progressBar(gMainProgressBar, query=True, isCancelled=True):
+            cmds.progressBar(gMainProgressBar, edit=True, endProgress=True)
+            return False
+
+        cmds.progressBar(gMainProgressBar, edit=True, step=1)
+
         if verbose:
             LOG.info("Importing file: {}".format(file_path))
 
@@ -646,6 +683,8 @@ def import_objs(directory, prefix=None, verbose=True):
                 new_name = "{}{}".format(prefix, new_name)
 
             cmds.rename(new_node, new_name)
+
+    cmds.progressBar(gMainProgressBar, edit=True, endProgress=True)
 
     return True
 
@@ -676,5 +715,122 @@ def create_materials_for_hierarchy(root_node, material_type, suffix=None):
         name = mesh.split("_")[0]
 
         create_material(name, material_type, suffix=suffix, meshes=mesh)
+
+    return True
+
+
+def meshes_equal(mesh_a, mesh_b, match_threshold=0.01):
+    """Compare mesh points to see if they are the same (within threshold)
+    """
+    mesh_a_points = get_points(mesh_a, as_numpy=True)
+    mesh_b_points = get_points(mesh_b, as_numpy=True)
+    delta = mesh_b_points - mesh_a_points
+    delta_lengths = numpy.linalg.norm(delta, axis=1)
+    diff_value = sum(delta_lengths)
+
+    if diff_value > match_threshold:
+        return diff_value
+    else:
+        return True
+
+
+def find_related_skin_cluster(mesh):
+    skin_cluster = mel.eval("findRelatedSkinCluster " + mesh)
+
+    if skin_cluster == "":
+        return None
+    else:
+        return skin_cluster
+
+
+def disconnect_attrs(node, attrs):
+    attr_cons = {}
+
+    for attr in attrs:
+        attr = "{}.{}".format(node, attr)
+
+        cons = cmds.listConnections(
+            attr, source=True, destination=False, plugs=True
+        )
+
+        if cons:
+            attr_cons[attr] = cons[0]
+            cmds.disconnectAttr(cons[0], attr)
+
+    return attr_cons
+
+
+def disconnect_transforms(transforms):
+    transform_cons = {}
+
+    for transform in transforms:
+        for channel in "trs":
+            attrs = [channel]
+
+            for axis in "xyz":
+                attrs.append("{}{}".format(channel, axis))
+
+            transform_cons.update(
+                disconnect_attrs(transform, attrs)
+            )
+
+    return transform_cons
+
+
+def get_all_parents(transform, parents=None):
+    parent = cmds.listRelatives(transform, parent=True)
+
+    if parent:
+        if not parents:
+            parents = parent
+        else:
+            parents += parent
+
+        parents = get_all_parents(parent, parents=parents)
+
+    return parents
+
+def transfer_skin(src_mesh, dst_mesh):
+    # get skin cluster
+    src_skin = find_related_skin_cluster(src_mesh)
+
+    # get weights
+    src_mesh_dag = parse_dag_path(src_mesh)
+    src_m_skin = parse_m_object(src_skin)
+
+    components = OpenMaya.MObject()
+    src_m_skin = OpenMayaAnim.MFnSkinCluster(src_m_skin)
+    weights, influence_count = src_m_skin.getWeights(src_mesh_dag, components)
+
+    # assign dst skin
+    src_influences = cmds.skinCluster(src_skin, query=True, influence=True)
+
+    dst_skin = cmds.skinCluster(
+        src_influences,
+        dst_mesh,
+        toSelectedBones=True,
+        name="{}_skinCluster".format(dst_mesh)
+    )[0]
+
+    # set weights
+    dst_mesh_dag = parse_dag_path(dst_mesh)
+    dst_mesh_fn = OpenMaya.MFnMesh(dst_mesh_dag)
+    dst_m_skin = parse_m_object(dst_skin)
+
+    point_count = dst_mesh_fn.numVertices
+    vertex_ids = [i for i in range(point_count)]
+
+    component = OpenMaya.MFnSingleIndexedComponent()
+    component.create(OpenMaya.MFn.kMeshVertComponent)
+    component.addElements(vertex_ids)
+    components = component.object()
+
+    dst_m_skin = OpenMayaAnim.MFnSkinCluster(dst_m_skin)
+
+    influences = OpenMaya.MIntArray(range(len(dst_m_skin.influenceObjects())))
+
+    dst_m_skin.setWeights(
+        dst_mesh_dag, components, influences, weights
+    )
 
     return True
