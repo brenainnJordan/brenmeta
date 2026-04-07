@@ -1255,6 +1255,7 @@ def batch_create_proxy_combos(batch_config_file):
 
     for i, config in enumerate(configs):
         if cmds.progressBar(gMainProgressBar, query=True, isCancelled=True):
+            cmds.progressBar(gMainProgressBar, edit=True, endProgress=True)
             return False
 
         cmds.progressBar(gMainProgressBar, edit=True, step=1)
@@ -1306,6 +1307,7 @@ def batch_apply_proxy_combos(batch_config_file, match_threshold=0.001):
 
     for i, config in enumerate(configs):
         if cmds.progressBar(gMainProgressBar, query=True, isCancelled=True):
+            cmds.progressBar(gMainProgressBar, edit=True, endProgress=True)
             return False
 
         cmds.progressBar(gMainProgressBar, edit=True, step=1)
@@ -1666,6 +1668,7 @@ def bake_blendshape_driven_mesh(
 
     for target in targets:
         if cmds.progressBar(gMainProgressBar, query=True, isCancelled=True):
+            cmds.progressBar(gMainProgressBar, edit=True, endProgress=True)
             return False
 
         cmds.progressBar(gMainProgressBar, edit=True, step=1)

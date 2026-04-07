@@ -576,6 +576,7 @@ def export_meshes_to_objs(meshes, directory, prefix="", suffix="", overwrite=Fal
     # export files
     for mesh in meshes:
         if cmds.progressBar(gMainProgressBar, query=True, isCancelled=True):
+            cmds.progressBar(gMainProgressBar, edit=True, endProgress=True)
             return False
 
         cmds.progressBar(gMainProgressBar, edit=True, step=1)
@@ -650,6 +651,7 @@ def import_objs(directory, prefix=None, verbose=True):
     # import files
     for file_path in file_paths:
         if cmds.progressBar(gMainProgressBar, query=True, isCancelled=True):
+            cmds.progressBar(gMainProgressBar, edit=True, endProgress=True)
             return False
 
         cmds.progressBar(gMainProgressBar, edit=True, step=1)

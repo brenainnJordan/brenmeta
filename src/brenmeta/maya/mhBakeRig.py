@@ -786,6 +786,7 @@ def bake_shapes_from_poses(mesh_blendshapes, poses, psd_poses, in_betweens, deta
 
     for pose_index, pose in enumerate(poses):
         if cmds.progressBar(gMainProgressBar, query=True, isCancelled=True):
+            cmds.progressBar(gMainProgressBar, edit=True, endProgress=True)
             return False
 
         cmds.progressBar(gMainProgressBar, edit=True, step=1)
@@ -891,6 +892,7 @@ def calculate_psd_deltas(bs_node, psd_poses, in_betweens, detailed_verbose=True,
 
     for pose_index, psd_pose in psd_poses.items():
         if cmds.progressBar(gMainProgressBar, query=True, isCancelled=True):
+            cmds.progressBar(gMainProgressBar, edit=True, endProgress=True)
             return False
 
         cmds.progressBar(gMainProgressBar, edit=True, step=1)
@@ -1384,30 +1386,9 @@ def extract_pose_correctives(
     sculpts_dict = {}
     psd_poses_to_calculate = {}
 
-    # for i, pose in enumerate(poses):
-    #     if cmds.progressBar(gMainProgressBar, query=True, isCancelled=True):
-    #         return False
-    #
-    #     cmds.progressBar(gMainProgressBar, edit=True, step=1)
-    #
-    #     if pose.name not in targets:
-    #         continue
-    #
-    #     pose_name = pose.name
-    #     relevant_shapes = [pose_name]
-    #
-    #     if i in psd_poses:
-    #         pose = psd_poses[i]
-    #
-    #         relevant_shapes += [
-    #             input_pose.name for input_pose in pose.get_all_input_poses(include_psds=True)
-    #         ]
-    #
-    #     if not pose.affects_joints(driven_joints):
-    #         continue
-
     for i, pose in driver_poses.items():
         if cmds.progressBar(gMainProgressBar, query=True, isCancelled=True):
+            cmds.progressBar(gMainProgressBar, edit=True, endProgress=True)
             return False
 
         cmds.progressBar(gMainProgressBar, edit=True, step=1)
@@ -1504,6 +1485,7 @@ def extract_pose_correctives(
     for combo_count in range(1, 10):
         for i, pose in driver_poses.items():
             if cmds.progressBar(gMainProgressBar, query=True, isCancelled=True):
+                cmds.progressBar(gMainProgressBar, edit=True, endProgress=True)
                 return False
 
             if isinstance(pose, mhCore.PSDPose):
