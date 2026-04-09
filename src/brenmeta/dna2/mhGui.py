@@ -1074,6 +1074,16 @@ class DnaPosesWidget(DnaTab):
 
         self.all_lyt.addWidget(self.scale_all_poses_btn)
 
+        # blendshapes
+        self.blendshapes_group_box = QtWidgets.QGroupBox("Blendshapes")
+        self.blendshapes_lyt = QtWidgets.QVBoxLayout()
+        self.blendshapes_group_box.setLayout(self.blendshapes_lyt)
+
+        self.init_blendshapes_btn = QtWidgets.QPushButton("init blendshapes")
+        self.init_blendshapes_btn.clicked.connect(self.init_blendshapes)
+
+        self.blendshapes_lyt.addWidget(self.init_blendshapes_btn)
+
         # general layout
         self.input_lyt = QtWidgets.QHBoxLayout()
         self.input_lyt.addWidget(self.dna_file_combo)
@@ -1083,6 +1093,7 @@ class DnaPosesWidget(DnaTab):
 
         self.view_btn_lyt.addWidget(self.selected_group_box)
         self.view_btn_lyt.addWidget(self.all_group_box)
+        self.view_btn_lyt.addWidget(self.blendshapes_group_box)
         self.view_btn_lyt.addStretch()
 
         self.view_lyt = QtWidgets.QHBoxLayout()
@@ -1360,6 +1371,28 @@ class DnaPosesWidget(DnaTab):
         # )
 
         return True
+
+    def init_blendshapes(self):
+        if not self.calib_reader:
+            self.error("Poses not loaded")
+            return
+
+        mhBehaviour.initialize_blendshape_targets(self.calib_reader, self.poses)
+
+        # refresh poses
+        self.model.set_poses(None)
+
+        self.poses = mhBehaviour.get_all_poses(self.calib_reader)
+        self.psd_poses = mhBehaviour.get_psd_poses(self.calib_reader, self.poses)
+
+        self.model.set_poses(self.poses)
+
+        QtWidgets.QMessageBox.information(
+            self,
+            "Complete",
+            "Blendshapes initialized",
+            QtWidgets.QMessageBox.Ok
+        )
 
 
 class DnaQCWidget(DnaTab):

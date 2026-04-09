@@ -313,6 +313,75 @@ def get_psd_poses(reader, poses, override_name=True):
     return psd_poses
 
 
+def initialize_blendshape_targets(calib_reader, poses):
+    """
+
+    TODO get poses with names and only use those indices
+        check for repeating names and increment
+
+    """
+    # for now we're only interested in LOD 0, blendshape channel 0 and mesh 0 (head)
+    lod = 0
+    bs_channel = 0
+    mesh_index = 0
+
+    # parse poses
+    target_index = 0
+    target_indices = []
+    target_names = []
+    pose_indices = []
+
+    for pose_index, pose in enumerate(poses):
+        if not pose.name:
+            continue
+
+        target_indices.append(target_index)
+        pose_indices.append(pose_index)
+
+        # ensure target name is unique
+        target_name = pose.name
+
+        duplicate_index = 1
+
+        while target_name in target_names:
+            target_name = "{}_{}".format(pose.name, duplicate_index)
+            duplicate_index += 1
+
+        target_names.append(target_name)
+
+        target_index += 1
+
+    # set number of blendshape channel indices per LOD
+    channel_lods = [0] * calib_reader.getLODCount()
+    channel_lods[0] = len(poses)
+
+    calib_reader.setBlendShapeChannelLODs(channel_lods)
+
+    # map lod to blendshape channel
+    calib_reader.setLODBlendShapeChannelMapping(lod, bs_channel)
+
+    # set indices for blendshape channel
+    indices = list(range(len(poses)))
+
+    calib_reader.setBlendShapeChannelIndices(bs_channel, indices)
+    calib_reader.setBlendShapeChannelInputIndices(indices)
+    calib_reader.setBlendShapeChannelOutputIndices(indices)
+
+    for target_index, pose in enumerate(poses):
+        calib_reader.setBlendShapeChannelIndex(
+            mesh_index, target_index, target_index
+        )
+
+        if pose.name:
+            calib_reader.setBlendShapeChannelName(target_index, pose.name)
+
+        # (index, mesh_index, channel_target_index)
+        # TODO may need to tweak these indices
+        calib_reader.setMeshBlendShapeChannelMapping(target_index, mesh_index, target_index)
+
+    return calib_reader
+
+
 def save_dna(reader, path, validate=True, as_json=False, poses=None):
     stream = dna.FileStream(path, dna.FileStream.AccessMode_Write, dna.FileStream.OpenMode_Binary)
 

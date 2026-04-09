@@ -1325,6 +1325,8 @@ def extract_pose_correctives(
     orig_mesh = mhMayaUtils.get_orig_mesh(bs_node, as_name=True)
     orig_points = mhMayaUtils.get_points(orig_mesh, as_numpy=True)
 
+    # TODO check that mesh points match orig points!
+
     # get parent of joints
     driven_joints = set(driven_joints)
 

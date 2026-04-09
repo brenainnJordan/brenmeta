@@ -146,6 +146,8 @@ def get_blendshape_deltas(dna_obj, reader, lod=0):
         for target_index in range(target_count):
             delta_count = reader.getBlendShapeTargetDeltaCount(mesh_index, target_index)
 
+            vertex_indices = reader.getBlendShapeTargetVertexIndices(mesh_index, target_index)
+
             for delta_index in range(delta_count):
                 delta = reader.getBlendShapeTargetDelta(mesh_index, target_index, delta_index)
 
@@ -153,6 +155,10 @@ def get_blendshape_deltas(dna_obj, reader, lod=0):
 
 
 def set_blendshape_deltas():
+    """
+    meshIndex, blendShapeTargetIndex, deltas, vertexIndices, operation
+
+    """
     # TODO
     dnacalib2.SetBlendShapeTargetDeltasCommand
 
