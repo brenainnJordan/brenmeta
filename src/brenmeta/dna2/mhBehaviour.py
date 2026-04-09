@@ -351,9 +351,13 @@ def initialize_blendshape_targets(calib_reader, poses):
 
         target_index += 1
 
+    LOG.info("Target names: {}".format(target_names))
+    LOG.info("Target indices: {}".format(target_indices))
+    LOG.info("Pose indices: {}".format(pose_indices))
+
     # set number of blendshape channel indices per LOD
     channel_lods = [0] * calib_reader.getLODCount()
-    channel_lods[0] = len(poses)
+    channel_lods[0] = len(target_indices)
 
     calib_reader.setBlendShapeChannelLODs(channel_lods)
 
@@ -361,19 +365,18 @@ def initialize_blendshape_targets(calib_reader, poses):
     calib_reader.setLODBlendShapeChannelMapping(lod, bs_channel)
 
     # set indices for blendshape channel
-    indices = list(range(len(poses)))
+    # indices = list(range(len(poses)))
 
-    calib_reader.setBlendShapeChannelIndices(bs_channel, indices)
-    calib_reader.setBlendShapeChannelInputIndices(indices)
-    calib_reader.setBlendShapeChannelOutputIndices(indices)
+    calib_reader.setBlendShapeChannelIndices(bs_channel, target_indices)
+    calib_reader.setBlendShapeChannelInputIndices(pose_indices)
+    calib_reader.setBlendShapeChannelOutputIndices(target_indices)
 
-    for target_index, pose in enumerate(poses):
+    for target_index, target_name, pose_index in zip(target_indices, target_names, pose_indices):
         calib_reader.setBlendShapeChannelIndex(
             mesh_index, target_index, target_index
         )
 
-        if pose.name:
-            calib_reader.setBlendShapeChannelName(target_index, pose.name)
+        calib_reader.setBlendShapeChannelName(target_index, target_name)
 
         # (index, mesh_index, channel_target_index)
         # TODO may need to tweak these indices

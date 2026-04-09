@@ -2585,8 +2585,8 @@ class DnaModWidget(
         self.tabs.addTab(self.build_widget, "build")
         self.tabs.addTab(self.transfer_widget, "transfer")
         self.tabs.addTab(self.merge_widget, "merge")
-        self.tabs.addTab(self.poses_widget, "edit poses")
-        self.tabs.addTab(self.shape_bake_widget, "bake rig")
+        self.tabs.addTab(self.poses_widget, "poses")
+        self.tabs.addTab(self.shape_bake_widget, "bake")
         self.tabs.addTab(self.sculpt_widget, "sculpt")
         self.tabs.addTab(self.qc_widget, "QC")
 
