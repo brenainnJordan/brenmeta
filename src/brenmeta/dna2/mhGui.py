@@ -1801,7 +1801,9 @@ class DnaBakeRigWidget(DnaTab):
         self.connect_shapes_checkbox = QtWidgets.QCheckBox("connect shapes")
         self.connect_joints_checkbox = QtWidgets.QCheckBox("connect joints")
         self.optimise_checkbox = QtWidgets.QCheckBox("optimise")
-        self.cleanup_checkbox = QtWidgets.QCheckBox("cleanup")
+        # self.cleanup_checkbox = QtWidgets.QCheckBox("cleanup")
+        self.delete_targets_checkbox = QtWidgets.QCheckBox("delete targets")
+        self.delete_unused_checkbox = QtWidgets.QCheckBox("delete unused")
         self.use_combo_network_checkbox = QtWidgets.QCheckBox("use combo network")
 
         for checkbox in [
@@ -1810,7 +1812,9 @@ class DnaBakeRigWidget(DnaTab):
             self.connect_shapes_checkbox,
             self.connect_joints_checkbox,
             self.optimise_checkbox,
-            self.cleanup_checkbox,
+            # self.cleanup_checkbox,
+            self.delete_targets_checkbox,
+            self.delete_unused_checkbox,
             self.use_combo_network_checkbox,
         ]:
             checkbox.setChecked(True)
@@ -1864,11 +1868,13 @@ class DnaBakeRigWidget(DnaTab):
         self.reconnect_combo_network_checkbox = QtWidgets.QCheckBox("use combo network")
         self.reconnect_targets_checkbox = QtWidgets.QCheckBox("reconnect targets")
         self.reconnect_joints_checkbox = QtWidgets.QCheckBox("reconnect joints")
+        self.reconnect_baked_joints_only_checkbox = QtWidgets.QCheckBox("baked joints only")
 
         self.add_missing_targets_checkbox.setChecked(True)
         self.reconnect_combo_network_checkbox.setChecked(True)
         self.reconnect_targets_checkbox.setChecked(True)
         self.reconnect_joints_checkbox.setChecked(True)
+        self.reconnect_baked_joints_only_checkbox.setChecked(True)
 
         # reconnect btn
         self.reconnect_btn = QtWidgets.QPushButton("Reconnect")
@@ -1878,6 +1884,7 @@ class DnaBakeRigWidget(DnaTab):
         reconnect_lyt.addWidget(self.reconnect_combo_network_checkbox)
         reconnect_lyt.addWidget(self.reconnect_targets_checkbox)
         reconnect_lyt.addWidget(self.reconnect_joints_checkbox)
+        reconnect_lyt.addWidget(self.reconnect_baked_joints_only_checkbox)
         reconnect_lyt.addWidget(self.reconnect_btn)
 
         # bake driven group box
@@ -2084,7 +2091,9 @@ class DnaBakeRigWidget(DnaTab):
             connect_shapes=self.connect_shapes_checkbox.isChecked(),
             connect_joints=self.connect_joints_checkbox.isChecked(),
             optimise=self.optimise_checkbox.isChecked(),
-            cleanup=self.cleanup_checkbox.isChecked(),
+            # cleanup=self.cleanup_checkbox.isChecked(),
+            delete_targets=self.delete_targets_checkbox.isChecked(),
+            delete_unused=self.delete_unused_checkbox.isChecked(),
             expressions_node="CTRL_expressions",
             use_combo_network=self.use_combo_network_checkbox.isChecked(),
         )
@@ -2170,6 +2179,7 @@ class DnaBakeRigWidget(DnaTab):
                 use_combo_network=self.reconnect_combo_network_checkbox.isChecked(),
                 add_missing_targets=self.add_missing_targets_checkbox.isChecked(),
                 reconnect_joints=self.reconnect_joints_checkbox.isChecked(),
+                baked_joints_only=self.reconnect_baked_joints_only_checkbox.isChecked(),
                 reconnect_targets=self.reconnect_targets_checkbox.isChecked(),
             )
 

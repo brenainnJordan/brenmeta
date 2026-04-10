@@ -273,7 +273,8 @@ def bake_shapes_from_dna_v2(
         connect_shapes=True,
         connect_joints=True,
         optimise=True,
-        cleanup=True,
+        delete_targets=True,
+        delete_unused=True,
         use_combo_network=False,
         detailed_verbose=False
 ):
@@ -312,7 +313,8 @@ def bake_shapes_from_dna_v2(
         connect_shapes=connect_shapes,
         connect_joints=connect_joints,
         optimise=optimise,
-        cleanup=cleanup,
+        delete_targets=delete_targets,
+        delete_unused=delete_unused,
         expressions_node=expressions_node,
         use_combo_network=use_combo_network,
         detailed_verbose=detailed_verbose,
@@ -633,30 +635,47 @@ def connect_targets(driver_mapping, bs_nodes):
     return True
 
 
-def create_joint_poses(poses, pose_joints, driver_mapping):
-    # get attr poses
-    # dict where key is every attr for all joints we want to still have driven
-    # and value is all poses that drive that attr
-    attr_poses = {}
+def get_attr_pose_data(poses, pose_joints=None):
+    """Build a dict where key is every attr for all joints we want to still have driven
+    and value is all poses that drive that attr
+    """
+    attr_pose_data = {}
 
-    for joint in pose_joints:
-        if not cmds.objExists(joint):
-            LOG.warning("Joint not found: {}".format(joint))
-            continue
+    if pose_joints:
+        # find only poses that affect given joints
+        for joint in pose_joints:
+            if not cmds.objExists(joint):
+                LOG.warning("Joint not found: {}".format(joint))
+                continue
 
-        for attr in ["tx", "ty", "tz", "rx", "ry", "rz", "sx", "sy", "sz"]:
-            joint_attr = "{}.{}".format(joint, attr)
+            for attr in ["tx", "ty", "tz", "rx", "ry", "rz", "sx", "sy", "sz"]:
+                joint_attr = "{}.{}".format(joint, attr)
 
-            joint_poses = []
+                joint_poses = []
 
-            for pose in poses:
-                if joint_attr in pose.deltas:
-                    joint_poses.append(pose)
+                for pose in poses:
+                    if joint_attr in pose.deltas:
+                        joint_poses.append(pose)
 
-            attr_poses[joint_attr] = joint_poses
+                attr_pose_data[joint_attr] = joint_poses
+    else:
+        # remap all poses to attrs
+        for pose in poses:
+            for attr, value in pose.deltas.items():
+                if attr in attr_pose_data:
+                    attr_pose_data[attr].append(pose)
+                else:
+                    attr_pose_data[attr] = [pose]
 
-    for attr, poses in attr_poses.items():
-        if not poses:
+    return attr_pose_data
+
+
+def create_joint_poses(poses, driver_mapping, pose_joints=None):
+    attr_pose_data = get_attr_pose_data(poses, pose_joints=pose_joints)
+
+    # loop through driven attrs
+    for attr, attr_poses in attr_pose_data.items():
+        if not attr_poses:
             continue
 
         network_node = cmds.createNode(
@@ -664,7 +683,7 @@ def create_joint_poses(poses, pose_joints, driver_mapping):
             name="{}_poses".format(attr.replace(".", "_"))
         )
 
-        default = poses[0].defaults[attr]
+        default = attr_poses[0].defaults[attr]
 
         cmds.addAttr(
             network_node, longName="default", defaultValue=default
@@ -682,8 +701,19 @@ def create_joint_poses(poses, pose_joints, driver_mapping):
 
         input_index = 1
 
-        for pose in poses:
+        parsed_pose_names = []
+
+        for pose in attr_poses:
             if pose.deltas[attr] == 0.0:
+                continue
+
+            # avoid duplicate named poses
+            if pose.name in parsed_pose_names:
+                continue
+            else:
+                parsed_pose_names.append(pose.name)
+
+            if not pose.name:
                 continue
 
             cmds.addAttr(
@@ -732,7 +762,84 @@ def create_joint_poses(poses, pose_joints, driver_mapping):
     return True
 
 
-def bake_shapes_from_poses(mesh_blendshapes, poses, psd_poses, in_betweens, detailed_verbose=True, skip_empty=True):
+def create_joint_poses_sdk(poses, driver_mapping, pose_joints=None):
+    attr_pose_data = get_attr_pose_data(poses, pose_joints=pose_joints)
+
+    default_network_node = cmds.createNode("network", name="sdkDefault_network")
+
+    cmds.addAttr(default_network_node, longName="default", defaultValue=1.0)
+
+    # loop through driven attrs
+    for joint_attr, attr_poses in attr_pose_data.items():
+        if not attr_poses:
+            continue
+
+        parsed_pose_names = []
+
+        joint, attr = joint_attr.split(".")
+
+        # sdk for attr default value
+        cmds.setDrivenKeyframe(
+            joint,
+            attribute=attr,
+            currentDriver="{}.default".format(default_network_node),
+            driverValue=0.0,
+            value=0.0,
+            inTangentType="linear",
+            outTangentType="linear",
+        )
+
+        cmds.setDrivenKeyframe(
+            joint,
+            attribute=attr,
+            currentDriver="{}.default".format(default_network_node),
+            driverValue=1.0,
+            value=attr_poses[0].defaults[joint_attr],
+            inTangentType="linear",
+            outTangentType="linear",
+        )
+
+        for pose in attr_poses:
+            if pose.deltas[joint_attr] == 0.0:
+                continue
+
+            # avoid duplicate named poses
+            if pose.name in parsed_pose_names:
+                continue
+            else:
+                parsed_pose_names.append(pose.name)
+
+            if not pose.name:
+                continue
+
+            if pose.name not in driver_mapping:
+                LOG.warning("no expression for {}".format(pose.name))
+                continue
+
+            cmds.setDrivenKeyframe(
+                joint,
+                attribute=attr,
+                currentDriver=driver_mapping[pose.name],
+                driverValue=0.0,
+                value=0.0,
+                inTangentType="linear",
+                outTangentType="linear",
+            )
+
+            cmds.setDrivenKeyframe(
+                joint,
+                attribute=attr,
+                currentDriver=driver_mapping[pose.name],
+                driverValue=1.0,
+                value=pose.deltas[joint_attr],
+                inTangentType="linear",
+                outTangentType="linear",
+            )
+
+    return True
+
+
+def bake_shapes_from_poses(mesh_blendshapes, poses, psd_poses, in_betweens, detailed_verbose=True, skip_empty=False):
     """Pose rig and create blendshape targets for the given meshes
     """
     # get nodes
@@ -947,7 +1054,7 @@ def calculate_psd_deltas(bs_node, psd_poses, in_betweens, detailed_verbose=True,
 
     # subtract input psds
     if calculate_inputs:
-        LOG.info("Calculating input PSD deltas...")
+        LOG.info("Calculating input PSD deltas ({}) ...".format(bs_node))
 
         # do this in order of least combos to most combos
         for combo_count in range(3, 10):
@@ -993,7 +1100,8 @@ def bake_rig(
         connect_shapes=True,
         connect_joints=True,
         optimise=True,
-        cleanup=True,
+        delete_targets=True,
+        delete_unused=True,
         expressions_node="CTRL_expressions",
         use_combo_network=False,
         detailed_verbose=False
@@ -1050,7 +1158,7 @@ def bake_rig(
         for base_mesh, mesh in zip(base_meshes, meshes):
             cmds.rename(base_mesh, mesh)
 
-        if cleanup:
+        if delete_targets:
             cmds.refresh()
             cmds.delete(target_groups)
             cmds.refresh()
@@ -1061,6 +1169,8 @@ def bake_rig(
         LOG.info("Calculating PSD deltas...")
 
         for bs_node in bs_nodes:
+            LOG.info("  Blendshape node: {}".format(bs_node))
+
             calculate_psd_deltas(
                 bs_node,
                 psd_poses,
@@ -1094,10 +1204,10 @@ def bake_rig(
     if connect_joints:
         LOG.info("Creating joint poses...")
 
-        create_joint_poses(poses, bake_config.pose_joints, driver_mapping)
+        create_joint_poses(poses, driver_mapping, pose_joints=bake_config.pose_joints)
 
     # cleanup
-    if cleanup:
+    if delete_unused:
         delete_redundant_joints(
             bake_config.pose_joints,
             bake_config.keep_joints
@@ -1153,8 +1263,11 @@ def disconnect(
         if verbose:
             LOG.info("Disconnecting joints")
 
-        pose_nets = cmds.ls("*_poses", type="network")
-        cmds.delete(pose_nets)
+        redundant_nodes = cmds.ls("*_poses", type="network")
+        cmds.delete(redundant_nodes)
+
+        redundant_nodes = cmds.ls(type="blendWeighted")
+        cmds.delete(redundant_nodes)
 
     if delete_combo_network:
         # delete combo network
@@ -1190,9 +1303,11 @@ def reconnect(
         config_file_path,
         expressions_node="CTRL_expressions",
         reconnect_joints=True,
+        baked_joints_only=True,
         reconnect_targets=True,
         use_combo_network=False,
         add_missing_targets=True,
+        use_sdk=False
 ):
     """
     """
@@ -1272,10 +1387,23 @@ def reconnect(
 
         connect_targets(driver_mapping, bs_nodes)
 
-    if reconnect_joints:
-        LOG.info("Reconnecting joints")
-        # connecting joints
-        create_joint_poses(poses, bake_config.pose_joints, driver_mapping)
+    # reconnect joints
+    if reconnect_joints and baked_joints_only:
+        LOG.info("Reconnecting baked joints")
+        if use_sdk:
+            LOG.info("Using SDKs...")
+            create_joint_poses_sdk(poses, driver_mapping, pose_joints=bake_config.pose_joints)
+        else:
+            LOG.info("Using math nodes...")
+            create_joint_poses(poses, driver_mapping, pose_joints=bake_config.pose_joints)
+    elif reconnect_joints:
+        LOG.info("Reconnecting all joints")
+        if use_sdk:
+            LOG.info("Using SDKs...")
+            create_joint_poses_sdk(poses, driver_mapping, pose_joints=None)
+        else:
+            LOG.info("Using math nodes...")
+            create_joint_poses(poses, driver_mapping, pose_joints=None)
 
     return True
 
@@ -1353,13 +1481,19 @@ def extract_pose_correctives(
     LOG.info("Driver poses:")
 
     driver_poses = {}
+    parsed_pose_names = []
 
     for i, pose in enumerate(poses):
         if pose.name not in targets:
             continue
 
+        # skip duplicates
+        if pose.name in parsed_pose_names:
+            continue
+
         pose_name = pose.name
         relevant_shapes = [pose_name]
+        parsed_pose_names.append(pose_name)
 
         if i in psd_poses:
             pose = psd_poses[i]
@@ -1397,10 +1531,10 @@ def extract_pose_correctives(
 
         if isinstance(pose, mhCore.PSDPose):
             pose_name = pose.pose.name
-            relevant_shapes = [pose_name]
 
-            relevant_shapes += [
+            relevant_shapes = [pose_name] + [
                 input_pose.name for input_pose in pose.get_all_input_poses(include_psds=True)
+                if input_pose.name in targets
             ]
 
             if len(relevant_shapes) > 1:
