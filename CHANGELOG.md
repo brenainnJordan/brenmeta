@@ -21,3 +21,6 @@ All notable changes to this project will be documented in this file. This projec
 - neck readers and correctives
 - extract correctives for skinned meshes
 - bugfixes
+
+## [1.3.1] - 2026-04-10
+- SDK option, correctives bugfixes
