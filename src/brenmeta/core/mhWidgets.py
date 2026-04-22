@@ -297,39 +297,65 @@ class LabelledNamespaceLineEdit(QtWidgets.QWidget):
 
 
 class DnaPathManagerWidget(QtWidgets.QGroupBox):
-    def __init__(self, path_manager, name, parent=None):
+    MODES = ["Input Dna", "Output Dna", "other"]
+
+    def __init__(self, project, name, parent=None):
         super(DnaPathManagerWidget, self).__init__(name, parent=parent)
-        self.path_manager = path_manager
+        self.project = project
 
         self.combo = QtWidgets.QComboBox()
-        self.file_edit = None
+        self.combo.addItems(self.MODES)
+
+        self.current_mode = self.MODES[0]
+
+        self.file_edit = PathOpenWidget("dna file")
+        self.file_edit.setVisible(False)
+
+        self.dna_file_label = QtWidgets.QLabel()
+        self.dna_file_label.setEnabled(False)
 
         self.setLayout(QtWidgets.QVBoxLayout())
         self.layout().setContentsMargins(0, 0, 0, 0)
         self.layout().addWidget(self.combo)
+        self.layout().addWidget(self.dna_file_label)
 
-        self.update_assets()
-        self.combo.currentIndexChanged.connect(self._combo_changed)
+        self.combo.currentIndexChanged.connect(self.refresh)
 
-    def _combo_changed(self):
-        if self.combo.currentText() == "other" and self.layout().count() == 1:
-            self.file_edit = PathOpenWidget("dna file")
-            self.layout().addWidget(self.file_edit)
-        elif self.layout().count() == 2:
-            self.layout().removeWidget(self.file_edit)
-            self.file_edit = None
+    def refresh(self):
+        if self.combo.currentText() == "other":
+            if self.current_mode != "other":
+                self.layout().removeWidget(self.dna_file_label)
+                self.dna_file_label.setVisible(False)
 
-    def update_assets(self):
-        self.combo.clear()
-        self.combo.addItems(self.path_manager.get_dna_files())
-        self.combo.addItem("other")
-        return True
+                self.layout().addWidget(self.file_edit)
+                self.file_edit.setVisible(True)
+
+                self.current_mode = "other"
+        else:
+            if self.current_mode == "other":
+                self.layout().removeWidget(self.file_edit)
+                self.file_edit.setVisible(False)
+
+                self.layout().addWidget(self.dna_file_label)
+                self.dna_file_label.setVisible(True)
+
+            self.current_mode = self.combo.currentText()
+
+            if self.current_mode == self.MODES[0]:
+                text = self.project.input_dna_path
+            else:
+                text = self.project.output_dna_path
+
+            if not text:
+                text = "no path"
+
+            self.dna_file_label.setText(text)
 
     def get_path(self):
-        if self.combo.currentText() == "other":
+        if self.current_mode == "other":
             return self.file_edit.path
         else:
-            return self.path_manager.get_path(self.combo.currentText())
+            return self.project.get_path(self.current_mode)
 
 
 class DnaTransferMeshWidget(QtWidgets.QWidget):

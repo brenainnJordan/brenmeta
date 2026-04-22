@@ -19,6 +19,7 @@
 
 import os
 import sys
+import json
 
 import logging
 
@@ -119,13 +120,13 @@ class Pose(object):
         summed_pose.defaults.update(other.defaults)
 
         for attr, delta in self.deltas.items():
-            if attr in other.deltas:
-                summed_pose.deltas[attr] = delta + other.deltas[attr]
+            if attr in summed_pose.deltas:
+                summed_pose.deltas[attr] += delta
             else:
                 summed_pose.deltas[attr] = delta
 
         for attr, delta in other.deltas.items():
-            if attr in self.deltas:
+            if attr in summed_pose.deltas:
                 summed_pose.deltas[attr] += delta
             else:
                 summed_pose.deltas[attr] = delta
@@ -246,7 +247,7 @@ class PSDPose(object):
     def __repr__(self):
         return "{}({}: {}) <- [{}]".format(
             self.__class__.__name__, self.pose.index, self.pose.name,
-            [pose.name for pose in self.input_poses]
+            [pose.name or pose.index for pose in self.input_poses]
         )
 
     def get_defaults(self):
@@ -341,7 +342,8 @@ class PSDPose(object):
 
         for pose in self.get_all_input_poses():
             if not pose.name:
-                continue
+                LOG.info("unable to update PSD name: {}".format(self))
+                return self.pose.name
 
             if pose.name[-1] in "LR":
                 sides.add(pose.name[-1])
@@ -458,36 +460,15 @@ def update_input_psd_poses(psd_poses):
 
 
 class Project(object):
-    def __init__(self):
+    def __init__(self, dna_assets_path):
+        self.current_file = None
+
+        self.dna_assets_path = None
         self.input_dna_path = None
         self.output_dna_path = None
-        self.dna_assets_path = None
-        self.dna_files_path = None
-        self.bake_config_path = os.path.join(DATA_DIR, "configs", "bake_config.json")
+        self.bake_config_path = None
 
-    def get_dna_files(self):
-        generic_assets = None
-
-        assets = ["Input Dna", "Output Dna"]
-
-        if self.dna_files_path:
-            generic_assets = []
-
-            # dna_path = os.path.join(self.dna_assets_path, "dna_files")
-
-            if os.path.exists(self.dna_files_path):
-                for i in os.listdir(self.dna_files_path):
-                    if any([
-                        not i.endswith(".dna"),
-                    ]):
-                        continue
-
-                    generic_assets.append(i.split(".")[0])
-
-        if generic_assets:
-            assets += generic_assets
-
-        return assets
+        self.reset(dna_assets_path)
 
     def get_path(self, asset):
         dna_paths = {
@@ -496,12 +477,47 @@ class Project(object):
         }
 
         if asset in dna_paths:
-            dna_path = dna_paths[asset]
+            return dna_paths[asset]
 
-        else:
-            dna_path = os.path.join(
-                self.dna_files_path,
-                "{}.dna".format(asset)
-            )
+        return None
 
-        return dna_path
+    def reset(self, dna_assets_path):
+        self.current_file = None
+
+        self.dna_assets_path = dna_assets_path
+        self.input_dna_path = None
+        self.output_dna_path = None
+        self.bake_config_path = os.path.join(DATA_DIR, "configs", "bake_config.json")
+
+    def write(self, filepath):
+        data = {
+            "dna_assets_path": self.dna_assets_path,
+            "input_dna_path": self.input_dna_path,
+            "output_dna_path": self.output_dna_path,
+            "bake_config_path": self.bake_config_path,
+        }
+
+        json_data = json.dumps(
+            data, sort_keys=True, indent=4, separators=(',', ': ')
+        )
+
+        with open(filepath, "w") as f:
+            f.write(json_data)
+
+        return True
+
+    def read(self, filepath):
+        if not os.path.exists(filepath):
+            raise MHError("File not found: {}".format(filepath))
+
+        with open(filepath, 'r') as f:
+            data = json.load(f)
+
+        self.dna_assets_path = data["dna_assets_path"]
+        self.input_dna_path = data["input_dna_path"]
+        self.output_dna_path = data["output_dna_path"]
+        self.bake_config_path = data["bake_config_path"]
+
+        self.current_file = filepath
+
+        return True

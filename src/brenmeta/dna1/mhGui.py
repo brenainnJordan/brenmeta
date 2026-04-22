@@ -170,10 +170,6 @@ class DnaTransferWidget(QtWidgets.QWidget):
         lyt.addWidget(self.update_dna_group_box)
         lyt.addStretch()
 
-    def update_assets(self):
-        self.input_dna_combo.clear()
-        self.input_dna_combo.addItems(self.path_manager.get_dna_files())
-        return True
 
     def transfer(self):
 
@@ -639,14 +635,6 @@ class DnaBuildWidget(QtWidgets.QWidget):
         lyt.addWidget(self.utils_group_box)
         lyt.addWidget(self.materials_group_box)
         lyt.addStretch()
-
-        # update drop down boxes
-        self.update_assets()
-
-    def update_assets(self):
-        self.build_combo.clear()
-        self.build_combo.addItems(self.path_manager.get_dna_files())
-        return True
 
     def set_look(self):
         cmds.undoInfo(openChunk=True)
@@ -1115,11 +1103,6 @@ class DnaPosesWidget(QtWidgets.QWidget):
         #     self.selection_changed
         # )
 
-    def update_assets(self):
-        self.input_combo.clear()
-        self.input_combo.addItems(self.path_manager.get_dna_files())
-        return True
-
     def load(self):
         input_dna = self.input_combo.currentText()
         input_dna_path = self.path_manager.get_path(input_dna)
@@ -1434,11 +1417,6 @@ class DnaQCWidget(QtWidgets.QWidget):
 
         lyt.addWidget(self.tech_rom_box)
         lyt.addStretch()
-
-    def update_assets(self):
-        self.dna_combo.clear()
-        self.dna_combo.addItems(self.path_manager.get_dna_files())
-        return True
 
     def _create_rom_clicked(self):
         try:

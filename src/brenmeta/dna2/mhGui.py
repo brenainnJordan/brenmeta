@@ -28,6 +28,7 @@ from maya.api import OpenMaya
 
 from Qt import QtCore
 from Qt import QtWidgets
+from Qt import QtGui
 
 try:
     from shiboken2 import wrapInstance  # Maya with PySide2
@@ -48,6 +49,7 @@ from brenmeta.dna2 import mhBehaviour
 # from brenmeta.dna1 import mhUeUtils
 from brenmeta.dna2 import mhMesh
 from brenmeta.dna2 import mhJoints
+from brenmeta.dna2 import mhPoseWidgets
 from brenmeta.mh import mhFaceMaterials
 from brenmeta.mh import mhFaceJoints
 from brenmeta.mh import mhFaceMeshes
@@ -58,12 +60,14 @@ from brenmeta.maya import mhBlendshape
 
 LOG = mhCore.get_basic_logger(__name__)
 
+DEFAULT_DNA_DATA_DIR = mhSrc.get_dna_data_dir()
 
-class DnaTab(QtWidgets.QWidget):
+class DnaTab(QtWidgets.QMainWindow):
 
-    def __init__(self, path_manager, parent=None):
+    def __init__(self, project, parent=None):
         super(DnaTab, self).__init__(parent=parent)
-        self.path_manager = path_manager
+        self.project = project
+        self.setCentralWidget(QtWidgets.QWidget())
 
     def error(self, err):
         # TODO traceback
@@ -79,27 +83,129 @@ class DnaTab(QtWidgets.QWidget):
             QtWidgets.QMessageBox.Ok
         )
 
+    def refresh(self):
+        pass
+
+
+class ProjectWidget(DnaTab):
+
+    PATHS_CHANGED = QtCore.Signal()
+
+    def __init__(self, project, parent=None):
+        super(ProjectWidget, self).__init__(project, parent=parent)
+
+        self.is_refreshing = False
+
+        lyt = QtWidgets.QVBoxLayout()
+        self.centralWidget().setLayout(lyt)
+
+        self.dna_assets_dir_widget = mhWidgets.DirWidget("Dna Assets Dir")
+
+        self.input_file_widget = mhWidgets.PathOpenWidget("Input DNA")
+        self.input_file_widget.filter = "dna files (*.dna)"
+
+        self.output_file_widget = mhWidgets.PathSaveWidget("Output DNA")
+        self.output_file_widget.filter = "dna files (*.dna)"
+
+        self.bake_config_file_widget = mhWidgets.PathOpenWidget("bake config")
+        self.bake_config_file_widget.filter = "json files (*.json)"
+
+        self.dna_assets_dir_widget.PATH_CHANGED.connect(self.paths_changed)
+        self.input_file_widget.PATH_CHANGED.connect(self.paths_changed)
+        self.output_file_widget.PATH_CHANGED.connect(self.paths_changed)
+        self.bake_config_file_widget.PATH_CHANGED.connect(self.paths_changed)
+
+        lyt.addWidget(self.dna_assets_dir_widget)
+        lyt.addWidget(self.input_file_widget)
+        lyt.addWidget(self.output_file_widget)
+        lyt.addWidget(self.bake_config_file_widget)
+        lyt.addStretch()
+
+    def paths_changed(self):
+        if self.is_refreshing:
+            return True
+
+        self.project.dna_assets_path = self.dna_assets_dir_widget.path
+        self.project.input_dna_path = self.input_file_widget.path
+        self.project.output_dna_path = self.output_file_widget.path
+        self.project.bake_config_path = self.bake_config_file_widget.path
+
+        self.PATHS_CHANGED.emit()
+
+        return True
+
+    def refresh(self):
+        self.is_refreshing = True
+
+        self.dna_assets_dir_widget.path = self.project.dna_assets_path
+        self.input_file_widget.path = self.project.input_dna_path
+        self.output_file_widget.path = self.project.output_dna_path
+        self.bake_config_file_widget.path = self.project.bake_config_path
+
+        self.is_refreshing = False
+
 
 class DnaTransferWidget(DnaTab):
 
-    def __init__(self, path_manager, parent=None):
-        super(DnaTransferWidget, self).__init__(path_manager, parent=parent)
+    class UtilsMenu(QtWidgets.QMenu):
+        def __init__(self, parent=None):
+            super().__init__(parent=parent)
 
-        lyt = QtWidgets.QVBoxLayout()
-        self.setLayout(lyt)
+            self.setTitle("utils")
+
+            empty_icon = QtGui.QIcon()
+
+            self.eyewet_post_action = QtWidgets.QAction(empty_icon, 'eyewet post', self)
+            self.eyewet_post_action.setStatusTip('run post-process on eye wet meshes')
+            self.addAction(self.eyewet_post_action)
+
+            self.wrap_meshes_action = QtWidgets.QAction(empty_icon, 'create eyelid wrap meshes', self)
+            self.wrap_meshes_action.setStatusTip('create proxy meshes for wrapping eye geo')
+            self.addAction(self.wrap_meshes_action)
+
+    def __init__(self, project, parent=None):
+        super(DnaTransferWidget, self).__init__(project, parent=parent)
+
+        self._create_menus()
+        self._create_widgets()
+
+    def _create_menus(self):
+        # menu
+        self.menubar = self.menuBar()
+
+        self.utils_menu = self.UtilsMenu(parent=self)
+        self.menubar.addMenu(self.utils_menu)
+
+        self.utils_menu.eyewet_post_action.triggered.connect(self._eyewet_post_clicked)
+        self.utils_menu.wrap_meshes_action.triggered.connect(self._create_eyelid_wrap_meshes_clicked)
+
+    def _create_widgets(self):
+        # tabs
+        self.tabs = QtWidgets.QTabWidget()
+        self.setCentralWidget(self.tabs)
 
         # transfer meshes
-        self.transfer_meshes_group_box = QtWidgets.QGroupBox("transfer meshes")
+        self.transfer_meshes_widget = QtWidgets.QWidget()
 
         meshes_lyt = QtWidgets.QVBoxLayout()
-        self.transfer_meshes_group_box.setLayout(meshes_lyt)
+        self.transfer_meshes_widget.setLayout(meshes_lyt)
+
+        self.prefix_label = QtWidgets.QLabel(
+            "This process will transfer the eye and inner mouth meshes to a new face mesh.\n\n"
+            "First add 'src' prefix to all meshes, then import your new head mesh\n\n"
+            "Check which meshes to transfer, then click the button!\n"
+        )
+
+        self.prefix_meshes_btn = QtWidgets.QPushButton("add src prefix")
+        self.prefix_meshes_btn.clicked.connect(self.prefix_meshes)
+
+        meshes_lyt.addWidget(self.prefix_label)
+        meshes_lyt.addWidget(self.prefix_meshes_btn)
 
         # TODO more options
-
         self.eyeballs_checkbox = QtWidgets.QCheckBox("eyeballs")
         self.eyelashes_checkbox = QtWidgets.QCheckBox("eyelashes")
         self.eyewet_checkbox = QtWidgets.QCheckBox("eyewet")
-        # self.eye_pivots_checkbox = QtWidgets.QCheckBox("Recalculate eye pivots")
         self.inner_mouth_checkbox = QtWidgets.QCheckBox("inner mouth")
         self.cleanup_checkbox = QtWidgets.QCheckBox("cleanup")
 
@@ -107,7 +213,6 @@ class DnaTransferWidget(DnaTab):
             self.eyeballs_checkbox,
             self.eyelashes_checkbox,
             self.eyewet_checkbox,
-            # self.eye_pivots_checkbox,
             self.inner_mouth_checkbox,
             self.cleanup_checkbox,
         ]:
@@ -119,27 +224,21 @@ class DnaTransferWidget(DnaTab):
         self.transfer_face_meshes_btn.clicked.connect(self.transfer_face_meshes)
 
         meshes_lyt.addWidget(self.transfer_face_meshes_btn)
-
-        # mesh utils
-        self.mesh_utils_group_box = QtWidgets.QGroupBox("mesh utils")
-
-        mesh_utils_lyt = QtWidgets.QVBoxLayout()
-        self.mesh_utils_group_box.setLayout(mesh_utils_lyt)
-
-        self.eyewet_post_btn = QtWidgets.QPushButton("eyewet post")
-        self.eyewet_post_btn.clicked.connect(self._eyewet_post_clicked)
-
-        self.create_eyelid_wrap_meshes_btn = QtWidgets.QPushButton("create eyelid wrap meshes")
-        self.create_eyelid_wrap_meshes_btn.clicked.connect(self._create_eyelid_wrap_meshes_clicked)
-
-        mesh_utils_lyt.addWidget(self.eyewet_post_btn)
-        mesh_utils_lyt.addWidget(self.create_eyelid_wrap_meshes_btn)
+        meshes_lyt.addStretch()
 
         # transfer joints
-        self.transfer_joints_group_box = QtWidgets.QGroupBox("transfer joints")
+        self.transfer_joints_widget = QtWidgets.QWidget()
 
         joints_lyt = QtWidgets.QVBoxLayout()
-        self.transfer_joints_group_box.setLayout(joints_lyt)
+        self.transfer_joints_widget.setLayout(joints_lyt)
+
+        self.joints_label = QtWidgets.QLabel(
+            "This process will align all joints to the new meshes.\n\n"
+            "Please ensure meshes below match the meshes in the scene\n\n"
+            "Un-check any regions you do not wish to align\n"
+        )
+
+        joints_lyt.addWidget(self.joints_label)
 
         self.head = mhWidgets.DnaTransferMeshWidget("Head", "src_head_lod0_mesh", "head_lod0_mesh")
         self.teeth = mhWidgets.DnaTransferMeshWidget("Teeth", "src_teeth_lod0_mesh", "teeth_lod0_mesh")
@@ -163,14 +262,15 @@ class DnaTransferWidget(DnaTab):
         joints_lyt.addWidget(self.neck_checkbox)
         joints_lyt.addWidget(self.freeze_checkbox)
         joints_lyt.addWidget(self.transfer_btn)
+        joints_lyt.addStretch()
 
         # update dna
-        self.update_dna_group_box = QtWidgets.QGroupBox("update dna")
+        self.update_dna_widget = QtWidgets.QWidget()
 
         update_dna_lyt = QtWidgets.QVBoxLayout()
-        self.update_dna_group_box.setLayout(update_dna_lyt)
+        self.update_dna_widget.setLayout(update_dna_lyt)
 
-        self.dna_file_combo = mhWidgets.DnaPathManagerWidget(path_manager, "dna file")
+        self.dna_file_combo = mhWidgets.DnaPathManagerWidget(self.project, "dna file")
 
         self.scale_spin = mhWidgets.LabelledDoubleSpinBox(
             "scale", label_width=80, spin_box_width=80, height=30, default=1.0
@@ -205,17 +305,21 @@ class DnaTransferWidget(DnaTab):
         update_dna_lyt.addWidget(self.calculate_lods_checkbox)
         update_dna_lyt.addWidget(self.json_checkbox)
         update_dna_lyt.addWidget(self.update_btn)
+        update_dna_lyt.addStretch()
 
         # main lyt
-        lyt.addWidget(self.transfer_meshes_group_box)
-        lyt.addWidget(self.mesh_utils_group_box)
-        lyt.addWidget(self.transfer_joints_group_box)
-        lyt.addWidget(self.update_dna_group_box)
-        lyt.addStretch()
+        self.tabs.addTab(self.transfer_meshes_widget, "1. Meshes")
+        self.tabs.addTab(self.transfer_joints_widget, "2. Joints")
+        self.tabs.addTab(self.update_dna_widget, "3. Update DNA")
 
-    def update_assets(self):
-        self.dna_file_combo.update_assets()
-        return True
+        # lyt.addWidget(self.transfer_meshes_widget)
+        # lyt.addWidget(self.mesh_utils_group_box)
+        # lyt.addWidget(self.transfer_joints_widget)
+        # lyt.addWidget(self.update_dna_widget)
+        # lyt.addStretch()
+
+    def refresh(self):
+        self.dna_file_combo.refresh()
 
     def transfer(self):
 
@@ -286,7 +390,7 @@ class DnaTransferWidget(DnaTab):
             return False
 
         # check we have an output path
-        if not self.path_manager.output_dna_path:
+        if not self.project.output_dna_path:
             self.error("No output DNA path given")
             return False
 
@@ -295,7 +399,7 @@ class DnaTransferWidget(DnaTab):
             self,
             "confirm",
             "This will update input dna file:\n\n{}\n\nThen write output dna file to: \n\n{}\n\nContinue?".format(
-                input_dna_path, self.path_manager.output_dna_path
+                input_dna_path, self.project.output_dna_path
             ),
             QtWidgets.QMessageBox.Ok | QtWidgets.QMessageBox.Cancel
         )
@@ -324,7 +428,7 @@ class DnaTransferWidget(DnaTab):
 
         mhUtils.save_dna(
             calib_reader,
-            self.path_manager.output_dna_path,
+            self.project.output_dna_path,
             validate=False,
             as_json=self.json_checkbox.isChecked()
         )
@@ -338,7 +442,7 @@ class DnaTransferWidget(DnaTab):
         QtWidgets.QMessageBox.information(
             self,
             "Success",
-            "Dna file exported:\n{}".format(self.path_manager.output_dna_path),
+            "Dna file exported:\n{}".format(self.project.output_dna_path),
             QtWidgets.QMessageBox.Ok
         )
 
@@ -356,6 +460,25 @@ class DnaTransferWidget(DnaTab):
             )
         except mhCore.MHError as err:
             self.error(err)
+
+    def prefix_meshes(self):
+        cmds.undoInfo(openChunk=True)
+
+        try:
+            for mesh in cmds.listRelatives("head_lod0_grp", fullPath=True):
+                mesh_name = mesh.split("|")[-1]
+
+                cmds.rename(
+                    mesh, "src_{}".format(mesh_name)
+                )
+
+            cmds.undoInfo(closeChunk=True)
+
+        except Exception as err:
+            cmds.undoInfo(closeChunk=True)
+            self.error(err)
+
+        return True
 
     def _eyewet_post_clicked(self):
         mhFaceMeshes.eyewet_post()
@@ -551,11 +674,107 @@ Mesh count: {mesh_count}
 
 class DnaBuildWidget(DnaTab):
 
-    def __init__(self, path_manager, parent=None):
-        super(DnaBuildWidget, self).__init__(path_manager, parent=parent)
+    class DnaMenu(QtWidgets.QMenu):
+        def __init__(self, parent=None):
+            super().__init__(parent=parent)
 
+            self.setTitle("dna")
+
+            empty_icon = QtGui.QIcon()
+
+            self.inspect_action = QtWidgets.QAction(empty_icon, 'inspect dna', self)
+            self.inspect_action.setStatusTip('view data contained within dna file')
+            self.addAction(self.inspect_action)
+
+    class RigMenu(QtWidgets.QMenu):
+        def __init__(self, parent=None):
+            super().__init__(parent=parent)
+
+            self.setTitle("rig")
+
+            empty_icon = QtGui.QIcon()
+
+            self.joint_look_action = QtWidgets.QAction(empty_icon, 'set joint look', self)
+            self.joint_look_action.setStatusTip('make joints easier to see')
+            self.addAction(self.joint_look_action)
+
+            self.add_spine_joints_action = QtWidgets.QAction(empty_icon, 'add spine joints', self)
+            self.add_spine_joints_action.setStatusTip('add full spine hierarchy for Unreal')
+            self.addAction(self.add_spine_joints_action)
+
+            self.add_exp_attrs_action = QtWidgets.QAction(empty_icon, 'add expression attrs', self)
+            self.add_exp_attrs_action.setStatusTip('Add attributes required for Unreal')
+            self.addAction(self.add_exp_attrs_action)
+
+    class MaterialsMenu(QtWidgets.QMenu):
+        def __init__(self, parent=None):
+            super().__init__(parent=parent)
+
+            self.setTitle("materials")
+
+            empty_icon = QtGui.QIcon()
+
+            self.import_materials_action = QtWidgets.QAction(empty_icon, 'import materials', self)
+            self.import_materials_action.setStatusTip('Import metahuman base materials')
+            self.addAction(self.import_materials_action)
+
+            self.repath_common_action = QtWidgets.QAction(empty_icon, 'repath common textures', self)
+            self.repath_common_action.setStatusTip('Repath common textures')
+            self.addAction(self.repath_common_action)
+
+            self.repath_asset_action = QtWidgets.QAction(empty_icon, 'repath asset textures', self)
+            self.repath_asset_action.setStatusTip('Add attributes required for Unreal')
+            self.addAction(self.repath_asset_action)
+
+            self.reset_materials_action = QtWidgets.QAction(empty_icon, 'reset materials', self)
+            self.reset_materials_action.setStatusTip('reset all materials back to default lambert')
+            self.addAction(self.reset_materials_action)
+
+            self.create_lamberts_action = QtWidgets.QAction(empty_icon, 'create lamberts', self)
+            self.create_lamberts_action.setStatusTip('Create basic lambert per mesh')
+            self.addAction(self.create_lamberts_action)
+
+            self.create_lights_action = QtWidgets.QAction(empty_icon, 'create lights', self)
+            self.create_lights_action.setStatusTip('Create lights to work well with metahuman textures')
+            self.addAction(self.create_lights_action)
+
+    def __init__(self, project, parent=None):
+        super(DnaBuildWidget, self).__init__(project, parent=parent)
+
+        self._create_widgets()
+        self._create_menus()
+
+    def _create_menus(self):
+        self.menubar = self.menuBar()
+
+        # dna utils
+        self.dna_menu = self.DnaMenu(parent=self)
+        self.menubar.addMenu(self.dna_menu)
+
+        self.dna_menu.inspect_action.triggered.connect(self.inspect_dna)
+
+        # build utils
+        self.rig_menu = self.RigMenu(parent=self)
+        self.menubar.addMenu(self.rig_menu)
+
+        self.rig_menu.joint_look_action.triggered.connect(self.set_look)
+        self.rig_menu.add_spine_joints_action.triggered.connect(self.add_spine)
+        self.rig_menu.add_exp_attrs_action.triggered.connect(self.add_exp)
+
+        # material utils
+        self.materials_menu = self.MaterialsMenu(parent=self)
+        self.menubar.addMenu(self.materials_menu)
+
+        self.materials_menu.import_materials_action.triggered.connect(self.import_materials)
+        self.materials_menu.repath_common_action.triggered.connect(self.repath_common)
+        self.materials_menu.repath_asset_action.triggered.connect(self.repath_asset)
+        self.materials_menu.reset_materials_action.triggered.connect(self.reset_materials)
+        self.materials_menu.create_lamberts_action.triggered.connect(self.create_lamberts)
+        self.materials_menu.create_lights_action.triggered.connect(self.create_lights)
+
+    def _create_widgets(self):
         lyt = QtWidgets.QVBoxLayout()
-        self.setLayout(lyt)
+        self.centralWidget().setLayout(lyt)
 
         # build
         self.build_group_box = QtWidgets.QGroupBox("build rig")
@@ -563,7 +782,7 @@ class DnaBuildWidget(DnaTab):
         build_lyt = QtWidgets.QVBoxLayout()
         self.build_group_box.setLayout(build_lyt)
 
-        self.dna_file_combo = mhWidgets.DnaPathManagerWidget(path_manager, "dna file")
+        self.dna_file_combo = mhWidgets.DnaPathManagerWidget(self.project, "dna file")
 
         self.gui_override_widget = mhWidgets.PathOpenWidget("gui override")
 
@@ -583,96 +802,24 @@ class DnaBuildWidget(DnaTab):
 
         self.partial_rig_group_box.setLayout(self.partial_rig_lyt)
 
-        self.inspect_btn = QtWidgets.QPushButton("Inspect")
-        self.inspect_btn.setFixedHeight(30)
-        self.inspect_btn.clicked.connect(self.inspect_dna)
-
         self.build_btn = QtWidgets.QPushButton("Build")
         self.build_btn.setFixedHeight(30)
         self.build_btn.clicked.connect(self.build_rig)
 
         build_lyt.addWidget(self.dna_file_combo)
         build_lyt.addWidget(self.gui_override_widget)
-        build_lyt.addWidget(self.inspect_btn)
         build_lyt.addWidget(self.partial_rig_group_box)
         build_lyt.addWidget(self.build_btn)
 
-        # utils
-        self.utils_group_box = QtWidgets.QGroupBox("utils")
-
-        utils_lyt = QtWidgets.QVBoxLayout()
-        self.utils_group_box.setLayout(utils_lyt)
-
-        self.set_look_btn = QtWidgets.QPushButton("Set joint look")
-        self.set_look_btn.setFixedHeight(30)
-        self.set_look_btn.clicked.connect(self.set_look)
-
-        self.add_spine_btn = QtWidgets.QPushButton("Add spine joints")
-        self.add_spine_btn.setFixedHeight(30)
-        self.add_spine_btn.clicked.connect(self.add_spine)
-
-        self.add_exp_btn = QtWidgets.QPushButton("Add expression attrs")
-        self.add_exp_btn.setFixedHeight(30)
-        self.add_exp_btn.clicked.connect(self.add_exp)
-
-        self.prefix_btn = QtWidgets.QPushButton("Prefix meshes")
-        self.prefix_btn.setFixedHeight(30)
-        self.prefix_btn.clicked.connect(self.prefix_meshes)
-
-        utils_lyt.addWidget(self.set_look_btn)
-        utils_lyt.addWidget(self.add_spine_btn)
-        utils_lyt.addWidget(self.add_exp_btn)
-        utils_lyt.addWidget(self.prefix_btn)
-
-        # materials
-        self.materials_group_box = QtWidgets.QGroupBox("materials")
-
-        materials_lyt = QtWidgets.QVBoxLayout()
-        self.materials_group_box.setLayout(materials_lyt)
-
-        self.import_materials_btn = QtWidgets.QPushButton("Import materials")
-        self.import_materials_btn.setFixedHeight(30)
-        self.import_materials_btn.clicked.connect(self.import_materials)
-
-        self.reset_materials_btn = QtWidgets.QPushButton("Reset Materials")
-        self.reset_materials_btn.setFixedHeight(30)
-        self.reset_materials_btn.clicked.connect(self.reset_materials)
-
-        self.lamberts_btn = QtWidgets.QPushButton("Create lamberts")
-        self.lamberts_btn.setFixedHeight(30)
-        self.lamberts_btn.clicked.connect(self.create_lamberts)
-
-        self.create_lights_btn = QtWidgets.QPushButton("Create lights")
-        self.create_lights_btn.setFixedHeight(30)
-        self.create_lights_btn.clicked.connect(self.create_lights)
-
-        self.repath_common_btn = QtWidgets.QPushButton("Repath Common")
-        self.repath_common_btn.setFixedHeight(30)
-        self.repath_common_btn.clicked.connect(self.repath_common)
-
-        self.repath_asset_btn = QtWidgets.QPushButton("Repath Asset")
-        self.repath_asset_btn.setFixedHeight(30)
-        self.repath_asset_btn.clicked.connect(self.repath_asset)
-
-        self.repath_widget = mhWidgets.RepathWidget()
-
-        materials_lyt.addWidget(self.import_materials_btn)
-        materials_lyt.addWidget(self.repath_common_btn)
-        materials_lyt.addWidget(self.repath_asset_btn)
-        materials_lyt.addWidget(self.reset_materials_btn)
-        materials_lyt.addWidget(self.lamberts_btn)
-        materials_lyt.addWidget(self.create_lights_btn)
-        materials_lyt.addWidget(self.repath_widget)
+        # TODO
+        # self.repath_widget = mhWidgets.RepathWidget()
 
         # main lyt
         lyt.addWidget(self.build_group_box)
-        lyt.addWidget(self.utils_group_box)
-        lyt.addWidget(self.materials_group_box)
         lyt.addStretch()
 
-    def update_assets(self):
-        self.dna_file_combo.update_assets()
-        return True
+    def refresh(self):
+        self.dna_file_combo.refresh()
 
     def set_look(self):
         cmds.undoInfo(openChunk=True)
@@ -814,29 +961,8 @@ class DnaBuildWidget(DnaTab):
 
         return True
 
-    def prefix_meshes(self):
-        cmds.undoInfo(openChunk=True)
-
-        try:
-            for mesh in cmds.listRelatives("head_lod0_grp", fullPath=True):
-                mesh_name = mesh.split("|")[-1]
-
-                cmds.rename(
-                    mesh, "src_{}".format(mesh_name)
-                )
-
-            cmds.undoInfo(closeChunk=True)
-
-        except Exception as err:
-            cmds.undoInfo(closeChunk=True)
-            self.error(err)
-
-        return True
-
     def inspect_dna(self, lod=0):
         dna_path = self.dna_file_combo.get_path()
-
-        # dna_path = self.path_manager.get_path(build_mode)
 
         if not os.path.exists(dna_path):
             self.error("Dna path not found: {}".format(dna_path))
@@ -874,7 +1000,7 @@ class DnaBuildWidget(DnaTab):
         if self.partial_rig_group_box.isChecked():
             mhUtils.import_components(
                 dna_path,
-                self.path_manager.dna_assets_path,
+                self.project.dna_assets_path,
                 add_joints=self.joints_checkbox.isChecked(),
                 add_rig_logic=False,
                 add_skin_cluster=self.skin_cluster_checkbox.isChecked(),
@@ -885,7 +1011,7 @@ class DnaBuildWidget(DnaTab):
         else:
             mhUtils.import_components(
                 dna_path,
-                self.path_manager.dna_assets_path,
+                self.project.dna_assets_path,
                 add_joints=True,
                 add_rig_logic=True,
                 add_skin_cluster=True,
@@ -898,227 +1024,88 @@ class DnaBuildWidget(DnaTab):
         return True
 
 
-class DnaPosesModel(QtCore.QAbstractItemModel):
-    HEADERS = ["", "pose", "shape"]
-
-    def __init__(self, parent=None):
-        super(DnaPosesModel, self).__init__(parent)
-        self.poses = None
-
-    def set_poses(self, poses):
-        self.beginResetModel()
-        self.poses = poses
-        self.endResetModel()
-
-    def columnCount(self, parent=QtCore.QModelIndex()):
-        return len(self.HEADERS)
-
-    def headerData(self, section, orientation, role):
-        if role in [QtCore.Qt.DisplayRole, QtCore.Qt.EditRole]:
-            if orientation == QtCore.Qt.Horizontal:
-                if section < len(self.HEADERS):
-                    return self.HEADERS[section]
-
-        return super(DnaPosesModel, self).headerData(section, orientation, role)
-
-    def rowCount(self, parent=QtCore.QModelIndex()):
-        if not self.poses:
-            return 0
-
-        if parent.isValid():
-            return 0
-        else:
-            return len(self.poses)
-
-    def data(self, index, role=QtCore.Qt.DisplayRole):
-        if not index.isValid() or not self.poses:
-            return None
-
-        pose = index.internalPointer()
-
-        if role in [QtCore.Qt.DisplayRole, QtCore.Qt.EditRole]:
-            if index.column() == 0:
-                return pose.index
-            if index.column() == 1:
-                return pose.name
-            if index.column() == 2:
-                return pose.shape_name
-
-        return None
-
-    def setData(self, index, value, role=QtCore.Qt.EditRole):
-        if not index.isValid() or not self.poses:
-            return None
-
-        pose = index.internalPointer()
-
-        if role == QtCore.Qt.EditRole:
-            if index.column() == 0:
-                # TODO?
-                return False
-
-        return False
-
-    def index(self, row, column, parent=QtCore.QModelIndex()):
-        if not self.poses:
-            return QtCore.QModelIndex()
-
-        if parent.isValid():
-            return QtCore.QModelIndex()
-
-        return self.createIndex(row, column, self.poses[row])
-
-    def parent(self, index):
-        return QtCore.QModelIndex()
-
-    def flags(self, index):
-        if not self.poses:
-            return QtCore.Qt.NoItemFlags
-
-        flags = QtCore.Qt.ItemFlags()
-
-        # set as appropriate
-        flags = flags | QtCore.Qt.ItemIsEnabled
-        flags = flags | QtCore.Qt.ItemIsSelectable
-
-        return flags
-
 
 class DnaPosesWidget(DnaTab):
-    def __init__(self, path_manager, parent=None):
-        super(DnaPosesWidget, self).__init__(path_manager, parent=parent)
+
+    class UtilsMenu(QtWidgets.QMenu):
+        def __init__(self, parent=None):
+            super().__init__(parent=parent)
+
+            self.setTitle("utils")
+
+            empty_icon = QtGui.QIcon()
+
+            self.scale_all_action = QtWidgets.QAction(empty_icon, 'scale all deltas', self)
+            self.scale_all_action.setStatusTip('scale translation deltas for all poses')
+            self.addAction(self.scale_all_action)
+
+            self.init_bs_action = QtWidgets.QAction(empty_icon, 'init pose blendshapes', self)
+            self.init_bs_action.setStatusTip('Initialize blendshapes for all poses')
+            self.addAction(self.init_bs_action)
+
+
+    def __init__(self, project, parent=None):
+        super(DnaPosesWidget, self).__init__(project, parent=parent)
 
         self.dna_obj = None
         self.calib_reader = None
         self.poses = None
 
-        self.create_widgets()
+        self._create_menus()
+        self._create_widgets()
 
-    def create_widgets(self):
-        self.dna_file_combo = mhWidgets.DnaPathManagerWidget(self.path_manager, "dna file")
+    def refresh(self):
+        self.dna_file_combo.refresh()
 
-        self.load_btn = QtWidgets.QPushButton("load poses")
-        self.save_btn = QtWidgets.QPushButton("save output dna")
 
+    def _create_menus(self):
+        self.menubar = self.menuBar()
+
+        # dna utils
+        self.utils_menu = self.UtilsMenu(parent=self)
+        self.menubar.addMenu(self.utils_menu)
+
+        self.utils_menu.scale_all_action.triggered.connect(self.scale_all_poses)
+        self.utils_menu.init_bs_action.triggered.connect(self.init_blendshapes)
+
+
+    def _create_widgets(self):
+        # dna
+        self.dna_file_combo = mhWidgets.DnaPathManagerWidget(self.project, "dna file")
+
+        self.load_btn = QtWidgets.QPushButton("load")
+        self.load_btn.setFixedWidth(100)
         self.load_btn.clicked.connect(self.load)
-        self.save_btn.clicked.connect(self.save)
 
-        self.path_line_edit = QtWidgets.QLineEdit()
-
-        # self.model = QtCore.QStringListModel()
-        self.model = DnaPosesModel()
-        self.proxy_model = QtCore.QSortFilterProxyModel()
-
-        self.proxy_model.setSourceModel(self.model)
-        self.proxy_model.setFilterCaseSensitivity(QtCore.Qt.CaseSensitivity.CaseInsensitive)
-        self.proxy_model.setFilterKeyColumn(-1)
-
-        # self.view = QtWidgets.QListView()
-        self.view = QtWidgets.QTreeView()
-        self.view.setModel(self.proxy_model)
-        self.view.setSelectionMode(self.view.SelectionMode.ExtendedSelection)
-        self.view.header().resizeSection(0, 50)
-        self.view.header().resizeSection(1, 150)
-
-        # selected
-        self.selected_group_box = QtWidgets.QGroupBox("Selected")
-        self.selected_lyt = QtWidgets.QVBoxLayout()
-        self.selected_group_box.setLayout(self.selected_lyt)
-
-        # scene
-        self.selected_scene_group_box = QtWidgets.QGroupBox("Scene")
-        self.selected_scene_lyt = QtWidgets.QVBoxLayout()
-        self.selected_scene_group_box.setLayout(self.selected_scene_lyt)
-
-        self.update_scene_btn = QtWidgets.QPushButton("pose joints")
-        self.reset_pose_btn = QtWidgets.QPushButton("reset joints")
-
-        self.update_scene_btn.clicked.connect(self.update_scene)
-        self.reset_pose_btn.clicked.connect(self.reset_scene)
-
-        self.selected_scene_lyt.addWidget(self.update_scene_btn)
-        self.selected_scene_lyt.addWidget(self.reset_pose_btn)
-
-        # data
-        self.selected_data_group_box = QtWidgets.QGroupBox("Data")
-        self.selected_data_lyt = QtWidgets.QVBoxLayout()
-        self.selected_data_group_box.setLayout(self.selected_data_lyt)
-
-        self.update_sl_btn = QtWidgets.QPushButton("update pose")
-        self.mirror_sl_btn = QtWidgets.QPushButton("mirror")
-        self.scale_sl_btn = QtWidgets.QPushButton("scale")
-        self.scale_sl_ipv_btn = QtWidgets.QPushButton("scale IPV")
-
-        self.update_sl_btn.clicked.connect(self.update_data)
-        self.mirror_sl_btn.clicked.connect(self.mirror_pose)
-        self.scale_sl_btn.clicked.connect(self.scale_pose)
-        self.scale_sl_ipv_btn.clicked.connect(self.scale_pose_ipv)
-
-        self.selected_data_lyt.addWidget(self.update_sl_btn)
-        self.selected_data_lyt.addWidget(self.mirror_sl_btn)
-        self.selected_data_lyt.addWidget(self.scale_sl_btn)
-        self.selected_data_lyt.addWidget(self.scale_sl_ipv_btn)
-
-        # selected lyt
-        self.selected_lyt.addWidget(self.selected_scene_group_box)
-        self.selected_lyt.addWidget(self.selected_data_group_box)
-
-        # all
-        self.all_group_box = QtWidgets.QGroupBox("All")
-        self.all_lyt = QtWidgets.QVBoxLayout()
-        self.all_group_box.setLayout(self.all_lyt)
-
-        self.scale_all_poses_btn = QtWidgets.QPushButton("scale")
-
-        self.scale_all_poses_btn.clicked.connect(self.scale_all_poses)
-
-        self.all_lyt.addWidget(self.scale_all_poses_btn)
-
-        # blendshapes
-        self.blendshapes_group_box = QtWidgets.QGroupBox("Blendshapes")
-        self.blendshapes_lyt = QtWidgets.QVBoxLayout()
-        self.blendshapes_group_box.setLayout(self.blendshapes_lyt)
-
-        self.init_blendshapes_btn = QtWidgets.QPushButton("init blendshapes")
-        self.init_blendshapes_btn.clicked.connect(self.init_blendshapes)
-
-        self.blendshapes_lyt.addWidget(self.init_blendshapes_btn)
-
-        # general layout
         self.input_lyt = QtWidgets.QHBoxLayout()
         self.input_lyt.addWidget(self.dna_file_combo)
         self.input_lyt.addWidget(self.load_btn)
 
-        self.view_btn_lyt = QtWidgets.QVBoxLayout()
+        # poses
+        self.splitter = QtWidgets.QSplitter()
 
-        self.view_btn_lyt.addWidget(self.selected_group_box)
-        self.view_btn_lyt.addWidget(self.all_group_box)
-        self.view_btn_lyt.addWidget(self.blendshapes_group_box)
-        self.view_btn_lyt.addStretch()
+        self.core_poses_widget = mhPoseWidgets.PoseEditorWidget("Core Poses")
+        self.psd_poses_widget = mhPoseWidgets.PoseEditorWidget("PSD Poses", psd_mode=True)
 
-        self.view_lyt = QtWidgets.QHBoxLayout()
+        self.splitter.addWidget(self.core_poses_widget)
+        self.splitter.addWidget(self.psd_poses_widget)
 
-        self.view_lyt.addWidget(self.view)
-        self.view_lyt.addLayout(self.view_btn_lyt)
+        # save
+        self.save_btn = QtWidgets.QPushButton("save output dna")
+        self.save_btn.clicked.connect(self.save)
 
-        self.filter_line_edit = QtWidgets.QLineEdit()
-        self.filter_line_edit.setFixedHeight(30)
-        self.filter_line_edit.textChanged.connect(self.filter_changed)
-
+        # main layout
         lyt = QtWidgets.QVBoxLayout()
 
         lyt.addLayout(self.input_lyt)
-        lyt.addWidget(self.filter_line_edit)
-        lyt.addLayout(self.view_lyt)
+        lyt.addWidget(self.splitter)
         lyt.addWidget(self.save_btn)
 
-        self.setLayout(lyt)
+        self.centralWidget().setLayout(lyt)
 
-        self.view.selectionModel().selectionChanged.connect(self.selection_changed)
+        self.core_poses_widget.view.selectionModel().selectionChanged.connect(self.selection_changed)
+        self.psd_poses_widget.view.selectionModel().selectionChanged.connect(self.psd_selection_changed)
 
-    def update_assets(self):
-        self.dna_file_combo.update_assets()
-        return True
 
     def load(self):
         input_dna_path = self.dna_file_combo.get_path()
@@ -1149,12 +1136,7 @@ class DnaPosesWidget(DnaTab):
         reader = mhUtils.load_dna(input_dna_path)
         self.calib_reader = dnacalib2.DNACalibDNAReader(reader)
 
-        self.attrs = mhBehaviour.get_joint_attrs(self.calib_reader)
-        self.attr_defaults = mhBehaviour.get_joint_defaults(self.calib_reader)
-        self.poses = mhBehaviour.get_all_poses(self.calib_reader)
-        self.psd_poses = mhBehaviour.get_psd_poses(self.calib_reader, self.poses)
-
-        self.model.set_poses(self.poses)
+        self.reload_poses()
 
         QtWidgets.QMessageBox.information(
             self,
@@ -1167,7 +1149,7 @@ class DnaPosesWidget(DnaTab):
 
     def save(self):
         # check we have an output path
-        if not self.path_manager.output_dna_path:
+        if not self.project.output_dna_path:
             QtWidgets.QMessageBox.critical(
                 self,
                 "Error",
@@ -1192,7 +1174,7 @@ class DnaPosesWidget(DnaTab):
         confirm = QtWidgets.QMessageBox.warning(
             self,
             "confirm",
-            "Save all poses?\n{}".format(self.path_manager.output_dna_path),
+            "Save all poses?\n{}".format(self.project.output_dna_path),
             QtWidgets.QMessageBox.Ok | QtWidgets.QMessageBox.Cancel
         )
 
@@ -1202,7 +1184,7 @@ class DnaPosesWidget(DnaTab):
         # write data
         mhBehaviour.save_dna(
             self.calib_reader,
-            self.path_manager.output_dna_path,
+            self.project.output_dna_path,
             poses=self.poses,
         )
 
@@ -1218,139 +1200,54 @@ class DnaPosesWidget(DnaTab):
             QtWidgets.QMessageBox.information(
                 self,
                 "Success",
-                "Dna file exported:\n{}".format(self.path_manager.output_dna_path),
+                "Dna file exported:\n{}".format(self.project.output_dna_path),
                 QtWidgets.QMessageBox.Ok
             )
 
         return True
 
     def selection_changed(self, old_selection, new_selection):
-        pass
+        poses = self.core_poses_widget.get_selected_poses()
+        self.psd_poses_widget.proxy_model.set_ref_poses(poses)
 
-    def filter_changed(self):
-        self.proxy_model.setFilterWildcard(
-            "*{}*".format(self.filter_line_edit.text())
-        )
+    def psd_selection_changed(self, old_selection, new_selection):
+        # pass
+        poses = self.psd_poses_widget.get_selected_poses()
+        self.core_poses_widget.proxy_model.set_ref_poses(poses)
 
-    # def set_pose_names(self, pose_names):
-    #     self.model.setStringList(pose_names)
-    #     return True
+    def reload_poses(self):
+        self.core_poses_widget.set_poses(None)
+        self.psd_poses_widget.set_poses(None)
+        self.psd_poses_widget.proxy_model.set_ref_poses(None)
 
-    def get_selected_poses(self, warn=False):
-        poses = []
+        self.attrs = mhBehaviour.get_joint_attrs(self.calib_reader)
+        self.attr_defaults = mhBehaviour.get_joint_defaults(self.calib_reader)
+        self.poses = mhBehaviour.get_all_poses(self.calib_reader)
+        self.psd_poses = mhBehaviour.get_psd_poses(self.calib_reader, self.poses)
+        self.core_poses = [pose for i, pose in enumerate(self.poses) if i not in self.psd_poses]
+        self.sorted_psd_poses = [self.psd_poses[i] for i in sorted(self.psd_poses.keys())]
 
-        selection = self.view.selectionModel().selection()
+        self.core_poses_widget.set_poses(self.core_poses)
+        self.psd_poses_widget.set_poses(self.sorted_psd_poses)
 
-        for proxy_index in selection.indexes():
-            index = self.proxy_model.mapToSource(proxy_index)
+        self.core_poses_widget.attr_defaults = self.attr_defaults
+        self.psd_poses_widget.attr_defaults = self.attr_defaults
 
-            pose = self.poses[int(index.row())]
+    def init_blendshapes(self):
+        if not self.calib_reader:
+            self.error("Poses not loaded")
+            return
 
-            poses.append(pose)
+        mhBehaviour.initialize_blendshape_targets(self.calib_reader, self.poses)
 
-        if not poses and warn:
-            QtWidgets.QMessageBox.warning(
-                self,
-                "Warning",
-                "No pose selected",
-                QtWidgets.QMessageBox.Ok
-            )
+        self.reload_poses()
 
-        return poses
-
-    def reset_scene(self):
-        mhJoints.reset_scene_joint_xforms(self.calib_reader)
-
-    def update_scene(self):
-        poses = self.get_selected_poses(warn=True)
-
-        if not poses:
-            return False
-        else:
-            pose = poses[0]
-
-        pose.pose_joints()
-
-        # mhBehaviour.pose_joints_from_data(
-        #     self.calib_reader, self.poses, pose_index,
-        #     ignore_namespace=False, defaults=self.attr_defaults
-        # )
-
-        return True
-
-    def update_data(self):
-        poses = self.get_selected_poses(warn=True)
-
-        if not poses:
-            return False
-        else:
-            pose = poses[0]
-
-        pose.update_from_scene()
-
-        if isinstance(pose, mhCore.PSDPose):
-            LOG.info("PSD pose data updated: {}".format(pose.pose.name))
-        else:
-            LOG.info("pose data updated: {}".format(pose.name))
-
-        # mhBehaviour.update_pose_data_from_scene(
-        #     self.calib_reader, self.poses, pose,
-        #     ignore_namespace=False, defaults=self.attr_defaults
-        # )
-
-        return True
-
-    def mirror_pose(self):
-        QtWidgets.QMessageBox.warning(
+        QtWidgets.QMessageBox.information(
             self,
-            "Warning",
-            "Mirror pose not yet implemented",
+            "Complete",
+            "Blendshapes initialized",
             QtWidgets.QMessageBox.Ok
         )
-
-    def scale_pose(self):
-        poses = self.get_selected_poses(warn=True)
-
-        if not poses:
-            return False
-
-        scale_value, ok = QtWidgets.QInputDialog.getDouble(
-            self, "Scale pose(s)", "Value to scale translate values of selected poses:",
-            value=1.0, min=0.0, max=10000, decimals=3
-        )
-
-        if not ok:
-            return False
-
-        scale_value = float(scale_value)
-
-        for pose in poses:
-            pose.scale_deltas(scale_value)
-
-        return True
-
-    def scale_pose_ipv(self):
-        poses = self.get_selected_poses(warn=True)
-
-        if not poses:
-            return False
-
-        scale_value, ok = QtWidgets.QInputDialog.getDouble(
-            self, "Scale IPV pose(s)", "Value to scale translate values of selected poses\nOn IPV joints only:",
-            value=1.0, min=0.0, max=10000, decimals=3
-        )
-
-        if not ok:
-            return False
-
-        scale_value = float(scale_value)
-
-        ipv_joints = cmds.ls("*IPV*", type="joint")
-
-        for pose in poses:
-            pose.scale_deltas(scale_value, joints=ipv_joints)
-
-        return True
 
     def scale_all_poses(self):
         scale_value, ok = QtWidgets.QInputDialog.getDouble(
@@ -1366,43 +1263,20 @@ class DnaPosesWidget(DnaTab):
         for pose in self.poses:
             pose.scale_deltas(scale_value)
 
-        # mhBehaviour.scale_all_poses(
-        #     self.poses, scale_value
-        # )
-
         return True
-
-    def init_blendshapes(self):
-        if not self.calib_reader:
-            self.error("Poses not loaded")
-            return
-
-        mhBehaviour.initialize_blendshape_targets(self.calib_reader, self.poses)
-
-        # refresh poses
-        self.model.set_poses(None)
-
-        self.poses = mhBehaviour.get_all_poses(self.calib_reader)
-        self.psd_poses = mhBehaviour.get_psd_poses(self.calib_reader, self.poses)
-
-        self.model.set_poses(self.poses)
-
-        QtWidgets.QMessageBox.information(
-            self,
-            "Complete",
-            "Blendshapes initialized",
-            QtWidgets.QMessageBox.Ok
-        )
 
 
 class DnaQCWidget(DnaTab):
-    def __init__(self, path_manager, parent=None):
-        super(DnaQCWidget, self).__init__(path_manager, parent=parent)
+    def __init__(self, project, parent=None):
+        super(DnaQCWidget, self).__init__(project, parent=parent)
 
         self.dna_obj = None
         self.calib_reader = None
 
         self.create_widgets()
+
+    def refresh(self):
+        self.dna_file_combo.refresh()
 
     def create_widgets(self):
         # utils
@@ -1431,7 +1305,7 @@ class DnaQCWidget(DnaTab):
         # Create tech ROM
         self.tech_rom_box = QtWidgets.QGroupBox("Technical ROM")
 
-        self.dna_file_combo = mhWidgets.DnaPathManagerWidget(self.path_manager, "dna file")
+        self.dna_file_combo = mhWidgets.DnaPathManagerWidget(self.project, "dna file")
         self.start_spin = mhWidgets.LabelledSpinBox("Start Frame", default=0, maximum=10000)
         self.frame_interval = mhWidgets.LabelledSpinBox("Frame Interval", default=10, maximum=100)
         self.update_timeline_checkbox = QtWidgets.QCheckBox("Update Timeline")
@@ -1484,15 +1358,11 @@ class DnaQCWidget(DnaTab):
 
         # main layout
         lyt = QtWidgets.QVBoxLayout()
-        self.setLayout(lyt)
+        self.centralWidget().setLayout(lyt)
 
         lyt.addWidget(self.utils_box)
         lyt.addWidget(self.tech_rom_box)
         lyt.addStretch()
-
-    def update_assets(self):
-        self.dna_file_combo.update_assets()
-        return True
 
     def _reset_anim_clicked(self):
         namespace = self.namespace_edit.line_edit.text()
@@ -1526,7 +1396,7 @@ class DnaQCWidget(DnaTab):
         tongue = False
         eyelashes = False
         use_bake_config = self.use_bake_config_checkbox.isChecked()
-        bake_config_file = self.path_manager.bake_config_path
+        bake_config_file = self.project.bake_config_path
 
         if selected_sculpts:
             sculpts = cmds.ls(sl=True, type="transform")
@@ -1622,10 +1492,14 @@ class DnaQCWidget(DnaTab):
 
 
 class DnaMergeWidget(DnaTab):
-    def __init__(self, path_manager, parent=None):
-        super(DnaMergeWidget, self).__init__(path_manager, parent=parent)
+    def __init__(self, project, parent=None):
+        super(DnaMergeWidget, self).__init__(project, parent=parent)
 
         self.create_widgets()
+
+    def refresh(self):
+        self.src_dna_file_combo.refresh()
+        self.dst_dna_file_combo.refresh()
 
     def create_widgets(self):
         # merge
@@ -1634,9 +1508,9 @@ class DnaMergeWidget(DnaTab):
         merge_group_lyt = QtWidgets.QVBoxLayout()
         self.merge_group_box.setLayout(merge_group_lyt)
 
-        self.src_dna_file_combo = mhWidgets.DnaPathManagerWidget(self.path_manager, "src dna file")
+        self.src_dna_file_combo = mhWidgets.DnaPathManagerWidget(self.project, "src dna file")
 
-        self.dst_dna_file_combo = mhWidgets.DnaPathManagerWidget(self.path_manager, "dst dna file")
+        self.dst_dna_file_combo = mhWidgets.DnaPathManagerWidget(self.project, "dst dna file")
         self.dst_dna_file_combo.combo.setCurrentText("output")
 
         self.joint_xforms_checkbox = QtWidgets.QCheckBox("joint xforms")
@@ -1664,7 +1538,7 @@ class DnaMergeWidget(DnaTab):
 
         # create layout
         lyt = QtWidgets.QVBoxLayout()
-        self.setLayout(lyt)
+        self.centralWidget().setLayout(lyt)
 
         lyt.addWidget(self.merge_group_box)
         lyt.addWidget(self.merge_btn)
@@ -1698,7 +1572,7 @@ class DnaMergeWidget(DnaTab):
             self,
             "confirm",
             "This will merge source dna file:\n\n{}\n\nInto destination dna file: \n\n{}\n\nThe save output dna file to:\n\n{}\n\nContinue?".format(
-                src_dna_path, dst_dna_path, self.path_manager.output_dna_path
+                src_dna_path, dst_dna_path, self.project.output_dna_path
             ),
             QtWidgets.QMessageBox.Ok | QtWidgets.QMessageBox.Cancel
         )
@@ -1726,7 +1600,7 @@ class DnaMergeWidget(DnaTab):
 
             mhBehaviour.save_dna(
                 dst_calib_reader,
-                self.path_manager.output_dna_path,
+                self.project.output_dna_path,
                 validate=True,
                 as_json=self.json_checkbox.isChecked(),
                 poses=poses,
@@ -1735,7 +1609,7 @@ class DnaMergeWidget(DnaTab):
         else:
             mhUtils.save_dna(
                 dst_calib_reader,
-                self.path_manager.output_dna_path,
+                self.project.output_dna_path,
                 validate=False,
                 as_json=self.json_checkbox.isChecked()
             )
@@ -1749,30 +1623,50 @@ class DnaMergeWidget(DnaTab):
         QtWidgets.QMessageBox.information(
             self,
             "Success",
-            "Dna file exported:\n{}".format(self.path_manager.output_dna_path),
+            "Dna file exported:\n{}".format(self.project.output_dna_path),
             QtWidgets.QMessageBox.Ok
         )
 
         return True
 
-    def update_assets(self):
-        self.src_dna_file_combo.update_assets()
-        self.dst_dna_file_combo.update_assets()
-        return True
-
 
 class DnaBakeRigWidget(DnaTab):
-    def __init__(self, path_manager, parent=None):
-        super(DnaBakeRigWidget, self).__init__(path_manager, parent=parent)
 
-        self.create_widgets()
+    class UtilsMenu(QtWidgets.QMenu):
+        def __init__(self, parent=None):
+            super().__init__(parent=parent)
 
-    def create_widgets(self):
+            self.setTitle("utils")
 
-        self.dna_file_combo = mhWidgets.DnaPathManagerWidget(self.path_manager, "dna file")
+            empty_icon = QtGui.QIcon()
 
-        self.inspect_config_btn = QtWidgets.QPushButton("inspect bake config")
-        self.inspect_config_btn.clicked.connect(self._inspect_clicked)
+            self.inspect_action = QtWidgets.QAction(empty_icon, 'inspect config', self)
+            self.inspect_action.setStatusTip('Inspect bake config json file contents')
+            self.addAction(self.inspect_action)
+
+
+    def __init__(self, project, parent=None):
+        super(DnaBakeRigWidget, self).__init__(project, parent=parent)
+
+        self._create_menus()
+        self._create_widgets()
+
+    def refresh(self):
+        self.dna_file_combo.refresh()
+
+
+    def _create_menus(self):
+        self.menubar = self.menuBar()
+
+        # utils
+        self.utils_menu = self.UtilsMenu(parent=self)
+        self.menubar.addMenu(self.utils_menu)
+
+        self.utils_menu.inspect_action.triggered.connect(self._inspect_clicked)
+
+    def _create_widgets(self):
+
+        self.dna_file_combo = mhWidgets.DnaPathManagerWidget(self.project, "dna file")
 
         self.tabs = QtWidgets.QTabWidget()
 
@@ -1834,6 +1728,14 @@ class DnaBakeRigWidget(DnaTab):
         edit_lyt = QtWidgets.QVBoxLayout()
         self.edit_tab.setLayout(edit_lyt)
 
+        self.edit_label = QtWidgets.QLabel(
+            "If you need to make changes to the bake config, such as adding new shapes and combos,\n"
+            "first 'disconnect' to delete existing rig logic, then 'reconnect' to create updated rig logic.\n"
+            "This will also add any new targets to the blendshape node(s)\n"
+        )
+
+        edit_lyt.addWidget(self.edit_label)
+
         # disconnect group box
         self.disconnect_group_box = QtWidgets.QGroupBox("disconnect")
 
@@ -1886,6 +1788,19 @@ class DnaBakeRigWidget(DnaTab):
         reconnect_lyt.addWidget(self.reconnect_joints_checkbox)
         reconnect_lyt.addWidget(self.reconnect_baked_joints_only_checkbox)
         reconnect_lyt.addWidget(self.reconnect_btn)
+
+        # edit layout
+        edit_lyt.addWidget(self.disconnect_group_box)
+        edit_lyt.addWidget(self.reconnect_group_box)
+        edit_lyt.addStretch()
+
+        self.tabs.addTab(self.edit_tab, "edit")
+        self.tabs.setCurrentIndex(0)
+
+        # utils tab
+        self.utils_tab = QtWidgets.QWidget()
+        utils_lyt = QtWidgets.QVBoxLayout()
+        self.utils_tab.setLayout(utils_lyt)
 
         # bake driven group box
         self.bake_driven_group_box = QtWidgets.QGroupBox("bake driven")
@@ -1952,22 +1867,21 @@ class DnaBakeRigWidget(DnaTab):
         extract_correctives_lyt.addWidget(self.extract_correctives_cleanup_checkbox)
         extract_correctives_lyt.addWidget(self.extract_correctives_btn)
 
-        # edit layout
-        edit_lyt.addWidget(self.disconnect_group_box)
-        edit_lyt.addWidget(self.reconnect_group_box)
-        edit_lyt.addWidget(self.bake_driven_group_box)
-        edit_lyt.addWidget(self.extract_correctives_group_box)
-        edit_lyt.addStretch()
+        # utils layout
+        utils_lyt.addWidget(self.bake_driven_group_box)
+        utils_lyt.addWidget(self.extract_correctives_group_box)
+        utils_lyt.addStretch()
 
-        self.tabs.addTab(self.edit_tab, "edit")
+        self.tabs.addTab(self.utils_tab, "utils")
+
+        # set default tab
         self.tabs.setCurrentIndex(0)
 
         # create layout
         lyt = QtWidgets.QVBoxLayout()
-        self.setLayout(lyt)
+        self.centralWidget().setLayout(lyt)
 
         lyt.addWidget(self.dna_file_combo)
-        lyt.addWidget(self.inspect_config_btn)
         lyt.addWidget(self.tabs)
 
     def _inspect_clicked(self):
@@ -1975,7 +1889,7 @@ class DnaBakeRigWidget(DnaTab):
         """
         # get paths
         dna_path = self.dna_file_combo.get_path()
-        bake_config_file = self.path_manager.bake_config_path
+        bake_config_file = self.project.bake_config_path
 
         # check we have paths
         if not dna_path:
@@ -2059,7 +1973,7 @@ class DnaBakeRigWidget(DnaTab):
 
         # get paths
         dna_path = self.dna_file_combo.get_path()
-        bake_config_file = self.path_manager.bake_config_path
+        bake_config_file = self.project.bake_config_path
 
         # check we have paths
         if not dna_path:
@@ -2110,7 +2024,7 @@ class DnaBakeRigWidget(DnaTab):
     def _disconnect_clicked(self):
         try:
             mhBakeRig.disconnect(
-                self.path_manager.bake_config_path,
+                self.project.bake_config_path,
                 disconnect_targets=self.disconnect_targets_checkbox.isChecked(),
                 disconnect_joints=self.disconnect_joints_checkbox.isChecked(),
                 delete_combo_network=self.delete_combo_network_checkbox.isChecked(),
@@ -2129,7 +2043,7 @@ class DnaBakeRigWidget(DnaTab):
 
         # get paths
         dna_path = self.dna_file_combo.get_path()
-        bake_config_file = self.path_manager.bake_config_path
+        bake_config_file = self.project.bake_config_path
 
         # check we have paths
         if not dna_path:
@@ -2209,7 +2123,7 @@ class DnaBakeRigWidget(DnaTab):
 
         # get paths
         dna_path = self.dna_file_combo.get_path()
-        bake_config_file = self.path_manager.bake_config_path
+        bake_config_file = self.project.bake_config_path
 
         # check we have paths
         if not dna_path:
@@ -2260,14 +2174,10 @@ class DnaBakeRigWidget(DnaTab):
 
         return True
 
-    def update_assets(self):
-        self.dna_file_combo.update_assets()
-        return True
-
 
 class DnaSculptWidget(DnaTab):
-    def __init__(self, path_manager, parent=None):
-        super(DnaSculptWidget, self).__init__(path_manager, parent=parent)
+    def __init__(self, project, parent=None):
+        super(DnaSculptWidget, self).__init__(project, parent=parent)
 
         self.create_widgets()
 
@@ -2311,11 +2221,9 @@ class DnaSculptWidget(DnaTab):
 
         self.proxy_combo_label = QtWidgets.QLabel(
             "Select two or more targets in the shape editor and click 'Create'\n\n"
-            "This will combine the targets into a single target on a new mesh\n"
-            "and a sculpt target to do your work.\n\n"
+            "This will combine the targets into a single target on a new mesh and a sculpt target to do your work.\n\n"
             "Once you are done sculpting, select the proxy combo mesh and click 'Apply'\n\n"
-            "This will divide the sculpt delta between the original targets\n"
-            "based on their contribution to the combined target\n"
+            "This will divide the sculpt delta between the original targets based on their contribution to the combined target\n"
             "then add the resulting deltas on top of the original targets."
         )
 
@@ -2344,8 +2252,7 @@ class DnaSculptWidget(DnaTab):
 
         self.batch_proxy_combo_label = QtWidgets.QLabel(
             "Batch create or apply proxy combos from config json file\n"
-            "An example config file can be found here:\n"
-            "brenmeta/data/configs/example_proxy_combo_config.json"
+            "An example config file can be found here: brenmeta/data/configs/example_proxy_combo_config.json"
         )
 
         self.batch_proxy_combo_create_widget = mhWidgets.PathOpenWidget("Config")
@@ -2377,8 +2284,7 @@ class DnaSculptWidget(DnaTab):
         self.deltas_box = QtWidgets.QGroupBox("Deltas")
 
         self.deltas_label = QtWidgets.QLabel(
-            "Utilities for directly manipulating deltas\n"
-            "of selected shape editor targets"
+            "Utilities for directly manipulating deltas of selected shape editor targets"
         )
 
         self.add_deltas_btn = QtWidgets.QPushButton("Add")
@@ -2403,7 +2309,7 @@ class DnaSculptWidget(DnaTab):
 
         # main layout
         lyt = QtWidgets.QVBoxLayout()
-        self.setLayout(lyt)
+        self.centralWidget().setLayout(lyt)
 
         lyt.addWidget(self.io_box)
         lyt.addWidget(self.proxy_combos_box)
@@ -2528,62 +2434,81 @@ class DnaSculptWidget(DnaTab):
         )
 
 
+class FileMenu(QtWidgets.QMenu):
+    """File menu
+    """
+
+    def __init__(self, parent=None):
+        super(FileMenu, self).__init__(parent=parent)
+
+        self.setTitle("File")
+
+        file_icon = self.style().standardIcon(
+            QtWidgets.QStyle.SP_FileIcon
+        )
+
+        open_icon = self.style().standardIcon(
+            QtWidgets.QStyle.SP_DialogOpenButton
+        )
+
+        save_icon = self.style().standardIcon(
+            QtWidgets.QStyle.SP_DialogSaveButton
+        )
+
+        reload_icon = self.style().standardIcon(
+            QtWidgets.QStyle.SP_BrowserReload
+        )
+
+        self.new_action = QtWidgets.QAction(file_icon, 'New', self)
+        self.new_action.setStatusTip('New')
+        self.addAction(self.new_action)
+
+        self.open_action = QtWidgets.QAction(open_icon, 'Open', self)
+        self.open_action.setStatusTip('Open json file')
+        self.addAction(self.open_action)
+
+        self.save_action = QtWidgets.QAction(save_icon, 'Save', self)
+        self.save_action.setStatusTip('Save json file')
+        self.addAction(self.save_action)
+
+        self.save_as_action = QtWidgets.QAction(save_icon, 'Save As', self)
+        self.save_as_action.setStatusTip('Save json file as')
+        self.addAction(self.save_as_action)
+
+        self.addSeparator()
+
+
 class DnaModWidget(
     QtWidgets.QMainWindow
 ):
     """TODO warning for maya 2023+ about skincluster backward incompatability
     """
 
-    def __init__(self, *args, **kwargs):
-        super(DnaModWidget, self).__init__(*args, **kwargs)
+    TITLE = "MetaHuman DNA Modification Tool"
 
-        self.project = mhCore.Project()
+    def __init__(self, parent=None):
+        super(DnaModWidget, self).__init__(parent=parent)
 
-        self.setWindowTitle("Bren's MetaHuman DNA Modification Tool")
+        self.project = mhCore.Project(DEFAULT_DNA_DATA_DIR)
 
-        self.setCentralWidget(
-            QtWidgets.QWidget()
-        )
+        self.setWindowTitle(self.TITLE)
 
-        lyt = QtWidgets.QVBoxLayout()
-        self.centralWidget().setLayout(lyt)
+        self.menubar = self.menuBar()
 
-        self.config_group_box = QtWidgets.QGroupBox("config")
-        config_lyt = QtWidgets.QVBoxLayout()
-        self.config_group_box.setLayout(config_lyt)
+        # file menu
+        self.file_menu = FileMenu(parent=self)
+        self.menubar.addMenu(self.file_menu)
 
-        self.dna_assets_dir_widget = mhWidgets.DirWidget("Dna Viewer Dir")
-        self.dna_assets_dir_widget.path = mhSrc.get_dna_data_dir()
-
-        self.dna_files_dir_widget = mhWidgets.DirWidget("Dna Files Dir")
-
-        self.input_file_widget = mhWidgets.PathOpenWidget("Input DNA")
-        self.input_file_widget.filter = "dna files (*.dna)"
-
-        self.output_file_widget = mhWidgets.PathSaveWidget("Output DNA")
-        self.output_file_widget.filter = "dna files (*.dna)"
-
-        self.bake_config_file_widget = mhWidgets.PathOpenWidget("bake config")
-        self.bake_config_file_widget.filter = "json files (*.json)"
-        self.bake_config_file_widget.path = self.project.bake_config_path
-
-        self.dna_assets_dir_widget.PATH_CHANGED.connect(self.paths_changed)
-        self.dna_files_dir_widget.PATH_CHANGED.connect(self.paths_changed)
-        self.input_file_widget.PATH_CHANGED.connect(self.paths_changed)
-        self.output_file_widget.PATH_CHANGED.connect(self.paths_changed)
-        self.bake_config_file_widget.PATH_CHANGED.connect(self.paths_changed)
-
-        config_lyt.addWidget(self.dna_assets_dir_widget)
-        config_lyt.addWidget(self.dna_files_dir_widget)
-        config_lyt.addWidget(self.input_file_widget)
-        config_lyt.addWidget(self.output_file_widget)
-        config_lyt.addWidget(self.bake_config_file_widget)
-
-        lyt.addWidget(self.config_group_box)
+        self.file_menu.new_action.triggered.connect(self.new)
+        self.file_menu.open_action.triggered.connect(self.open)
+        self.file_menu.save_action.triggered.connect(self.save)
+        self.file_menu.save_as_action.triggered.connect(self.save_as)
 
         # tabs
         self.tabs = QtWidgets.QTabWidget()
+        self.setCentralWidget(self.tabs)
 
+        self.project_widget = ProjectWidget(self.project)
         self.build_widget = DnaBuildWidget(self.project)
         self.transfer_widget = DnaTransferWidget(self.project)
         self.merge_widget = DnaMergeWidget(self.project)
@@ -2592,6 +2517,7 @@ class DnaModWidget(
         self.sculpt_widget = DnaSculptWidget(self.project)
         self.qc_widget = DnaQCWidget(self.project)
 
+        self.tabs.addTab(self.project_widget, "project")
         self.tabs.addTab(self.build_widget, "build")
         self.tabs.addTab(self.transfer_widget, "transfer")
         self.tabs.addTab(self.merge_widget, "merge")
@@ -2600,28 +2526,114 @@ class DnaModWidget(
         self.tabs.addTab(self.sculpt_widget, "sculpt")
         self.tabs.addTab(self.qc_widget, "QC")
 
-        lyt.addWidget(self.tabs)
+        self.project_widget.PATHS_CHANGED.connect(self.refresh)
 
-        self.paths_changed()
+        self.refresh()
 
-    def paths_changed(self):
-        self.project.dna_assets_path = self.dna_assets_dir_widget.path
-        self.project.dna_files_path = self.dna_files_dir_widget.path
-        self.project.input_dna_path = self.input_file_widget.path
-        self.project.output_dna_path = self.output_file_widget.path
-        self.project.bake_config_path = self.bake_config_file_widget.path
+    def log(self, msg):
+        LOG.info(msg)
 
-        # update widgets
-        self.build_widget.update_assets()
-        self.transfer_widget.update_assets()
-        self.poses_widget.update_assets()
-        self.shape_bake_widget.update_assets()
-        self.qc_widget.update_assets()
+    def refresh(self):
+        for widget in [
+            self.project_widget,
+            self.build_widget,
+            self.transfer_widget,
+            self.merge_widget,
+            self.poses_widget,
+            self.shape_bake_widget,
+            self.sculpt_widget,
+            self.qc_widget,
+        ]:
+            widget.refresh()
+
+    def update_title(self):
+        title = self.TITLE
+
+        if self.project.current_file:
+            title = "{} - {}".format(title, self.project.current_file)
+
+        self.setWindowTitle(title)
 
         return True
 
+    def new(self):
+        self.project.reset(DEFAULT_DNA_DATA_DIR)
+        self.update_title()
+        self.refresh()
+
+    def open(self):
+        file_path, file_type = QtWidgets.QFileDialog.getOpenFileName(
+            self,
+            "Open File",
+            self.project.current_file,
+            "*.json"
+        )
+
+        if file_path == "":
+            return None
+
+        try:
+            self.project.read(file_path)
+            self.update_title()
+            self.refresh()
+            return True
+        except Exception as err:
+            msg = "Failed to open file: {}\n\nError:\n{}\n\nSee log for details".format(file_path, open_cmd.error)
+
+            print(traceback.format_exc())
+
+            LOG.critical(str(err))
+
+            QtWidgets.QMessageBox.critical(
+                self,
+                "Error",
+                str(err),
+                QtWidgets.QMessageBox.Ok
+            )
+
+            return False
+
+    def save(self):
+        if self.project.current_file is None:
+            return self.save_as()
+        else:
+
+            try:
+                self.project.write(self.project.current_file)
+                self.log("file saved: {}".format(self.project.current_file))
+                return True
+            except Exception as err:
+
+                print(traceback.format_exc())
+
+                msg = "Failed to save file: {}\n\nError:\n{}\n\nSee log for details".format(
+                    self.project.current_file, err
+                )
+
+                return False
+
+    def save_as(self):
+        # get file path from user
+        file_path, file_type = QtWidgets.QFileDialog.getSaveFileName(
+            self,
+            "Save file",
+            self.project.current_file,
+            "*.json"
+        )
+
+        if file_path == "":
+            return
+
+        if not file_path.endswith(".json"):
+            file_path = "{}.json".format(file_path)
+
+        self.project.current_file = file_path
+
+        self.save()
+        self.update_title()
+
     @classmethod
-    def create(cls, width=500, height=500, show=True):
+    def create(cls, width=800, height=400, show=True):
 
         maya_main_window_ptr = OpenMayaUI.MQtUtil.mainWindow()
         maya_main_window = wrapInstance(int(maya_main_window_ptr), QtWidgets.QWidget)
