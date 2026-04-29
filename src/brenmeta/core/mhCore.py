@@ -171,6 +171,21 @@ class Pose(object):
 
         return True
 
+    def activate_targets(self, blendshape_nodes, blend=1.0):
+        if not self.shape_name:
+            return False
+
+        for blendshape_node in blendshape_nodes:
+            if not cmds.objExists(blendshape_node):
+                continue
+
+            if not cmds.attributeQuery(self.shape_name, node=blendshape_node, exists=True):
+                continue
+
+            cmds.setAttr("{}.{}".format(blendshape_node, self.shape_name), blend)
+
+        return True
+
     def reset_joints(self):
         for attr, value in self.defaults.items():
             if not cmds.objExists(attr):
@@ -235,13 +250,13 @@ class Pose(object):
         return False
 
 
-class PSDPose(object):
+class ComboPose(object):
     def __init__(self):
-        super(PSDPose, self).__init__()
+        super(ComboPose, self).__init__()
         self.pose = None
         self.input_poses = []
         self.input_weights = []
-        self.input_psd_poses = []
+        self.input_combos = []
         self.opposite = None  # TODO
 
     def __repr__(self):
@@ -271,19 +286,26 @@ class PSDPose(object):
         summed_deltas = dict(self.pose.deltas)
         defaults = self.get_defaults()
 
-        for input_pose in self.input_poses:
-            for attr, delta in input_pose.deltas.items():
+        for pose in self.get_all_input_poses(include_combos=True):
+            for attr, delta in pose.deltas.items():
                 if attr in summed_deltas:
                     summed_deltas[attr] += delta
                 else:
                     summed_deltas[attr] = delta
 
-        for input_psd_pose in self.input_psd_poses:
-            for attr, delta in input_psd_pose.pose.deltas.items():
-                if attr in summed_deltas:
-                    summed_deltas[attr] += delta
-                else:
-                    summed_deltas[attr] = delta
+        # for input_pose in self.input_poses:
+        #     for attr, delta in input_pose.deltas.items():
+        #         if attr in summed_deltas:
+        #             summed_deltas[attr] += delta
+        #         else:
+        #             summed_deltas[attr] = delta
+        #
+        # for input_combo_pose in self.input_combo_poses:
+        #     for attr, delta in input_combo_pose.pose.deltas.items():
+        #         if attr in summed_deltas:
+        #             summed_deltas[attr] += delta
+        #         else:
+        #             summed_deltas[attr] = delta
 
         if absolute:
             values = {}
@@ -309,6 +331,17 @@ class PSDPose(object):
 
         return True
 
+    def activate_targets(self, blendshape_nodes, blend=1.0):
+        poses = self.get_all_input_poses(include_combos=True)
+
+        for pose in poses:
+            if isinstance(pose, ComboPose):
+                pose.pose.activate_targets(blendshape_nodes, blend=blend)
+            else:
+                pose.activate_targets(blendshape_nodes, blend=blend)
+
+        return True
+
     def reset_joints(self):
         for attr, value in self.get_defaults().items():
             if not cmds.objExists(attr):
@@ -318,14 +351,14 @@ class PSDPose(object):
 
         return True
 
-    def get_all_input_poses(self, include_psds=False):
+    def get_all_input_poses(self, include_combos=False):
         poses = set(self.input_poses)
 
-        for input_psd_pose in self.input_psd_poses:
-            if include_psds:
-                poses.add(input_psd_pose.pose)
+        for input_combo_pose in self.input_combos:
+            if include_combos:
+                poses.add(input_combo_pose.pose)
 
-            poses.update(input_psd_pose.get_all_input_poses())
+            poses.update(input_combo_pose.get_all_input_poses())
 
         # sort by index
         poses = sorted(poses, key=lambda p: p.index)
@@ -334,7 +367,7 @@ class PSDPose(object):
 
     def update_name(self, override=True):
         if self.pose.name and not override:
-            raise MHError("PSDPose is already named: {}".format(self))
+            raise MHError("ComboPose is already named: {}".format(self))
 
         sides = set([])
 
@@ -342,7 +375,7 @@ class PSDPose(object):
 
         for pose in self.get_all_input_poses():
             if not pose.name:
-                LOG.info("unable to update PSD name: {}".format(self))
+                LOG.info("unable to update Combo name: {}".format(self))
                 return self.pose.name
 
             if pose.name[-1] in "LR":
@@ -390,8 +423,8 @@ def add_additional_poses(poses, pose_names, joints_attr_defaults):
     return poses
 
 
-def add_additional_combo_poses(poses, psd_poses, additional_combos, joints_attr_defaults):
-    """Create PSDPose for each additional combo and map input poses
+def add_additional_combo_poses(poses, combo_poses, additional_combos, joints_attr_defaults):
+    """Create ComboPose for each additional combo and map input poses
     TODO make joints_attr_defaults optional
     """
     pose_dict = {
@@ -400,10 +433,10 @@ def add_additional_combo_poses(poses, psd_poses, additional_combos, joints_attr_
 
     pose_count = len(poses)
 
-    new_psd_poses = []
+    new_combo_poses = []
 
     for i, pose_names in enumerate(additional_combos):
-        combo = PSDPose()
+        combo = ComboPose()
 
         combo.pose = Pose()
         combo.pose.name = "_".join(pose_names)
@@ -419,44 +452,44 @@ def add_additional_combo_poses(poses, psd_poses, additional_combos, joints_attr_
             LOG.info("existing combo found, skipping: {}".format(combo.pose.name))
             continue
 
-        psd_poses[combo.pose.index] = combo
+        combo_poses[combo.pose.index] = combo
         poses.append(combo.pose)
-        new_psd_poses.append(combo)
+        new_combo_poses.append(combo)
         pose_dict[combo.pose.name] = combo.pose
 
-    return poses, psd_poses, new_psd_poses
+    return poses, combo_poses, new_combo_poses
 
 
-def add_combo_pose_permutations(poses, psd_poses, joints_attr_defaults, pose_names, permutation_count):
+def add_combo_pose_permutations(poses, combo_poses, joints_attr_defaults, pose_names, permutation_count):
     # TODO
     pass
 
 
-def update_input_psd_poses(psd_poses):
-    """add input psds for 3+ way combos
+def update_input_combo_poses(combo_poses):
+    """add input combos for 3+ way combos
     """
-    for psd_pose in psd_poses.values():
-        if len(psd_pose.input_poses) < 3:
+    for combo_pose in combo_poses.values():
+        if len(combo_pose.input_poses) < 3:
             continue
 
-        for input_psd_pose in psd_poses.values():
-            if input_psd_pose is psd_pose:
+        for input_combo_pose in combo_poses.values():
+            if input_combo_pose is combo_pose:
                 continue
 
-            if input_psd_pose in psd_pose.input_psd_poses:
+            if input_combo_pose in combo_pose.input_combos:
                 continue
 
-            if len(input_psd_pose.input_poses) >= len(psd_pose.input_poses):
+            if len(input_combo_pose.input_poses) >= len(combo_pose.input_poses):
                 continue
 
-            # check if all input_psd_pose input poses are contained
-            # within the input psd poses for this psd
+            # check if all input_combo_pose input poses are contained
+            # within the input combo poses for this combo
             if all([
-                pose in psd_pose.input_poses for pose in input_psd_pose.input_poses
+                pose in combo_pose.input_poses for pose in input_combo_pose.input_poses
             ]):
-                psd_pose.input_psd_poses.append(input_psd_pose)
+                combo_pose.input_combos.append(input_combo_pose)
 
-    return psd_poses
+    return combo_poses
 
 
 class Project(object):

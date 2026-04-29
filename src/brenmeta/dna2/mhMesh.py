@@ -129,6 +129,32 @@ def calculate_lods(dna_obj, calib_reader, from_lod=0):
     return True
 
 
+def get_blendshape_nodes(dna_obj, reader, lod=0):
+    if lod is None:
+        mesh_indices = list(range(reader.getMeshCount()))
+    else:
+        mesh_indices = dna_obj.get_mesh_indices_for_lod(lod)
+
+    if not mesh_indices:
+        LOG.info("No meshes found in DNA.")
+        return None
+
+    meshes = dna_obj.get_meshes()
+
+    bs_nodes = []
+
+    for mesh_index in mesh_indices:
+        target_count = reader.getBlendShapeTargetCount(mesh_index)
+
+        if not target_count:
+            continue
+
+        bs_node = "{}_blendShapes".format(meshes[mesh_index].name)
+        bs_nodes.append(bs_node)
+
+    return bs_nodes
+
+
 def get_blendshape_deltas(dna_obj, reader, lod=0):
     # TODO finish this
     if lod is None:

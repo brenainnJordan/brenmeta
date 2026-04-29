@@ -399,7 +399,7 @@ bmMhFaceShapeBake.bake_shapes(
                     LOG.info("    {}".format(psd_pose.pose.name))
 
                 src_targets = [
-                    pose.pose.index for pose in psd_pose.input_psd_poses
+                    pose.pose.index for pose in psd_pose.input_combos
                 ]
 
                 weights = [1.0] * len(src_targets)

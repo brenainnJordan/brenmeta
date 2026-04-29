@@ -1,3 +1,5 @@
+import traceback
+
 from Qt import QtCore
 from Qt import QtWidgets
 from Qt import QtGui
@@ -5,6 +7,10 @@ from Qt import QtGui
 from maya import cmds
 
 from brenmeta.core import mhCore
+from brenmeta.maya import mhBlendshape
+
+LOG = mhCore.get_basic_logger(__name__)
+
 
 class PosesModel(QtCore.QAbstractItemModel):
     HEADERS = ["", "pose", "shape"]
@@ -82,7 +88,7 @@ class PosesModel(QtCore.QAbstractItemModel):
         if role is self.POSE_ROLE:
             return pose
 
-        if isinstance(pose, mhCore.PSDPose):
+        if isinstance(pose, mhCore.ComboPose):
             pose = pose.pose
 
         if role in [QtCore.Qt.DisplayRole, QtCore.Qt.EditRole]:
@@ -139,6 +145,7 @@ class PosesModel(QtCore.QAbstractItemModel):
 
         return flags
 
+
 class MatchMode:
     class Any:
         name = "any"
@@ -171,16 +178,15 @@ class PoseFilterModel(QtCore.QSortFilterProxyModel):
 
     HIGHLIGHT_COLOR = QtGui.QColor(0, 100, 0)
 
-    def __init__(self, psd_mode=False, parent=None):
+    def __init__(self, combo_mode=False, parent=None):
         super(PoseFilterModel, self).__init__(parent=parent)
 
         self.ref_poses = None
 
-        self.psd_mode = psd_mode
+        self.combo_mode = combo_mode
 
         self._match_mode = MatchMode.Any
         self._filter_mode = FilterMode.Highlight
-
 
     def set_ref_poses(self, poses):
         self.beginResetModel()
@@ -206,7 +212,7 @@ class PoseFilterModel(QtCore.QSortFilterProxyModel):
         self.endResetModel()
 
     def ref_pose_match(self, pose):
-        if self.psd_mode:
+        if self.combo_mode:
             matches = [ref_pose in pose.input_poses for ref_pose in self.ref_poses]
 
             if self.match_mode is MatchMode.Exact:
@@ -270,15 +276,35 @@ class PoseFilterModel(QtCore.QSortFilterProxyModel):
 
 
 class PoseEditorWidget(QtWidgets.QFrame):
-    def __init__(self, name, psd_mode=False, parent=None):
+    def __init__(self, name, combo_mode=False, parent=None):
         super(PoseEditorWidget, self).__init__(parent=parent)
 
         self.setFrameStyle(QtWidgets.QFrame.StyledPanel | QtWidgets.QFrame.Sunken)
 
         self._poses = None
+        self.blendshape_nodes = None
+
         self.attr_defaults = None
-        self._psd_mode = psd_mode
-        self._create_widgets(psd_mode=psd_mode)
+        self._combo_mode = combo_mode
+
+        self._resetting_scene = False
+        self._updating_scene = False
+
+        self._create_widgets(combo_mode=combo_mode)
+
+    def error(self, err):
+        # TODO traceback
+
+        print(traceback.format_exc())
+
+        LOG.critical(str(err))
+
+        QtWidgets.QMessageBox.critical(
+            self,
+            "Error",
+            str(err),
+            QtWidgets.QMessageBox.Ok
+        )
 
     @property
     def poses(self):
@@ -288,11 +314,11 @@ class PoseEditorWidget(QtWidgets.QFrame):
         self._poses = poses
         self.poses_model.set_poses(poses)
 
-    def _create_widgets(self, psd_mode=False):
+    def _create_widgets(self, combo_mode=False):
 
         # type label
-        if psd_mode:
-            self.type_label = QtWidgets.QLabel("PSD Poses")
+        if combo_mode:
+            self.type_label = QtWidgets.QLabel("Combo Poses")
         else:
             self.type_label = QtWidgets.QLabel("Poses")
 
@@ -304,12 +330,7 @@ class PoseEditorWidget(QtWidgets.QFrame):
         self.filter_line_edit.textChanged.connect(self.filter_changed)
 
         self.poses_model = PosesModel()
-        self.proxy_model = PoseFilterModel(psd_mode=psd_mode)
-
-        # if psd_mode:
-        #     self.proxy_model = PoseFilterModel()
-        # else:
-        #     self.proxy_model = QtCore.QSortFilterProxyModel()
+        self.proxy_model = PoseFilterModel(combo_mode=combo_mode)
 
         self.proxy_model.setSourceModel(self.poses_model)
         self.proxy_model.setFilterCaseSensitivity(QtCore.Qt.CaseSensitivity.CaseInsensitive)
@@ -361,6 +382,8 @@ class PoseEditorWidget(QtWidgets.QFrame):
         self.filter_mode_combo.setCurrentIndex(1)
         self.filter_mode_combo.currentIndexChanged.connect(self._filter_mode_changed)
 
+        # TODO match list
+
         self.match_lyt.addWidget(self.match_mode_combo)
         self.match_lyt.addWidget(self.filter_mode_combo)
 
@@ -369,12 +392,25 @@ class PoseEditorWidget(QtWidgets.QFrame):
         self.selected_scene_lyt = QtWidgets.QVBoxLayout()
         self.selected_scene_group_box.setLayout(self.selected_scene_lyt)
 
-        self.update_scene_btn = QtWidgets.QPushButton("pose joints")
-        self.reset_pose_btn = QtWidgets.QPushButton("reset joints")
+        self.pose_slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
+        self.pose_slider.valueChanged.connect(self._pose_slider_changed)
+        self.pose_slider.setTickInterval(1)
+        self.pose_slider.setRange(0, 100)
 
-        self.update_scene_btn.clicked.connect(self.update_scene)
+        self.pose_value_widget = QtWidgets.QDoubleSpinBox()
+        self.pose_value_widget.editingFinished.connect(self._pose_value_changed)
+        self.pose_value_widget.setDecimals(2)
+        self.pose_value_widget.setMinimum(-10.0)
+        self.pose_value_widget.setMaximum(10.0)
+
+        self.update_scene_btn = QtWidgets.QPushButton("pose rig")
+        self.reset_pose_btn = QtWidgets.QPushButton("reset rig")
+
+        self.update_scene_btn.clicked.connect(self._update_scene_clicked)
         self.reset_pose_btn.clicked.connect(self.reset_scene)
 
+        self.selected_scene_lyt.addWidget(self.pose_slider)
+        self.selected_scene_lyt.addWidget(self.pose_value_widget)
         self.selected_scene_lyt.addWidget(self.update_scene_btn)
         self.selected_scene_lyt.addWidget(self.reset_pose_btn)
 
@@ -409,12 +445,15 @@ class PoseEditorWidget(QtWidgets.QFrame):
         # main layout
         self.lyt = QtWidgets.QHBoxLayout()
 
-        if psd_mode:
+        if combo_mode:
             self.lyt.addLayout(self.view_lyt)
             self.lyt.addLayout(self.tool_lyt)
         else:
             self.lyt.addLayout(self.tool_lyt)
             self.lyt.addLayout(self.view_lyt)
+
+        self.lyt.setStretchFactor(self.tool_lyt, 0)
+        self.lyt.setStretchFactor(self.view_lyt, 1)
 
         self.setLayout(self.lyt)
 
@@ -440,7 +479,7 @@ class PoseEditorWidget(QtWidgets.QFrame):
             "*{}*".format(self.filter_line_edit.text())
         )
 
-    def get_selected_poses(self, warn=False):
+    def get_selected_poses(self, warn=False, summed=False, as_combo=False):
         poses = []
 
         selection = self.view.selectionModel().selection()
@@ -460,48 +499,136 @@ class PoseEditorWidget(QtWidgets.QFrame):
                 QtWidgets.QMessageBox.Ok
             )
 
-        return poses
+            return None
 
-    # def reset_scene(self):
-    #     mhJoints.reset_scene_joint_xforms(self.calib_reader)
+        if as_combo:
+            combo_pose = mhCore.ComboPose()
+            combo_pose.pose = mhCore.Pose()
+
+            for pose in poses:
+                if isinstance(pose, mhCore.ComboPose):
+                    combo_pose.input_combos.append(pose)
+                else:
+                    combo_pose.input_poses.append(pose)
+
+            return combo_pose
+        else:
+            return poses
+
+        # if summed:
+        #     # TODO use Combo instead
+        #     if len(poses) > 1:
+        #         summed_pose = mhCore.Pose()
+        #
+        #         for pose in poses:
+        #             summed_pose += pose
+        #     else:
+        #         summed_pose = poses[0]
+        #
+        #     return summed_pose
+        # else:
+        #     return poses
 
     def reset_scene(self):
-        for attr, value in self.attr_defaults.items():
-            if not cmds.objExists(attr):
-                continue
+        if self._resetting_scene or self._updating_scene:
+            return False
 
-            if value is None:
-                continue
+        if not self.attr_defaults:
+            return False
 
-            try:
-                cmds.setAttr(attr, value)
-            except RuntimeError as err:
-                LOG.warning("failed to reset joint attr: {}".format(attr))
-                continue
+        self._resetting_scene = True
 
-        return True
+        try:
+            # reset joints to defaults
+            for attr, value in self.attr_defaults.items():
+                if not cmds.objExists(attr):
+                    continue
 
-    def update_scene(self):
-        self.reset_scene()
+                if value is None:
+                    continue
 
+                try:
+                    cmds.setAttr(attr, value)
+                except RuntimeError as err:
+                    LOG.warning("failed to reset joint attr: {}".format(attr))
+                    continue
+
+            # reset blendshape targets
+            for blendshape_node in self.blendshape_nodes:
+                if not cmds.objExists(blendshape_node):
+                    continue
+
+                targets = mhBlendshape.get_blendshape_weight_aliases(blendshape_node)
+
+                for target in targets:
+                    cmds.setAttr("{}.{}".format(blendshape_node, target), 0.0)
+
+            self.pose_slider.setValue(0)
+            self.pose_value_widget.setValue(0.0)
+
+            self._resetting_scene = False
+            return True
+
+        except Exception as err:
+            self.error(err)
+            self._resetting_scene = False
+            return False
+
+    def update_scene(self, blend=1.0):
+        if self._updating_scene or self._resetting_scene:
+            return False
+
+        # get poses
         poses = self.get_selected_poses(warn=True)
 
         if not poses:
             return False
 
-        print(poses)
+        # reset scene
+        reset = self.reset_scene()
 
-        if len(poses) > 1:
-            summed_pose = mhCore.Pose()
+        # return if we failed to reset scene
+        if not reset:
+            return False
 
-            for pose in poses:
-                summed_pose += pose
-        else:
-            summed_pose = poses[0]
+        # pose rig
+        try:
+            self._updating_scene = True
 
-        summed_pose.pose_joints()
+            # pose rig
+            # summed_pose = self.get_selected_poses(warn=True, summed=True)
+            #
+            # summed_pose.pose_joints(blend=blend)
+            # summed_pose.activate_targets(self.blendshape_nodes, blend=blend)
 
-        return True
+            pose = self.get_selected_poses(warn=True, as_combo=True)
+
+            pose.pose_joints(blend=blend)
+            pose.activate_targets(self.blendshape_nodes, blend=blend)
+
+            # update widgets
+            self.pose_slider.setValue(int(blend * 100))
+            self.pose_value_widget.setValue(blend)
+
+            self._updating_scene = False
+
+            return True
+
+        except Exception as err:
+            self.error(err)
+            self._updating_scene = False
+            return False
+
+    def _update_scene_clicked(self):
+        self.update_scene()
+
+    def _pose_slider_changed(self, value):
+        value = value / 100.0
+        self.update_scene(blend=value)
+
+    def _pose_value_changed(self):
+        value = self.pose_value_widget.value()
+        self.update_scene(blend=value)
 
     def update_data(self):
         poses = self.get_selected_poses(warn=True)
@@ -513,8 +640,8 @@ class PoseEditorWidget(QtWidgets.QFrame):
 
         pose.update_from_scene()
 
-        if isinstance(pose, mhCore.PSDPose):
-            LOG.info("PSD pose data updated: {}".format(pose.pose.name))
+        if isinstance(pose, mhCore.ComboPose):
+            LOG.info("Combo pose data updated: {}".format(pose.pose.name))
         else:
             LOG.info("pose data updated: {}".format(pose.name))
 

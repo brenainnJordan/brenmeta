@@ -1049,7 +1049,14 @@ class DnaPosesWidget(DnaTab):
 
         self.dna_obj = None
         self.calib_reader = None
+
+        self.bs_nodes = None
+        self.attrs = None
+        self.attr_defaults = None
         self.poses = None
+        self.combo_poses = None
+        self.core_poses = None
+        self.sorted_combo_poses = None
 
         self._create_menus()
         self._create_widgets()
@@ -1077,18 +1084,49 @@ class DnaPosesWidget(DnaTab):
         self.load_btn.setFixedWidth(100)
         self.load_btn.clicked.connect(self.load)
 
+        self.bake_config_checkbox = QtWidgets.QCheckBox("include bake config")
+        self.bake_config_checkbox.setFixedWidth(140)
+
         self.input_lyt = QtWidgets.QHBoxLayout()
         self.input_lyt.addWidget(self.dna_file_combo)
+        self.input_lyt.addWidget(self.bake_config_checkbox)
         self.input_lyt.addWidget(self.load_btn)
 
-        # poses
+        # tabs
+        self.tabs = QtWidgets.QTabWidget()
+
+        # configure
+        self.configure_widget = QtWidgets.QWidget()
+        self.configure_lyt = QtWidgets.QVBoxLayout()
+
+        self.configure_widget.setLayout(self.configure_lyt)
+
+        self.blendshapes_group_box = QtWidgets.QGroupBox("Blendshape nodes")
+
+        self.blendshapes_lyt = QtWidgets.QVBoxLayout()
+        self.blendshapes_group_box.setLayout(self.blendshapes_lyt)
+
+        self.blendshapes_label = QtWidgets.QLabel()
+        self.blendshapes_label.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse)
+        self.blendshapes_label.setFrameStyle(QtWidgets.QFrame.Panel | QtWidgets.QFrame.Sunken)
+
+        self.blendshapes_lyt.addWidget(self.blendshapes_label)
+
+        self.configure_lyt.addWidget(self.blendshapes_group_box)
+        self.configure_lyt.addStretch()
+
+        self.tabs.addTab(self.configure_widget, "configure")
+
+        # edit
         self.splitter = QtWidgets.QSplitter()
 
         self.core_poses_widget = mhPoseWidgets.PoseEditorWidget("Core Poses")
-        self.psd_poses_widget = mhPoseWidgets.PoseEditorWidget("PSD Poses", psd_mode=True)
+        self.combo_poses_widget = mhPoseWidgets.PoseEditorWidget("Combo Poses", combo_mode=True)
 
         self.splitter.addWidget(self.core_poses_widget)
-        self.splitter.addWidget(self.psd_poses_widget)
+        self.splitter.addWidget(self.combo_poses_widget)
+
+        self.tabs.addTab(self.splitter, "edit")
 
         # save
         self.save_btn = QtWidgets.QPushButton("save output dna")
@@ -1098,34 +1136,39 @@ class DnaPosesWidget(DnaTab):
         lyt = QtWidgets.QVBoxLayout()
 
         lyt.addLayout(self.input_lyt)
-        lyt.addWidget(self.splitter)
+        lyt.addWidget(self.tabs)
         lyt.addWidget(self.save_btn)
 
         self.centralWidget().setLayout(lyt)
 
         self.core_poses_widget.view.selectionModel().selectionChanged.connect(self.selection_changed)
-        self.psd_poses_widget.view.selectionModel().selectionChanged.connect(self.psd_selection_changed)
+        self.combo_poses_widget.view.selectionModel().selectionChanged.connect(self.combo_selection_changed)
 
 
     def load(self):
-        input_dna_path = self.dna_file_combo.get_path()
+        dna_path = self.dna_file_combo.get_path()
 
-        # check we have an input path
-        if not input_dna_path:
-            QtWidgets.QMessageBox.critical(
-                self,
-                "Error",
-                "No DNA path given",
-                QtWidgets.QMessageBox.Ok
-            )
+        # check we have paths
+        if not dna_path:
+            self.error("No DNA path given")
+            return False
 
-            return
+        use_bake_config = self.bake_config_checkbox.isChecked()
+
+        if use_bake_config:
+            if not self.project.bake_config_path:
+                self.error("No bake config path given")
 
         # confirm
+        msg = "Load all poses?\n{}".format(dna_path)
+
+        if use_bake_config:
+            msg += "\n{}".format(self.project.bake_config_path)
+
         confirm = QtWidgets.QMessageBox.warning(
             self,
             "confirm",
-            "Load all poses?\n{}".format(input_dna_path),
+            msg,
             QtWidgets.QMessageBox.Ok | QtWidgets.QMessageBox.Cancel
         )
 
@@ -1133,15 +1176,16 @@ class DnaPosesWidget(DnaTab):
             return None
 
         # load dna and get poses
-        reader = mhUtils.load_dna(input_dna_path)
+        self.dna_obj = DNAReader.read(dna_path, Layer.all)
+        reader = mhUtils.load_dna(dna_path)
         self.calib_reader = dnacalib2.DNACalibDNAReader(reader)
 
-        self.reload_poses()
+        self.reload()#use_bake_config=use_bake_config)
 
         QtWidgets.QMessageBox.information(
             self,
             "Complete",
-            "All poses loaded: {}".format(input_dna_path),
+            "All poses loaded: {}".format(dna_path),
             QtWidgets.QMessageBox.Ok
         )
 
@@ -1208,30 +1252,54 @@ class DnaPosesWidget(DnaTab):
 
     def selection_changed(self, old_selection, new_selection):
         poses = self.core_poses_widget.get_selected_poses()
-        self.psd_poses_widget.proxy_model.set_ref_poses(poses)
+        self.combo_poses_widget.proxy_model.set_ref_poses(poses)
 
-    def psd_selection_changed(self, old_selection, new_selection):
+    def combo_selection_changed(self, old_selection, new_selection):
         # pass
-        poses = self.psd_poses_widget.get_selected_poses()
+        poses = self.combo_poses_widget.get_selected_poses()
         self.core_poses_widget.proxy_model.set_ref_poses(poses)
 
-    def reload_poses(self):
-        self.core_poses_widget.set_poses(None)
-        self.psd_poses_widget.set_poses(None)
-        self.psd_poses_widget.proxy_model.set_ref_poses(None)
+    def reload(self):
+        # TODO warning that this will reset data?
+        # TODO review init blendshapes process
+        #   we want to just init shape names
+        #   (and not need to keep the reader etc)
+        #   then initialize targets when writing dna file
 
+        use_bake_config = self.bake_config_checkbox.isChecked()
+
+        self.core_poses_widget.set_poses(None)
+        self.combo_poses_widget.set_poses(None)
+        self.combo_poses_widget.proxy_model.set_ref_poses(None)
+
+        self.bs_nodes = mhMesh.get_blendshape_nodes(self.dna_obj, self.calib_reader)
         self.attrs = mhBehaviour.get_joint_attrs(self.calib_reader)
         self.attr_defaults = mhBehaviour.get_joint_defaults(self.calib_reader)
         self.poses = mhBehaviour.get_all_poses(self.calib_reader)
-        self.psd_poses = mhBehaviour.get_psd_poses(self.calib_reader, self.poses)
-        self.core_poses = [pose for i, pose in enumerate(self.poses) if i not in self.psd_poses]
-        self.sorted_psd_poses = [self.psd_poses[i] for i in sorted(self.psd_poses.keys())]
+        self.combo_poses = mhBehaviour.get_psd_poses(self.calib_reader, self.poses)
+
+        if use_bake_config:
+            bake_config = mhBakeRig.BakeConfig.load(self.project.bake_config_path)
+
+            bake_config.update_poses(
+                self.poses, self.combo_poses, self.attr_defaults
+            )
+
+            self.bs_nodes += bake_config.blendshape_nodes
+
+        self.core_poses = [pose for i, pose in enumerate(self.poses) if i not in self.combo_poses]
+        self.sorted_combo_poses = [self.combo_poses[i] for i in sorted(self.combo_poses.keys())]
+
+        self.blendshapes_label.setText("\n"+"\n".join(self.bs_nodes)+"\n")
 
         self.core_poses_widget.set_poses(self.core_poses)
-        self.psd_poses_widget.set_poses(self.sorted_psd_poses)
+        self.core_poses_widget.blendshape_nodes = self.bs_nodes
+
+        self.combo_poses_widget.set_poses(self.sorted_combo_poses)
+        self.combo_poses_widget.blendshape_nodes = self.bs_nodes
 
         self.core_poses_widget.attr_defaults = self.attr_defaults
-        self.psd_poses_widget.attr_defaults = self.attr_defaults
+        self.combo_poses_widget.attr_defaults = self.attr_defaults
 
     def init_blendshapes(self):
         if not self.calib_reader:
@@ -1240,7 +1308,7 @@ class DnaPosesWidget(DnaTab):
 
         mhBehaviour.initialize_blendshape_targets(self.calib_reader, self.poses)
 
-        self.reload_poses()
+        self.reload()
 
         QtWidgets.QMessageBox.information(
             self,
@@ -1420,39 +1488,32 @@ class DnaQCWidget(DnaTab):
             joints_attr_defaults = mhBehaviour.get_joint_defaults(calib_reader)
 
             if use_bake_config:
-                LOG.info("Adding additional shapes and combos from bake config...")
-
                 bake_config = mhBakeRig.BakeConfig.load(bake_config_file)
 
-                # create additional poses
-                if bake_config.shapes:
-                    LOG.info("Adding additional poses...")
+                bake_config.update_poses(
+                    poses, psd_poses, joints_attr_defaults
+                )
 
-                    mhCore.add_additional_poses(
-                        poses, bake_config.shapes, joints_attr_defaults
-                    )
-
-                # create additional combos
-                if bake_config.combos:
-                    LOG.info("Adding additional combo poses...")
-
-                    mhCore.add_additional_combo_poses(
-                        poses, psd_poses, bake_config.combos, joints_attr_defaults
-                    )
-
-                    mhCore.update_input_psd_poses(psd_poses)
-
-                # # get additional combos from mhBakeRig global attr for now
-                # # TODO refactor tool to make this more global
-                # from brenmeta.maya import mhBakeRig
+                # LOG.info("Adding additional shapes and combos from bake config...")
                 #
-                # mhCore.add_additional_poses(
-                #     poses, mhBakeRig.ADDITIONAL_SHAPES, joints_attr_defaults
-                # )
                 #
-                # mhCore.add_additional_combo_poses(
-                #     poses, psd_poses, mhBakeRig.ADDITIONAL_COMBOS, joints_attr_defaults
-                # )
+                # # create additional poses
+                # if bake_config.shapes:
+                #     LOG.info("Adding additional poses...")
+                #
+                #     mhCore.add_additional_poses(
+                #         poses, bake_config.shapes, joints_attr_defaults
+                #     )
+                #
+                # # create additional combos
+                # if bake_config.combos:
+                #     LOG.info("Adding additional combo poses...")
+                #
+                #     mhCore.add_additional_combo_poses(
+                #         poses, psd_poses, bake_config.combos, joints_attr_defaults
+                #     )
+                #
+                #     mhCore.update_input_psd_poses(psd_poses)
 
             mapping = mhAnimUtils.map_expressions_to_controls(tongue=tongue, eyelashes=eyelashes, namespace=namespace)
 
@@ -1932,7 +1993,7 @@ class DnaBakeRigWidget(DnaTab):
             poses, psd_poses, bake_config.combos, joints_attr_defaults
         )
 
-        mhCore.update_input_psd_poses(psd_poses)
+        mhCore.update_input_combo_poses(psd_poses)
 
         new_targets = list(bake_config.shapes)
         new_targets += [psd_pose.pose.name for psd_pose in new_psd_poses]
@@ -2001,7 +2062,7 @@ class DnaBakeRigWidget(DnaTab):
             dna_path,
             bake_config_file,
             bake_shapes=self.bake_shapes_checkbox.isChecked(),
-            calculate_psds=self.calculate_psd_deltas_checkbox.isChecked(),
+            calculate_combos=self.calculate_psd_deltas_checkbox.isChecked(),
             connect_shapes=self.connect_shapes_checkbox.isChecked(),
             connect_joints=self.connect_joints_checkbox.isChecked(),
             optimise=self.optimise_checkbox.isChecked(),

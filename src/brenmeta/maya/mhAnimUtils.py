@@ -281,13 +281,13 @@ def map_expressions_to_controls(tongue=False, eyelashes=False, head_turn=False, 
     return data
 
 
-def map_psds_to_controls(expression_mapping, psd_poses):
+def map_psds_to_controls(expression_mapping, combo_poses):
     expression_mapping = {data[0]: data[1] for data in expression_mapping}
 
     psd_mapping = []
 
-    for psd_pose in psd_poses:
-        poses = psd_pose.get_all_input_poses()
+    for combo_pose in combo_poses:
+        poses = combo_pose.get_all_input_poses()
 
         drivers = []
 
@@ -298,7 +298,7 @@ def map_psds_to_controls(expression_mapping, psd_poses):
 
             drivers.append(expression_mapping[pose.name])
 
-        psd_mapping.append((psd_pose.pose.name, drivers))
+        psd_mapping.append((combo_pose.pose.name, drivers))
 
     return psd_mapping
 

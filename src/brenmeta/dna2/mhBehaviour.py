@@ -273,7 +273,7 @@ def get_psd_poses(reader, poses, override_name=True):
 
     # create psd pose objects
     for psd_index, psd_data in psd_indices.items():
-        psd_pose = mhCore.PSDPose()
+        psd_pose = mhCore.ComboPose()
         psd_pose.pose = poses[psd_index]
         psd_valid = True
 
@@ -299,7 +299,7 @@ def get_psd_poses(reader, poses, override_name=True):
 
             # check if input_psd_pose has inputs that contribute to this psd
             if all([pose in psd_pose.input_poses for pose in input_psd_pose.input_poses]):
-                psd_pose.input_psd_poses.append(input_psd_pose)
+                psd_pose.input_combos.append(input_psd_pose)
 
     # check psd names
     # if dna file does not have blendshapes to get names from

@@ -84,6 +84,8 @@ class BakeConfig(object):
     """
 
     def __init__(self):
+        self.file_path = None
+
         self.mesh_blendshapes = None
         self.shapes = None
         self.in_betweens = None
@@ -93,6 +95,14 @@ class BakeConfig(object):
         self.delete = None
         self.root_joints = None
         self.readers = None
+
+    @property
+    def meshes(self):
+        return [a for a,b in self.mesh_blendshapes]
+
+    @property
+    def blendshape_nodes(self):
+        return [b for a, b in self.mesh_blendshapes]
 
     @classmethod
     def load(cls, file_path):
@@ -108,6 +118,8 @@ class BakeConfig(object):
             raise mhCore.MHError(
                 "Failed to load config: {}".format(file_path)
             )
+
+        config.file_path = file_path
 
         config.mesh_blendshapes = data["mesh_blendshapes"]
         # config.shapes = data["shapes"]
@@ -140,6 +152,30 @@ class BakeConfig(object):
 
         return config
 
+    def update_poses(self, poses, combo_poses, joints_attr_defaults):
+        LOG.info(
+            "Adding additional shapes and combos from bake config: {}".format(self.file_path)
+        )
+
+        # create additional poses
+        if self.shapes:
+            LOG.info("Adding additional poses...")
+
+            mhCore.add_additional_poses(
+                poses, self.shapes, joints_attr_defaults
+            )
+
+        # create additional combos
+        if self.combos:
+            LOG.info("Adding additional combo poses...")
+
+            mhCore.add_additional_combo_poses(
+                poses, combo_poses, self.combos, joints_attr_defaults
+            )
+
+            mhCore.update_input_combo_poses(combo_poses)
+
+        return True
 
 def delete_redundant_joints(keep_joints, pose_joints):
     joints = cmds.ls(type="joint")
@@ -168,7 +204,7 @@ def load_poses_v2(dna_file, bake_config_file):
     LOG.info("Getting pose data...")
 
     poses = mhBehaviour.get_all_poses(calib_reader)
-    psd_poses = mhBehaviour.get_psd_poses(calib_reader, poses)
+    combo_poses = mhBehaviour.get_psd_poses(calib_reader, poses)
     joints_attr_defaults = mhBehaviour.get_joint_defaults(calib_reader)
 
     # load bake config
@@ -187,12 +223,12 @@ def load_poses_v2(dna_file, bake_config_file):
         LOG.info("Adding additional combo poses...")
 
         mhCore.add_additional_combo_poses(
-            poses, psd_poses, bake_config.combos, joints_attr_defaults
+            poses, combo_poses, bake_config.combos, joints_attr_defaults
         )
 
-        mhCore.update_input_psd_poses(psd_poses)
+        mhCore.update_input_combo_poses(combo_poses)
 
-    return poses, psd_poses, joints_attr_defaults, bake_config
+    return poses, combo_poses, joints_attr_defaults, bake_config
 
 
 def bake_shapes_from_dna_v1(
@@ -200,7 +236,7 @@ def bake_shapes_from_dna_v1(
         bake_config_file,
         name="poseSystem",
         expressions_node="CTRL_expressions",
-        calculate_psds=True,
+        calculate_combos=True,
         connect_shapes=True,
         optimise=True,
         detailed_verbose=False
@@ -213,7 +249,7 @@ dna_file = r"D:\Dev\3rd_party_repos\MetaHuman-DNA-Calibration\data\dna_files\Tar
 bmMhFaceShapeBake.bake_shapes(
     dna_file,
     mesh="head_lod0_mesh",
-    calculate_psd_deltas=True,
+    calculate_combo_deltas=True,
     connect_shapes=True,
     optimise=True
 )
@@ -246,15 +282,15 @@ bmMhFaceShapeBake.bake_shapes(
     LOG.info("Getting pose data...")
 
     poses = mhBehaviour.get_all_poses(calib_reader)
-    psd_poses = mhBehaviour.get_psd_poses(calib_reader, poses)
+    combo_poses = mhBehaviour.get_psd_poses(calib_reader, poses)
     joints_attr_defaults = mhBehaviour.get_joint_defaults(calib_reader)
 
     bake_rig(
         poses,
-        psd_poses,
+        combo_poses,
         joints_attr_defaults,
         bake_config_file,
-        calculate_psds=calculate_psds,
+        calculate_combos=calculate_combos,
         connect_shapes=connect_shapes,
         optimise=optimise,
         expressions_node=expressions_node,
@@ -269,7 +305,7 @@ def bake_shapes_from_dna_v2(
         bake_config_file,
         expressions_node="CTRL_expressions",
         bake_shapes=True,
-        calculate_psds=True,
+        calculate_combos=True,
         connect_shapes=True,
         connect_joints=True,
         optimise=True,
@@ -300,16 +336,16 @@ def bake_shapes_from_dna_v2(
     LOG.info("Getting pose data...")
 
     poses = mhBehaviour.get_all_poses(calib_reader)
-    psd_poses = mhBehaviour.get_psd_poses(calib_reader, poses)
+    combo_poses = mhBehaviour.get_psd_poses(calib_reader, poses)
     joints_attr_defaults = mhBehaviour.get_joint_defaults(calib_reader)
 
     bake_rig(
         poses,
-        psd_poses,
+        combo_poses,
         joints_attr_defaults,
         bake_config_file,
         bake_shapes=bake_shapes,
-        calculate_psds=calculate_psds,
+        calculate_combos=calculate_combos,
         connect_shapes=connect_shapes,
         connect_joints=connect_joints,
         optimise=optimise,
@@ -506,7 +542,7 @@ def create_cone_reader(transform, parent_space_transform, name, vector, rotation
 
 
 def create_driver_logic(
-        poses, psd_poses, expressions_node, additional_shapes=None, use_combo_network=True, reader_configs=None
+        poses, combo_poses, expressions_node, additional_shapes=None, use_combo_network=True, reader_configs=None
 ):
     # get expressions
     expressions = cmds.listAttr(expressions_node, userDefined=True)
@@ -530,7 +566,7 @@ def create_driver_logic(
     driver_mapping = {}
 
     for pose_index, pose in enumerate(poses):
-        if pose_index in psd_poses or pose.name is None:
+        if pose_index in combo_poses or pose.name is None:
             continue
 
         if pose.name in expressions:
@@ -546,16 +582,16 @@ def create_driver_logic(
     else:
         combo_network_node = None
 
-    for psd_pose in psd_poses.values():
+    for combo_pose in combo_poses.values():
         combo_node = cmds.createNode(
             "combinationShape",
-            name="{}_combinationShape".format(psd_pose.pose.name)
+            name="{}_combinationShape".format(combo_pose.pose.name)
         )
 
         combo_valid = True
 
-        for index, pose in enumerate(psd_pose.input_poses):
-            # weight = psd_pose.input_weights[index]
+        for index, pose in enumerate(combo_pose.input_poses):
+            # weight = combo_pose.input_weights[index]
 
             if pose.name not in driver_mapping:
                 combo_valid = False
@@ -569,25 +605,25 @@ def create_driver_logic(
             )
 
         if not combo_valid:
-            LOG.warning("combo not valid: {}".format(psd_pose.pose.name))
+            LOG.warning("combo not valid: {}".format(combo_pose.pose.name))
             cmds.delete(combo_node)
             continue
 
         if use_combo_network:
             # map via combo network node
             cmds.addAttr(
-                combo_network_node, longName=psd_pose.pose.name, defaultValue=0.0
+                combo_network_node, longName=combo_pose.pose.name, defaultValue=0.0
             )
 
             cmds.connectAttr(
                 "{}.outputWeight".format(combo_node),
-                "{}.{}".format(combo_network_node, psd_pose.pose.name)
+                "{}.{}".format(combo_network_node, combo_pose.pose.name)
             )
 
-            driver_mapping[psd_pose.pose.name] = "{}.{}".format(combo_network_node, psd_pose.pose.name)
+            driver_mapping[combo_pose.pose.name] = "{}.{}".format(combo_network_node, combo_pose.pose.name)
         else:
             # map to combo node directly
-            driver_mapping[psd_pose.pose.name] = "{}.outputWeight".format(combo_node)
+            driver_mapping[combo_pose.pose.name] = "{}.outputWeight".format(combo_node)
 
     # create readers
     if reader_configs:
@@ -839,7 +875,7 @@ def create_joint_poses_sdk(poses, driver_mapping, pose_joints=None):
     return True
 
 
-def bake_shapes_from_poses(mesh_blendshapes, poses, psd_poses, in_betweens, detailed_verbose=True, skip_empty=False):
+def bake_shapes_from_poses(mesh_blendshapes, poses, combo_poses, in_betweens, detailed_verbose=True, skip_empty=False):
     """Pose rig and create blendshape targets for the given meshes
     """
     # get nodes
@@ -899,11 +935,11 @@ def bake_shapes_from_poses(mesh_blendshapes, poses, psd_poses, in_betweens, deta
         cmds.progressBar(gMainProgressBar, edit=True, step=1)
 
         # pose rig
-        if pose_index in psd_poses:
-            psd_pose = psd_poses[pose_index]
-            psd_pose.pose_joints(summed=True)
-            pose_name = psd_pose.pose.name
-            pose = psd_pose
+        if pose_index in combo_poses:
+            combo_pose = combo_poses[pose_index]
+            combo_pose.pose_joints(summed=True)
+            pose_name = combo_pose.pose.name
+            pose = combo_pose
         else:
             pose.pose_joints()
             pose_name = pose.name
@@ -974,7 +1010,7 @@ def bake_shapes_from_poses(mesh_blendshapes, poses, psd_poses, in_betweens, deta
     return base_meshes, bs_nodes, target_groups
 
 
-def calculate_psd_deltas(bs_node, psd_poses, in_betweens, detailed_verbose=True, optimise=True, calculate_inputs=True):
+def calculate_combo_deltas(bs_node, combo_poses, in_betweens, detailed_verbose=True, optimise=True, calculate_inputs=True):
     """
     Note we always use the pose names to find the targets instead of the pose index
     as the target index may not match the corresponding pose
@@ -993,11 +1029,11 @@ def calculate_psd_deltas(bs_node, psd_poses, in_betweens, detailed_verbose=True,
         edit=True,
         beginProgress=True,
         isInterruptable=True,
-        status='Calculating PSD deltas ({})...'.format(bs_node),
-        maxValue=len(psd_poses.keys())
+        status='Calculating Combo deltas ({})...'.format(bs_node),
+        maxValue=len(combo_poses.keys())
     )
 
-    for pose_index, psd_pose in psd_poses.items():
+    for pose_index, combo_pose in combo_poses.items():
         if cmds.progressBar(gMainProgressBar, query=True, isCancelled=True):
             cmds.progressBar(gMainProgressBar, edit=True, endProgress=True)
             return False
@@ -1005,22 +1041,22 @@ def calculate_psd_deltas(bs_node, psd_poses, in_betweens, detailed_verbose=True,
         cmds.progressBar(gMainProgressBar, edit=True, step=1)
 
         # check if this target was skipped
-        if psd_pose.pose.name not in all_targets:
+        if combo_pose.pose.name not in all_targets:
             continue
 
         src_targets = [
-            pose.name for pose in psd_pose.input_poses if pose.name in all_targets
+            pose.name for pose in combo_pose.input_poses if pose.name in all_targets
         ]
 
         if not src_targets:
-            LOG.warning("No source targets found: {}".format(psd_pose.pose.name))
+            LOG.warning("No source targets found: {}".format(combo_pose.pose.name))
             continue
 
         if detailed_verbose:
-            LOG.info("    {}".format(psd_pose.pose.name))
+            LOG.info("    {}".format(combo_pose.pose.name))
 
             src_target_names = [
-                pose.name for pose in psd_pose.input_poses if pose.name in all_targets
+                pose.name for pose in combo_pose.input_poses if pose.name in all_targets
             ]
 
             LOG.info("      - {}".format(src_target_names))
@@ -1031,12 +1067,12 @@ def calculate_psd_deltas(bs_node, psd_poses, in_betweens, detailed_verbose=True,
             bs_node,
             src_targets,
             weights,
-            psd_pose.pose.name,
+            combo_pose.pose.name,
             optimise=optimise,
         )
 
-        if psd_pose.pose.name in in_betweens:
-            in_between_count = in_betweens[psd_pose.pose.name]
+        if combo_pose.pose.name in in_betweens:
+            in_between_count = in_betweens[combo_pose.pose.name]
             in_between_targets = []
 
             for ib_index in range(in_between_count):
@@ -1045,36 +1081,36 @@ def calculate_psd_deltas(bs_node, psd_poses, in_betweens, detailed_verbose=True,
                     bs_node,
                     src_targets,
                     weights,
-                    psd_pose.pose.name,
+                    combo_pose.pose.name,
                     optimise=optimise,
                     in_between=ib_index
                 )
 
     cmds.progressBar(gMainProgressBar, edit=True, endProgress=True)
 
-    # subtract input psds
+    # subtract input combos
     if calculate_inputs:
-        LOG.info("Calculating input PSD deltas ({}) ...".format(bs_node))
+        LOG.info("Calculating input Combo deltas ({}) ...".format(bs_node))
 
         # do this in order of least combos to most combos
         for combo_count in range(3, 10):
-            for psd_pose in psd_poses.values():
-                if len(psd_pose.input_poses) != combo_count:
+            for combo_pose in combo_poses.values():
+                if len(combo_pose.input_poses) != combo_count:
                     continue
 
-                if psd_pose.pose.name not in all_targets:
+                if combo_pose.pose.name not in all_targets:
                     continue
 
                 src_targets = [
-                    pose.pose.name for pose in psd_pose.input_psd_poses
+                    pose.pose.name for pose in combo_pose.input_combos
                 ]
 
                 if not src_targets:
-                    LOG.warning("No input psd poses found: {}".format(psd_pose.pose.name))
+                    LOG.warning("No input combo poses found: {}".format(combo_pose.pose.name))
                     continue
 
                 if detailed_verbose:
-                    LOG.info("    {}".format(psd_pose.pose.name))
+                    LOG.info("    {}".format(combo_pose.pose.name))
                     LOG.info("      - {}".format(src_targets))
 
                 weights = [1.0] * len(src_targets)
@@ -1083,7 +1119,7 @@ def calculate_psd_deltas(bs_node, psd_poses, in_betweens, detailed_verbose=True,
                     bs_node,
                     src_targets,
                     weights,
-                    psd_pose.pose.name,
+                    combo_pose.pose.name,
                     optimise=optimise,
                 )
 
@@ -1092,11 +1128,11 @@ def calculate_psd_deltas(bs_node, psd_poses, in_betweens, detailed_verbose=True,
 
 def bake_rig(
         poses,
-        psd_poses,
+        combo_poses,
         joints_attr_defaults,
         config_file_path,
         bake_shapes=True,
-        calculate_psds=True,
+        calculate_combos=True,
         connect_shapes=True,
         connect_joints=True,
         optimise=True,
@@ -1128,10 +1164,10 @@ def bake_rig(
         LOG.info("Adding additional combo poses...")
 
         mhCore.add_additional_combo_poses(
-            poses, psd_poses, bake_config.combos, joints_attr_defaults
+            poses, combo_poses, bake_config.combos, joints_attr_defaults
         )
 
-        mhCore.update_input_psd_poses(psd_poses)
+        mhCore.update_input_combo_poses(combo_poses)
 
     # break joint connections
     if bake_shapes or connect_joints:
@@ -1146,7 +1182,7 @@ def bake_rig(
         base_meshes, bs_nodes, target_groups = bake_shapes_from_poses(
             bake_config.mesh_blendshapes,
             poses,
-            psd_poses,
+            combo_poses,
             bake_config.in_betweens,
             detailed_verbose=detailed_verbose
         )
@@ -1164,16 +1200,16 @@ def bake_rig(
             cmds.refresh()
 
     # delete targets so we can edit the deltas
-    if calculate_psds:
-        # calculate psd blendshape deltas and subtract
-        LOG.info("Calculating PSD deltas...")
+    if calculate_combos:
+        # calculate combo blendshape deltas and subtract
+        LOG.info("Calculating Combo deltas...")
 
         for bs_node in bs_nodes:
             LOG.info("  Blendshape node: {}".format(bs_node))
 
-            calculate_psd_deltas(
+            calculate_combo_deltas(
                 bs_node,
-                psd_poses,
+                combo_poses,
                 bake_config.in_betweens,
                 detailed_verbose=True,
                 optimise=optimise
@@ -1185,7 +1221,7 @@ def bake_rig(
 
         driver_mapping = create_driver_logic(
             poses,
-            psd_poses,
+            combo_poses,
             expressions_node,
             additional_shapes=bake_config.shapes,
             use_combo_network=use_combo_network,
@@ -1256,7 +1292,10 @@ def disconnect(
                 )
 
                 if cons:
-                    cmds.disconnectAttr(cons[0], target_attr)
+                    try:
+                        cmds.disconnectAttr(cons[0], target_attr)
+                    except:
+                        LOG.warning("failed to disconnect: {} -> {}".format(cons[0], target_attr))
 
     # disconnect joints and delete networks
     if disconnect_joints:
@@ -1298,7 +1337,7 @@ def disconnect(
 
 def reconnect(
         poses,
-        psd_poses,
+        combo_poses,
         joints_attr_defaults,
         config_file_path,
         expressions_node="CTRL_expressions",
@@ -1330,21 +1369,21 @@ def reconnect(
     if bake_config.combos:
         LOG.info("Adding additional combo poses...")
 
-        _, _, new_psd_poses = mhCore.add_additional_combo_poses(
-            poses, psd_poses, bake_config.combos, joints_attr_defaults
+        _, _, new_combo_poses = mhCore.add_additional_combo_poses(
+            poses, combo_poses, bake_config.combos, joints_attr_defaults
         )
 
-        mhCore.update_input_psd_poses(psd_poses)
+        mhCore.update_input_combo_poses(combo_poses)
 
     else:
-        new_psd_poses = []
+        new_combo_poses = []
 
     # create combo logic
     LOG.info("Creating driver logic...")
 
     driver_mapping = create_driver_logic(
         poses,
-        psd_poses,
+        combo_poses,
         expressions_node,
         additional_shapes=bake_config.shapes,
         use_combo_network=use_combo_network,
@@ -1357,7 +1396,7 @@ def reconnect(
             base_mesh = cmds.blendShape(bs_node, query=True, geometry=True)[0]
 
             new_shapes = list(bake_config.shapes)
-            new_shapes += [psd_pose.pose.name for psd_pose in new_psd_poses]
+            new_shapes += [combo_pose.pose.name for combo_pose in new_combo_poses]
 
             for shape_name in new_shapes:
                 if mhBlendshape.get_blendshape_target_index(bs_node, shape_name)[0] is not None:
@@ -1409,7 +1448,7 @@ def reconnect(
 
 
 def extract_pose_correctives(
-        poses, psd_poses, mesh, bs_node, skinned_mesh, bake_config, cleanup=True
+        poses, combo_poses, mesh, bs_node, skinned_mesh, bake_config, cleanup=True
 ):
     """Extracts corrective shapes using given skinned mesh as reference.
 
@@ -1495,8 +1534,8 @@ def extract_pose_correctives(
         relevant_shapes = [pose_name]
         parsed_pose_names.append(pose_name)
 
-        if i in psd_poses:
-            pose = psd_poses[i]
+        if i in combo_poses:
+            pose = combo_poses[i]
 
         if not pose.affects_joints(driven_joints):
             continue
@@ -1520,7 +1559,7 @@ def extract_pose_correctives(
     )
 
     sculpts_dict = {}
-    psd_poses_to_calculate = {}
+    combo_poses_to_calculate = {}
 
     for i, pose in driver_poses.items():
         if cmds.progressBar(gMainProgressBar, query=True, isCancelled=True):
@@ -1529,16 +1568,16 @@ def extract_pose_correctives(
 
         cmds.progressBar(gMainProgressBar, edit=True, step=1)
 
-        if isinstance(pose, mhCore.PSDPose):
+        if isinstance(pose, mhCore.ComboPose):
             pose_name = pose.pose.name
 
             relevant_shapes = [pose_name] + [
-                input_pose.name for input_pose in pose.get_all_input_poses(include_psds=True)
+                input_pose.name for input_pose in pose.get_all_input_poses(include_combos=True)
                 if input_pose.name in targets
             ]
 
             if len(relevant_shapes) > 1:
-                psd_poses_to_calculate[i] = pose
+                combo_poses_to_calculate[i] = pose
 
         else:
             pose_name = pose.name
@@ -1589,7 +1628,7 @@ def extract_pose_correctives(
     LOG.info("Resetting deltas...")
 
     for pose in driver_poses.values():
-        if isinstance(pose, mhCore.PSDPose):
+        if isinstance(pose, mhCore.ComboPose):
             pose_name = pose.pose.name
         else:
             pose_name = pose.name
@@ -1624,18 +1663,18 @@ def extract_pose_correctives(
                 cmds.progressBar(gMainProgressBar, edit=True, endProgress=True)
                 return False
 
-            if isinstance(pose, mhCore.PSDPose):
+            if isinstance(pose, mhCore.ComboPose):
                 pose_name = pose.pose.name
             else:
                 pose_name = pose.name
 
             if combo_count == 1:
                 # primary only, skip combos
-                if isinstance(pose, mhCore.PSDPose):
+                if isinstance(pose, mhCore.ComboPose):
                     continue
             else:
                 # combo only, skip primary
-                if not isinstance(pose, mhCore.PSDPose):
+                if not isinstance(pose, mhCore.ComboPose):
                     continue
 
                 if len(pose.input_poses) != combo_count:
@@ -1708,12 +1747,12 @@ def extract_pose_correctives(
                 in_between=ib_index
             )
 
-    # calculate PSD deltas
-    LOG.info("Calculating PSD deltas")
+    # calculate Combo deltas
+    LOG.info("Calculating Combo deltas")
 
-    calculate_psd_deltas(
+    calculate_combo_deltas(
         bs_node,
-        psd_poses_to_calculate,
+        combo_poses_to_calculate,
         bake_config.in_betweens,
         detailed_verbose=True,
         optimise=True,
