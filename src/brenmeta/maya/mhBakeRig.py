@@ -95,10 +95,11 @@ class BakeConfig(object):
         self.delete = None
         self.root_joints = None
         self.readers = None
+        self.pose_deltas = None
 
     @property
     def meshes(self):
-        return [a for a,b in self.mesh_blendshapes]
+        return [a for a, b in self.mesh_blendshapes]
 
     @property
     def blendshape_nodes(self):
@@ -150,9 +151,37 @@ class BakeConfig(object):
             if combo_data["enabled"]
         ]
 
+        if "pose_deltas" in data:
+            config.pose_deltas = data["pose_deltas"]
+
         return config
 
-    def update_poses(self, poses, combo_poses, joints_attr_defaults):
+    # def update_poses(self, poses, combo_poses, joints_attr_defaults):
+    #     LOG.info(
+    #         "Adding additional shapes and combos from bake config: {}".format(self.file_path)
+    #     )
+    #
+    #     # create additional poses
+    #     if self.shapes:
+    #         LOG.info("Adding additional poses...")
+    #
+    #         mhCore.add_additional_poses(
+    #             poses, self.shapes, joints_attr_defaults
+    #         )
+    #
+    #     # create additional combos
+    #     if self.combos:
+    #         LOG.info("Adding additional combo poses...")
+    #
+    #         mhCore.add_additional_combo_poses(
+    #             poses, combo_poses, self.combos, joints_attr_defaults
+    #         )
+    #
+    #         mhCore.update_input_combo_poses(combo_poses)
+    #
+    #     return True
+
+    def update_pose_manager(self, pose_manager):
         LOG.info(
             "Adding additional shapes and combos from bake config: {}".format(self.file_path)
         )
@@ -161,208 +190,28 @@ class BakeConfig(object):
         if self.shapes:
             LOG.info("Adding additional poses...")
 
-            mhCore.add_additional_poses(
-                poses, self.shapes, joints_attr_defaults
-            )
+            new_poses = pose_manager.add_additional_poses(self.shapes, pose_deltas=self.pose_deltas)
 
         # create additional combos
         if self.combos:
             LOG.info("Adding additional combo poses...")
 
-            mhCore.add_additional_combo_poses(
-                poses, combo_poses, self.combos, joints_attr_defaults
-            )
+            new_combos = pose_manager.add_additional_combo_poses(self.combos)
 
-            mhCore.update_input_combo_poses(combo_poses)
+            pose_manager.update_input_combo_poses()
 
-        return True
+        # add additional blendshape nodes
+        if self.blendshape_nodes:
+            LOG.info("Adding additional blendshape nodes...")
+            pose_manager.bs_nodes += self.blendshape_nodes
+
+        return new_poses, new_combos
+
 
 def delete_redundant_joints(keep_joints, pose_joints):
     joints = cmds.ls(type="joint")
     joints = [i for i in joints if i not in keep_joints + pose_joints]
     cmds.delete(joints)
-
-
-def load_poses_v2(dna_file, bake_config_file):
-    from brenmeta.dna2 import mhBehaviour
-    from brenmeta.dna2 import mhSrc
-
-    import dnacalib2
-    from mh_assemble_lib.model.dnalib import DNAReader, Layer
-
-    mhSrc.validate_plugin()
-
-    # load dna data
-    LOG.info("Loading dna: {}".format(dna_file))
-
-    dna_obj = DNAReader.read(dna_file, Layer.all)
-
-    LOG.info("Getting reader...")
-    calib_reader = dnacalib2.DNACalibDNAReader(dna_obj._reader)
-
-    # get pose data
-    LOG.info("Getting pose data...")
-
-    poses = mhBehaviour.get_all_poses(calib_reader)
-    combo_poses = mhBehaviour.get_psd_poses(calib_reader, poses)
-    joints_attr_defaults = mhBehaviour.get_joint_defaults(calib_reader)
-
-    # load bake config
-    bake_config = BakeConfig.load(bake_config_file)
-
-    # create additional poses
-    if bake_config.shapes:
-        LOG.info("Adding additional poses...")
-
-        mhCore.add_additional_poses(
-            poses, bake_config.shapes, joints_attr_defaults
-        )
-
-    # create additional combos
-    if bake_config.combos:
-        LOG.info("Adding additional combo poses...")
-
-        mhCore.add_additional_combo_poses(
-            poses, combo_poses, bake_config.combos, joints_attr_defaults
-        )
-
-        mhCore.update_input_combo_poses(combo_poses)
-
-    return poses, combo_poses, joints_attr_defaults, bake_config
-
-
-def bake_shapes_from_dna_v1(
-        dna_file,
-        bake_config_file,
-        name="poseSystem",
-        expressions_node="CTRL_expressions",
-        calculate_combos=True,
-        connect_shapes=True,
-        optimise=True,
-        detailed_verbose=False
-):
-    """
-from brenmy.mh.presets import bmMhFaceShapeBake
-
-dna_file = r"D:\Dev\3rd_party_repos\MetaHuman-DNA-Calibration\data\dna_files\Taro.dna"
-
-bmMhFaceShapeBake.bake_shapes(
-    dna_file,
-    mesh="head_lod0_mesh",
-    calculate_combo_deltas=True,
-    connect_shapes=True,
-    optimise=True
-)
-
-
-    :param dna_file:
-    :param name:
-    :param expressions_node:
-    :param in_betweens:
-    :param mesh:
-    :return:
-
-    """
-    from brenmeta.dna1 import mhBehaviour
-    from brenmeta.dna1 import mhSrc
-
-    import dna_viewer, dnacalib
-
-    mhSrc.validate_plugin()
-
-    # load dna data
-    LOG.info("Loading dna: {}".format(dna_file))
-
-    dna_obj = dna_viewer.DNA(dna_file)
-
-    LOG.info("Getting reader...")
-    calib_reader = dnacalib.DNACalibDNAReader(dna_obj.reader)
-
-    # get pose data
-    LOG.info("Getting pose data...")
-
-    poses = mhBehaviour.get_all_poses(calib_reader)
-    combo_poses = mhBehaviour.get_psd_poses(calib_reader, poses)
-    joints_attr_defaults = mhBehaviour.get_joint_defaults(calib_reader)
-
-    bake_rig(
-        poses,
-        combo_poses,
-        joints_attr_defaults,
-        bake_config_file,
-        calculate_combos=calculate_combos,
-        connect_shapes=connect_shapes,
-        optimise=optimise,
-        expressions_node=expressions_node,
-        detailed_verbose=detailed_verbose
-    )
-
-    return True
-
-
-def bake_shapes_from_dna_v2(
-        dna_file,
-        bake_config_file,
-        expressions_node="CTRL_expressions",
-        bake_shapes=True,
-        calculate_combos=True,
-        connect_shapes=True,
-        connect_joints=True,
-        optimise=True,
-        delete_targets=True,
-        delete_unused=True,
-        use_combo_network=False,
-        detailed_verbose=False
-):
-    """
-    """
-    from brenmeta.dna2 import mhBehaviour
-    from brenmeta.dna2 import mhSrc
-
-    import dnacalib2
-    from mh_assemble_lib.model.dnalib import DNAReader, Layer
-
-    mhSrc.validate_plugin()
-
-    # load dna data
-    LOG.info("Loading dna: {}".format(dna_file))
-
-    dna_obj = DNAReader.read(dna_file, Layer.all)
-
-    LOG.info("Getting reader...")
-    calib_reader = dnacalib2.DNACalibDNAReader(dna_obj._reader)
-
-    # get pose data
-    LOG.info("Getting pose data...")
-
-    poses = mhBehaviour.get_all_poses(calib_reader)
-    combo_poses = mhBehaviour.get_psd_poses(calib_reader, poses)
-    joints_attr_defaults = mhBehaviour.get_joint_defaults(calib_reader)
-
-    bake_rig(
-        poses,
-        combo_poses,
-        joints_attr_defaults,
-        bake_config_file,
-        bake_shapes=bake_shapes,
-        calculate_combos=calculate_combos,
-        connect_shapes=connect_shapes,
-        connect_joints=connect_joints,
-        optimise=optimise,
-        delete_targets=delete_targets,
-        delete_unused=delete_unused,
-        expressions_node=expressions_node,
-        use_combo_network=use_combo_network,
-        detailed_verbose=detailed_verbose,
-    )
-
-    # cleanup
-    rl4_nodes = cmds.ls(type="embeddedNodeRL4")
-
-    if rl4_nodes:
-        cmds.delete(rl4_nodes)
-
-    return True
 
 
 def break_joint_connections(root_joints):
@@ -1010,7 +859,10 @@ def bake_shapes_from_poses(mesh_blendshapes, poses, combo_poses, in_betweens, de
     return base_meshes, bs_nodes, target_groups
 
 
-def calculate_combo_deltas(bs_node, combo_poses, in_betweens, detailed_verbose=True, optimise=True, calculate_inputs=True):
+def calculate_combo_deltas(
+        bs_node, combo_poses, in_betweens, detailed_verbose=True, optimise=True,
+        calculate_inputs=True
+):
     """
     Note we always use the pose names to find the targets instead of the pose index
     as the target index may not match the corresponding pose
@@ -1127,10 +979,8 @@ def calculate_combo_deltas(bs_node, combo_poses, in_betweens, detailed_verbose=T
 
 
 def bake_rig(
-        poses,
-        combo_poses,
-        joints_attr_defaults,
-        config_file_path,
+        pose_manager,
+        bake_config_file,
         bake_shapes=True,
         calculate_combos=True,
         connect_shapes=True,
@@ -1144,30 +994,12 @@ def bake_rig(
 ):
     """
     """
-
     # load config
-    bake_config = BakeConfig.load(config_file_path)
+    bake_config = BakeConfig.load(bake_config_file)
+    bake_config.update_pose_manager(pose_manager)
 
     meshes = [mesh for mesh, bs_node in bake_config.mesh_blendshapes]
     bs_nodes = [bs_node for mesh, bs_node in bake_config.mesh_blendshapes]
-
-    # create additional poses
-    if bake_config.shapes:
-        LOG.info("Adding additional poses...")
-
-        mhCore.add_additional_poses(
-            poses, bake_config.shapes, joints_attr_defaults
-        )
-
-    # create additional combos
-    if bake_config.combos:
-        LOG.info("Adding additional combo poses...")
-
-        mhCore.add_additional_combo_poses(
-            poses, combo_poses, bake_config.combos, joints_attr_defaults
-        )
-
-        mhCore.update_input_combo_poses(combo_poses)
 
     # break joint connections
     if bake_shapes or connect_joints:
@@ -1181,8 +1013,8 @@ def bake_rig(
 
         base_meshes, bs_nodes, target_groups = bake_shapes_from_poses(
             bake_config.mesh_blendshapes,
-            poses,
-            combo_poses,
+            pose_manager.poses,
+            pose_manager.combo_poses,
             bake_config.in_betweens,
             detailed_verbose=detailed_verbose
         )
@@ -1220,8 +1052,8 @@ def bake_rig(
         LOG.info("Creating driver logic...")
 
         driver_mapping = create_driver_logic(
-            poses,
-            combo_poses,
+            pose_manager.poses,
+            pose_manager.combo_poses,
             expressions_node,
             additional_shapes=bake_config.shapes,
             use_combo_network=use_combo_network,
@@ -1240,10 +1072,15 @@ def bake_rig(
     if connect_joints:
         LOG.info("Creating joint poses...")
 
-        create_joint_poses(poses, driver_mapping, pose_joints=bake_config.pose_joints)
+        create_joint_poses(pose_manager.poses, driver_mapping, pose_joints=bake_config.pose_joints)
 
     # cleanup
     if delete_unused:
+        rl4_nodes = cmds.ls(type="embeddedNodeRL4")
+
+        if rl4_nodes:
+            cmds.delete(rl4_nodes)
+
         delete_redundant_joints(
             bake_config.pose_joints,
             bake_config.keep_joints
@@ -1336,9 +1173,7 @@ def disconnect(
 
 
 def reconnect(
-        poses,
-        combo_poses,
-        joints_attr_defaults,
+        pose_manager,
         config_file_path,
         expressions_node="CTRL_expressions",
         reconnect_joints=True,
@@ -1353,37 +1188,18 @@ def reconnect(
     # load config
     bake_config = BakeConfig.load(config_file_path)
 
+    new_poses, new_combo_poses = bake_config.update_pose_manager(pose_manager)
+
     bs_nodes = [
         bs_node for mesh, bs_node in bake_config.mesh_blendshapes if cmds.objExists(bs_node)
     ]
-
-    # create additional poses
-    if bake_config.shapes:
-        LOG.info("Adding additional poses...")
-
-        mhCore.add_additional_poses(
-            poses, bake_config.shapes, joints_attr_defaults
-        )
-
-    # create additional combos
-    if bake_config.combos:
-        LOG.info("Adding additional combo poses...")
-
-        _, _, new_combo_poses = mhCore.add_additional_combo_poses(
-            poses, combo_poses, bake_config.combos, joints_attr_defaults
-        )
-
-        mhCore.update_input_combo_poses(combo_poses)
-
-    else:
-        new_combo_poses = []
 
     # create combo logic
     LOG.info("Creating driver logic...")
 
     driver_mapping = create_driver_logic(
-        poses,
-        combo_poses,
+        pose_manager.poses,
+        pose_manager.combo_poses,
         expressions_node,
         additional_shapes=bake_config.shapes,
         use_combo_network=use_combo_network,
@@ -1429,26 +1245,48 @@ def reconnect(
     # reconnect joints
     if reconnect_joints and baked_joints_only:
         LOG.info("Reconnecting baked joints")
+
         if use_sdk:
             LOG.info("Using SDKs...")
-            create_joint_poses_sdk(poses, driver_mapping, pose_joints=bake_config.pose_joints)
+
+            create_joint_poses_sdk(
+                pose_manager.poses,
+                driver_mapping,
+                pose_joints=bake_config.pose_joints
+            )
         else:
             LOG.info("Using math nodes...")
-            create_joint_poses(poses, driver_mapping, pose_joints=bake_config.pose_joints)
+
+            create_joint_poses(
+                pose_manager.poses,
+                driver_mapping,
+                pose_joints=bake_config.pose_joints
+            )
     elif reconnect_joints:
         LOG.info("Reconnecting all joints")
+
         if use_sdk:
             LOG.info("Using SDKs...")
-            create_joint_poses_sdk(poses, driver_mapping, pose_joints=None)
+
+            create_joint_poses_sdk(
+                pose_manager.poses,
+                driver_mapping,
+                pose_joints=None
+            )
         else:
             LOG.info("Using math nodes...")
-            create_joint_poses(poses, driver_mapping, pose_joints=None)
+
+            create_joint_poses(
+                pose_manager.poses,
+                driver_mapping,
+                pose_joints=None
+            )
 
     return True
 
 
 def extract_pose_correctives(
-        poses, combo_poses, mesh, bs_node, skinned_mesh, bake_config, cleanup=True
+        pose_manager, bake_config_file, mesh, bs_node, skinned_mesh, cleanup=True
 ):
     """Extracts corrective shapes using given skinned mesh as reference.
 
@@ -1459,6 +1297,10 @@ def extract_pose_correctives(
 
     TODO option to extract all
     """
+    # load config
+    bake_config = BakeConfig.load(config_file_path)
+
+    new_poses, new_combo_poses = bake_config.update_pose_manager(pose_manager)
 
     # check mesh and skinned mesh are different
     if mesh == skinned_mesh:

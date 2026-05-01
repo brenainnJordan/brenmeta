@@ -8,6 +8,7 @@
   "shapes": [
     "eyeSquintL",
     "eyeSquintR",
+    "jawClose",
     ["headTiltForward", 1],
     ["headTiltBack", 1],
     ["headTiltLeft", 1],
@@ -478,5 +479,11 @@
       "vector": [1.0, 0.0, 0.0],
       "smooth": true
     }
-  ]
+  ],
+  "pose_deltas": {
+    "jawClose": {
+      "FACIAL_C_LowerLipRotation.rx": -10.0,
+      "FACIAL_C_jaw.rx": -10.0
+    }
+  }
 }

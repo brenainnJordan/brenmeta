@@ -1047,22 +1047,21 @@ class DnaPosesWidget(DnaTab):
     def __init__(self, project, parent=None):
         super(DnaPosesWidget, self).__init__(project, parent=parent)
 
-        self.dna_obj = None
-        self.calib_reader = None
+        # self.dna_obj = None
+        # self.calib_reader = None
 
         self.bs_nodes = None
-        self.attrs = None
-        self.attr_defaults = None
-        self.poses = None
-        self.combo_poses = None
-        self.core_poses = None
-        self.sorted_combo_poses = None
+
+        self.pose_manager = None
+        # self.attrs = None
+        # self.attr_defaults = None
+        # self.poses = None
+        # self.combo_poses = None
+        # self.core_poses = None
+        # self.sorted_combo_poses = None
 
         self._create_menus()
         self._create_widgets()
-
-    def refresh(self):
-        self.dna_file_combo.refresh()
 
 
     def _create_menus(self):
@@ -1117,11 +1116,14 @@ class DnaPosesWidget(DnaTab):
 
         self.tabs.addTab(self.configure_widget, "configure")
 
+        # pose widgets
+
+
         # edit
         self.splitter = QtWidgets.QSplitter()
 
-        self.core_poses_widget = mhPoseWidgets.PoseEditorWidget("Core Poses")
-        self.combo_poses_widget = mhPoseWidgets.PoseEditorWidget("Combo Poses", combo_mode=True)
+        self.core_poses_widget = mhPoseWidgets.PoseEditorWidget()
+        self.combo_poses_widget = mhPoseWidgets.PoseEditorWidget(combo_mode=True)
 
         self.splitter.addWidget(self.core_poses_widget)
         self.splitter.addWidget(self.combo_poses_widget)
@@ -1141,8 +1143,8 @@ class DnaPosesWidget(DnaTab):
 
         self.centralWidget().setLayout(lyt)
 
-        self.core_poses_widget.view.selectionModel().selectionChanged.connect(self.selection_changed)
-        self.combo_poses_widget.view.selectionModel().selectionChanged.connect(self.combo_selection_changed)
+        self.core_poses_widget.pose_widget.SELECTION_CHANGED.connect(self.selection_changed)
+        self.combo_poses_widget.pose_widget.SELECTION_CHANGED.connect(self.combo_selection_changed)
 
 
     def load(self):
@@ -1176,11 +1178,14 @@ class DnaPosesWidget(DnaTab):
             return None
 
         # load dna and get poses
-        self.dna_obj = DNAReader.read(dna_path, Layer.all)
-        reader = mhUtils.load_dna(dna_path)
-        self.calib_reader = dnacalib2.DNACalibDNAReader(reader)
+        self.pose_manager = mhBehaviour.load_poses_from_dna(dna_path)
 
-        self.reload()#use_bake_config=use_bake_config)
+        if use_bake_config:
+            bake_config = mhBakeRig.BakeConfig.load(self.project.bake_config_path)
+
+            bake_config.update_pose_manager(self.pose_manager)
+
+        self.refresh()
 
         QtWidgets.QMessageBox.information(
             self,
@@ -1204,7 +1209,7 @@ class DnaPosesWidget(DnaTab):
             return
 
         # check we have data loaded
-        if not self.poses:
+        if not self.pose_manager:
             QtWidgets.QMessageBox.critical(
                 self,
                 "Error",
@@ -1225,11 +1230,17 @@ class DnaPosesWidget(DnaTab):
         if confirm is QtWidgets.QMessageBox.Cancel:
             return None
 
+        # read dna file to update
+        # TODO dialog to select input dna and output dna
+        dna_path = self.dna_file_combo.get_path()
+        reader = mhUtils.load_dna(dna_path)
+        calib_reader = dnacalib2.DNACalibDNAReader(reader)
+
         # write data
         mhBehaviour.save_dna(
-            self.calib_reader,
+            calib_reader,
             self.project.output_dna_path,
-            poses=self.poses,
+            poses=self.pose_manager.poses,
         )
 
         # confirm write
@@ -1250,14 +1261,40 @@ class DnaPosesWidget(DnaTab):
 
         return True
 
-    def selection_changed(self, old_selection, new_selection):
+    def selection_changed(self, *args):
         poses = self.core_poses_widget.get_selected_poses()
-        self.combo_poses_widget.proxy_model.set_ref_poses(poses)
+        self.combo_poses_widget.set_ref_poses(poses)
 
     def combo_selection_changed(self, old_selection, new_selection):
         # pass
         poses = self.combo_poses_widget.get_selected_poses()
-        self.core_poses_widget.proxy_model.set_ref_poses(poses)
+        self.core_poses_widget.set_ref_poses(poses)
+
+    def refresh(self):
+        self.dna_file_combo.refresh()
+
+        self.blendshapes_label.setText("")
+
+        if self.pose_manager:
+            if self.pose_manager.bs_nodes:
+                self.blendshapes_label.setText("\n"+"\n".join(self.pose_manager.bs_nodes)+"\n")
+
+            self.core_poses_widget.blendshape_nodes = self.pose_manager.bs_nodes
+            self.combo_poses_widget.blendshape_nodes = self.pose_manager.bs_nodes
+
+            # TODO set widget pose manager instead
+            #   then have mode enum to switch between (maybe a drop down box too?)
+            self.core_poses_widget.set_poses(self.pose_manager.core_poses)
+
+            self.combo_poses_widget.set_poses(self.pose_manager.sorted_combo_poses)
+
+            self.core_poses_widget.attr_defaults = self.pose_manager.attr_defaults
+            self.combo_poses_widget.attr_defaults = self.pose_manager.attr_defaults
+        else:
+            # TODO
+            pass
+
+        return True
 
     def reload(self):
         # TODO warning that this will reset data?
@@ -1270,25 +1307,29 @@ class DnaPosesWidget(DnaTab):
 
         self.core_poses_widget.set_poses(None)
         self.combo_poses_widget.set_poses(None)
-        self.combo_poses_widget.proxy_model.set_ref_poses(None)
+        self.combo_poses_widget.set_ref_poses(None)
 
         self.bs_nodes = mhMesh.get_blendshape_nodes(self.dna_obj, self.calib_reader)
-        self.attrs = mhBehaviour.get_joint_attrs(self.calib_reader)
-        self.attr_defaults = mhBehaviour.get_joint_defaults(self.calib_reader)
-        self.poses = mhBehaviour.get_all_poses(self.calib_reader)
-        self.combo_poses = mhBehaviour.get_psd_poses(self.calib_reader, self.poses)
+
+        self.pose_manager = mhCore.PoseManager()
+
+        self.pose_manager.attrs = mhBehaviour.get_joint_attrs(self.calib_reader)
+        self.pose_manager.attr_defaults = mhBehaviour.get_joint_defaults(self.calib_reader)
+        self.pose_manager.poses = mhBehaviour.get_all_poses(self.calib_reader)
+        self.pose_manager.combo_poses = mhBehaviour.get_psd_poses(self.calib_reader, self.pose_manager.poses)
+
+        # self.poses = mhBehaviour.get_all_poses(self.calib_reader)
+        # self.combo_poses = mhBehaviour.get_psd_poses(self.calib_reader, self.poses)
 
         if use_bake_config:
             bake_config = mhBakeRig.BakeConfig.load(self.project.bake_config_path)
 
-            bake_config.update_poses(
-                self.poses, self.combo_poses, self.attr_defaults
-            )
+            bake_config.update_pose_manager(self.pose_manager)
 
             self.bs_nodes += bake_config.blendshape_nodes
 
-        self.core_poses = [pose for i, pose in enumerate(self.poses) if i not in self.combo_poses]
-        self.sorted_combo_poses = [self.combo_poses[i] for i in sorted(self.combo_poses.keys())]
+        # self.core_poses = [pose for i, pose in enumerate(self.poses) if i not in self.combo_poses]
+        # self.sorted_combo_poses = [self.combo_poses[i] for i in sorted(self.combo_poses.keys())]
 
         self.blendshapes_label.setText("\n"+"\n".join(self.bs_nodes)+"\n")
 
@@ -1302,18 +1343,18 @@ class DnaPosesWidget(DnaTab):
         self.combo_poses_widget.attr_defaults = self.attr_defaults
 
     def init_blendshapes(self):
-        if not self.calib_reader:
+        if not self.pose_manager:
             self.error("Poses not loaded")
             return
 
-        mhBehaviour.initialize_blendshape_targets(self.calib_reader, self.poses)
+        self.pose_manager.initialize_shape_names()
 
-        self.reload()
+        self.refresh()
 
         QtWidgets.QMessageBox.information(
             self,
             "Complete",
-            "Blendshapes initialized",
+            "Shape names initialized",
             QtWidgets.QMessageBox.Ok
         )
 
@@ -1480,44 +1521,28 @@ class DnaQCWidget(DnaTab):
                 return False
 
             LOG.info("Loading dna: {}".format(dna_path))
-            reader = mhUtils.load_dna(dna_path)
-            calib_reader = dnacalib2.DNACalibDNAReader(reader)
+            # reader = mhUtils.load_dna(dna_path)
+            # calib_reader = dnacalib2.DNACalibDNAReader(reader)
+            #
+            # poses = mhBehaviour.get_all_poses(calib_reader)
+            # psd_poses = mhBehaviour.get_psd_poses(calib_reader, poses)
+            # joints_attr_defaults = mhBehaviour.get_joint_defaults(calib_reader)
 
-            poses = mhBehaviour.get_all_poses(calib_reader)
-            psd_poses = mhBehaviour.get_psd_poses(calib_reader, poses)
-            joints_attr_defaults = mhBehaviour.get_joint_defaults(calib_reader)
+            pose_manager = mhBehaviour.load_poses_from_dna(dna_path)
 
             if use_bake_config:
                 bake_config = mhBakeRig.BakeConfig.load(bake_config_file)
 
-                bake_config.update_poses(
-                    poses, psd_poses, joints_attr_defaults
-                )
+                bake_config.update_pose_manager(pose_manager)
 
-                # LOG.info("Adding additional shapes and combos from bake config...")
-                #
-                #
-                # # create additional poses
-                # if bake_config.shapes:
-                #     LOG.info("Adding additional poses...")
-                #
-                #     mhCore.add_additional_poses(
-                #         poses, bake_config.shapes, joints_attr_defaults
-                #     )
-                #
-                # # create additional combos
-                # if bake_config.combos:
-                #     LOG.info("Adding additional combo poses...")
-                #
-                #     mhCore.add_additional_combo_poses(
-                #         poses, psd_poses, bake_config.combos, joints_attr_defaults
-                #     )
-                #
-                #     mhCore.update_input_psd_poses(psd_poses)
+            mapping = mhAnimUtils.map_expressions_to_controls(
+                tongue=tongue, eyelashes=eyelashes, namespace=namespace
+            )
 
-            mapping = mhAnimUtils.map_expressions_to_controls(tongue=tongue, eyelashes=eyelashes, namespace=namespace)
+            combo_mapping = mhAnimUtils.map_psds_to_controls(
+                mapping, pose_manager.combo_poses.values()
+            )
 
-            combo_mapping = mhAnimUtils.map_psds_to_controls(mapping, psd_poses.values())
         else:
             combo_mapping = None
 
@@ -1972,9 +1997,11 @@ class DnaBakeRigWidget(DnaTab):
         # get pose data
         LOG.info("Getting pose data...")
 
-        poses = mhBehaviour.get_all_poses(calib_reader)
-        psd_poses = mhBehaviour.get_psd_poses(calib_reader, poses)
-        joints_attr_defaults = mhBehaviour.get_joint_defaults(calib_reader)
+        pose_manager = mhCore.PoseManager()
+
+        pose_manager.poses = mhBehaviour.get_all_poses(calib_reader)
+        pose_manager.psd_poses = mhBehaviour.get_psd_poses(calib_reader, poses)
+        pose_manager.attr_defaults = mhBehaviour.get_joint_defaults(calib_reader)
 
         # load config
         bake_config = mhBakeRig.BakeConfig.load(bake_config_file)
@@ -1982,18 +2009,24 @@ class DnaBakeRigWidget(DnaTab):
         # create additional poses
         LOG.info("Adding additional poses...")
 
-        mhCore.add_additional_poses(
-            poses, bake_config.shapes, joints_attr_defaults
-        )
+        pose_manager.add_additional_poses(bake_config.shapes)
+
+        # mhCore.add_additional_poses(
+        #     poses, bake_config.shapes, joints_attr_defaults
+        # )
 
         # create additional combos
         LOG.info("Adding additional combo poses...")
 
-        _, _, new_psd_poses = mhCore.add_additional_combo_poses(
-            poses, psd_poses, bake_config.combos, joints_attr_defaults
-        )
+        new_psd_poses = pose_manager.add_additional_combo_poses(bake_config.combos)
 
-        mhCore.update_input_combo_poses(psd_poses)
+        pose_manager.update_input_combo_poses()
+
+        # _, _, new_psd_poses = mhCore.add_additional_combo_poses(
+        #     poses, psd_poses, bake_config.combos, joints_attr_defaults
+        # )
+
+        # mhCore.update_input_combo_poses(psd_poses)
 
         new_targets = list(bake_config.shapes)
         new_targets += [psd_pose.pose.name for psd_pose in new_psd_poses]
@@ -2014,15 +2047,6 @@ class DnaBakeRigWidget(DnaTab):
             len(bake_config.readers),
             "\n  ".join(new_targets)
         )
-
-        # self.mesh_blendshapes = None
-        # self.shapes = None
-        # self.in_betweens = None
-        # self.pose_joints = None
-        # self.keep_joints = None
-        # self.delete = None
-        # self.root_joints = None
-        # self.readers = None
 
         dialog = mhWidgets.DebugDialog(target_text, parent=self)
         dialog.setWindowTitle("Bake debug")
@@ -2058,15 +2082,16 @@ class DnaBakeRigWidget(DnaTab):
         if confirm is QtWidgets.QMessageBox.Cancel:
             return False
 
-        mhBakeRig.bake_shapes_from_dna_v2(
-            dna_path,
+        pose_manager = mhBehaviour.load_poses_from_dna(dna_file)
+
+        mhBakeRig.bake_rig(
+            pose_manager,
             bake_config_file,
             bake_shapes=self.bake_shapes_checkbox.isChecked(),
             calculate_combos=self.calculate_psd_deltas_checkbox.isChecked(),
             connect_shapes=self.connect_shapes_checkbox.isChecked(),
             connect_joints=self.connect_joints_checkbox.isChecked(),
             optimise=self.optimise_checkbox.isChecked(),
-            # cleanup=self.cleanup_checkbox.isChecked(),
             delete_targets=self.delete_targets_checkbox.isChecked(),
             delete_unused=self.delete_unused_checkbox.isChecked(),
             expressions_node="CTRL_expressions",
@@ -2128,27 +2153,13 @@ class DnaBakeRigWidget(DnaTab):
         if confirm is QtWidgets.QMessageBox.Cancel:
             return False
 
-        # load dna data
-        LOG.info("Loading dna: {}".format(dna_path))
-
-        dna_obj = DNAReader.read(dna_path, Layer.all)
-
-        LOG.info("Getting reader...")
-        calib_reader = dnacalib2.DNACalibDNAReader(dna_obj._reader)
-
-        # get pose data
-        LOG.info("Getting pose data...")
-
-        poses = mhBehaviour.get_all_poses(calib_reader)
-        psd_poses = mhBehaviour.get_psd_poses(calib_reader, poses, override_name=True)
-        joints_attr_defaults = mhBehaviour.get_joint_defaults(calib_reader)
+        # load data
+        pose_manager = mhBehaviour.load_poses_from_dna(dna_path)
 
         # reconnect
         try:
             mhBakeRig.reconnect(
-                poses,
-                psd_poses,
-                joints_attr_defaults,
+                pose_manager,
                 bake_config_file,
                 expressions_node="CTRL_expressions",
                 use_combo_network=self.reconnect_combo_network_checkbox.isChecked(),
@@ -2209,17 +2220,15 @@ class DnaBakeRigWidget(DnaTab):
             return False
 
         try:
-            poses, psd_poses, joints_attr_defaults, bake_config = mhBakeRig.load_poses_v2(
-                dna_path, bake_config_file
-            )
+
+            pose_manager = mhBehaviour.load_poses_from_dna(dna_file)
 
             mhBakeRig.extract_pose_correctives(
-                poses,
-                psd_poses,
+                pose_manager,
+                bake_config_file,
                 self.correctives_mesh_widget.node,
                 self.correctives_bs_node_widget.node,
                 self.correctives_skinned_mesh_widget.node,
-                bake_config,
                 cleanup=self.extract_correctives_cleanup_checkbox.isChecked()
             )
 

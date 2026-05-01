@@ -275,25 +275,16 @@ class PoseFilterModel(QtCore.QSortFilterProxyModel):
         return super(PoseFilterModel, self).filterAcceptsRow(source_row, source_parent)
 
 
-class PoseEditorWidget(QtWidgets.QFrame):
-    def __init__(self, name, combo_mode=False, parent=None):
-        super(PoseEditorWidget, self).__init__(parent=parent)
+class PoseWidget(QtWidgets.QWidget):
 
-        self.setFrameStyle(QtWidgets.QFrame.StyledPanel | QtWidgets.QFrame.Sunken)
+    SELECTION_CHANGED = QtCore.Signal()
 
-        self._poses = None
-        self.blendshape_nodes = None
-
-        self.attr_defaults = None
-        self._combo_mode = combo_mode
-
-        self._resetting_scene = False
-        self._updating_scene = False
+    def __init__(self, combo_mode=False, parent=None):
+        super(PoseWidget, self).__init__(parent=parent)
 
         self._create_widgets(combo_mode=combo_mode)
 
     def error(self, err):
-        # TODO traceback
 
         print(traceback.format_exc())
 
@@ -306,16 +297,13 @@ class PoseEditorWidget(QtWidgets.QFrame):
             QtWidgets.QMessageBox.Ok
         )
 
-    @property
-    def poses(self):
-        return self._poses
-
     def set_poses(self, poses):
-        self._poses = poses
         self.poses_model.set_poses(poses)
 
-    def _create_widgets(self, combo_mode=False):
+    def set_ref_poses(self, poses):
+        self.proxy_model.set_ref_poses(poses)
 
+    def _create_widgets(self, combo_mode=False):
         # type label
         if combo_mode:
             self.type_label = QtWidgets.QLabel("Combo Poses")
@@ -362,11 +350,115 @@ class PoseEditorWidget(QtWidgets.QFrame):
         self.view.header().resizeSection(0, 50)
         self.view.header().resizeSection(1, 150)
 
-        self.view_lyt = QtWidgets.QVBoxLayout()
-        self.view_lyt.addWidget(self.type_label)
-        self.view_lyt.addWidget(self.filter_line_edit)
-        self.view_lyt.addWidget(self.view)
-        self.view_lyt.addLayout(self.show_column_lyt)
+        self.view.selectionModel().selectionChanged.connect(self._selection_changed)
+
+        # layout
+        self.lyt = QtWidgets.QVBoxLayout()
+        self.lyt.addWidget(self.type_label)
+        self.lyt.addWidget(self.filter_line_edit)
+        self.lyt.addWidget(self.view)
+        self.lyt.addLayout(self.show_column_lyt)
+
+        self.setLayout(self.lyt)
+
+    def _selection_changed(self):
+        self.SELECTION_CHANGED.emit()
+
+    def _show_index_toggled(self):
+        self.poses_model.set_show_indices(self.show_index_checkbox.isChecked())
+
+    def _show_pose_toggled(self):
+        self.poses_model.set_show_poses(self.show_pose_checkbox.isChecked())
+
+    def _show_shape_toggled(self):
+        self.poses_model.set_show_shapes(self.show_shape_checkbox.isChecked())
+
+    def filter_changed(self):
+        self.proxy_model.setFilterWildcard(
+            "*{}*".format(self.filter_line_edit.text())
+        )
+
+    def get_selected_poses(self, warn=False, as_combo=False):
+        poses = []
+
+        selection = self.view.selectionModel().selection()
+
+        for proxy_index in selection.indexes():
+            index = self.proxy_model.mapToSource(proxy_index)
+            pose = self.poses_model.poses[int(index.row())]
+
+            if pose not in poses:
+                poses.append(pose)
+
+        if not poses and warn:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Warning",
+                "No poses selected",
+                QtWidgets.QMessageBox.Ok
+            )
+
+            return None
+
+        if as_combo:
+            combo_pose = mhCore.ComboPose()
+            combo_pose.pose = mhCore.Pose()
+
+            for pose in poses:
+                if isinstance(pose, mhCore.ComboPose):
+                    combo_pose.input_combos.append(pose)
+                else:
+                    combo_pose.input_poses.append(pose)
+
+            return combo_pose
+        else:
+            return poses
+
+
+class PoseEditorWidget(QtWidgets.QFrame):
+    def __init__(self, combo_mode=False, parent=None):
+        super(PoseEditorWidget, self).__init__(parent=parent)
+
+        self.setFrameStyle(QtWidgets.QFrame.StyledPanel | QtWidgets.QFrame.Sunken)
+
+        self._poses = None
+        self.blendshape_nodes = None
+
+        self.attr_defaults = None
+        self._combo_mode = combo_mode
+
+        self._resetting_scene = False
+        self._updating_scene = False
+
+        self._create_widgets(combo_mode=combo_mode)
+
+    def error(self, err):
+
+        print(traceback.format_exc())
+
+        LOG.critical(str(err))
+
+        QtWidgets.QMessageBox.critical(
+            self,
+            "Error",
+            str(err),
+            QtWidgets.QMessageBox.Ok
+        )
+
+    @property
+    def poses(self):
+        return self._poses
+
+    def set_poses(self, poses):
+        self._poses = poses
+        self.pose_widget.set_poses(poses)
+
+    def set_ref_poses(self, poses):
+        self.pose_widget.set_ref_poses(poses)
+
+    def _create_widgets(self, combo_mode=False):
+        # pose widget
+        self.pose_widget = PoseWidget(combo_mode=combo_mode)
 
         # match options
         self.match_group_box = QtWidgets.QGroupBox("Match")
@@ -446,25 +538,16 @@ class PoseEditorWidget(QtWidgets.QFrame):
         self.lyt = QtWidgets.QHBoxLayout()
 
         if combo_mode:
-            self.lyt.addLayout(self.view_lyt)
+            self.lyt.addWidget(self.pose_widget)
             self.lyt.addLayout(self.tool_lyt)
         else:
             self.lyt.addLayout(self.tool_lyt)
-            self.lyt.addLayout(self.view_lyt)
+            self.lyt.addWidget(self.pose_widget)
 
         self.lyt.setStretchFactor(self.tool_lyt, 0)
-        self.lyt.setStretchFactor(self.view_lyt, 1)
+        self.lyt.setStretchFactor(self.pose_widget, 1)
 
         self.setLayout(self.lyt)
-
-    def _show_index_toggled(self):
-        self.poses_model.set_show_indices(self.show_index_checkbox.isChecked())
-
-    def _show_pose_toggled(self):
-        self.poses_model.set_show_poses(self.show_pose_checkbox.isChecked())
-
-    def _show_shape_toggled(self):
-        self.poses_model.set_show_shapes(self.show_shape_checkbox.isChecked())
 
     def _match_mode_changed(self):
         mode = MatchMode.items[self.match_mode_combo.currentIndex()]
@@ -474,60 +557,8 @@ class PoseEditorWidget(QtWidgets.QFrame):
         mode = FilterMode.items[self.filter_mode_combo.currentIndex()]
         self.proxy_model.set_filter_mode(mode)
 
-    def filter_changed(self):
-        self.proxy_model.setFilterWildcard(
-            "*{}*".format(self.filter_line_edit.text())
-        )
-
-    def get_selected_poses(self, warn=False, summed=False, as_combo=False):
-        poses = []
-
-        selection = self.view.selectionModel().selection()
-
-        for proxy_index in selection.indexes():
-            index = self.proxy_model.mapToSource(proxy_index)
-            pose = self.poses[int(index.row())]
-
-            if pose not in poses:
-                poses.append(pose)
-
-        if not poses and warn:
-            QtWidgets.QMessageBox.warning(
-                self,
-                "Warning",
-                "No poses selected",
-                QtWidgets.QMessageBox.Ok
-            )
-
-            return None
-
-        if as_combo:
-            combo_pose = mhCore.ComboPose()
-            combo_pose.pose = mhCore.Pose()
-
-            for pose in poses:
-                if isinstance(pose, mhCore.ComboPose):
-                    combo_pose.input_combos.append(pose)
-                else:
-                    combo_pose.input_poses.append(pose)
-
-            return combo_pose
-        else:
-            return poses
-
-        # if summed:
-        #     # TODO use Combo instead
-        #     if len(poses) > 1:
-        #         summed_pose = mhCore.Pose()
-        #
-        #         for pose in poses:
-        #             summed_pose += pose
-        #     else:
-        #         summed_pose = poses[0]
-        #
-        #     return summed_pose
-        # else:
-        #     return poses
+    def get_selected_poses(self, warn=True, as_combo=False):
+        return self.pose_widget.get_selected_poses(warn=True, as_combo=as_combo)
 
     def reset_scene(self):
         if self._resetting_scene or self._updating_scene:
@@ -596,11 +627,6 @@ class PoseEditorWidget(QtWidgets.QFrame):
             self._updating_scene = True
 
             # pose rig
-            # summed_pose = self.get_selected_poses(warn=True, summed=True)
-            #
-            # summed_pose.pose_joints(blend=blend)
-            # summed_pose.activate_targets(self.blendshape_nodes, blend=blend)
-
             pose = self.get_selected_poses(warn=True, as_combo=True)
 
             pose.pose_joints(blend=blend)

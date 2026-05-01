@@ -249,15 +249,42 @@ class Pose(object):
 
         return False
 
+    def serialize(self):
+        data = {
+            "index": self.index,
+            "name": self.name,
+            "shape_name": self.shape_name,
+            "deltas": self.deltas,
+            "defaults": self.defaults,
+        }
+
+        if self.opposite:
+            data["opposite"] = self.opposite.index
+        else:
+            data["opposite"] = None
+
+        return data
+
+    def deserialize(self, data, pose_manager):
+        self.index = data["index"]
+        self.name = data["name"]
+        self.shape_name = data["shape_name"]
+        self.deltas = data["deltas"]
+        self.defaults = data["defaults"]
+
+        if data["opposite"]:
+            self.opposite = None  # TODO
+
+        return True
+
 
 class ComboPose(object):
     def __init__(self):
         super(ComboPose, self).__init__()
         self.pose = None
         self.input_poses = []
-        self.input_weights = []
+        self.input_weights = []  # TODO deprecate?
         self.input_combos = []
-        self.opposite = None  # TODO
 
     def __repr__(self):
         return "{}({}: {}) <- [{}]".format(
@@ -292,20 +319,6 @@ class ComboPose(object):
                     summed_deltas[attr] += delta
                 else:
                     summed_deltas[attr] = delta
-
-        # for input_pose in self.input_poses:
-        #     for attr, delta in input_pose.deltas.items():
-        #         if attr in summed_deltas:
-        #             summed_deltas[attr] += delta
-        #         else:
-        #             summed_deltas[attr] = delta
-        #
-        # for input_combo_pose in self.input_combo_poses:
-        #     for attr, delta in input_combo_pose.pose.deltas.items():
-        #         if attr in summed_deltas:
-        #             summed_deltas[attr] += delta
-        #         else:
-        #             summed_deltas[attr] = delta
 
         if absolute:
             values = {}
@@ -408,88 +421,232 @@ class ComboPose(object):
 
         return False
 
+    def serialize(self):
+        data = {
+            "index": None,
+            "input_poses": None,
+            "input_weights": None,
+            "input_combos": None
+        }
 
-def add_additional_poses(poses, pose_names, joints_attr_defaults):
-    pose_count = len(poses)
+        if self.pose:
+            data["index"] = self.pose.index
 
-    for i, pose_name in enumerate(pose_names):
-        pose = Pose()
-        pose.name = pose_name
-        pose.index = pose_count + i
-        pose.defaults = joints_attr_defaults
+        if self.input_poses:
+            data["input_poses"] = [pose.index for pose in self.input_poses]
 
-        poses.append(pose)
+        if self.input_weights:
+            data["input_weights"] = self.input_weights
 
-    return poses
+        if self.input_combos:
+            data["input_combos"] = [combo.pose.index for combo in self.input_combos]
 
+        return data
 
-def add_additional_combo_poses(poses, combo_poses, additional_combos, joints_attr_defaults):
-    """Create ComboPose for each additional combo and map input poses
-    TODO make joints_attr_defaults optional
-    """
-    pose_dict = {
-        pose.name: pose for pose in poses
-    }
+    def deserialize(self, data, pose_manager):
+        if data["index"]:
+            if data["index"] >= len(pose_manager.poses):
+                raise MHError("combo pose index out of range: {}".format(data["index"]))
 
-    pose_count = len(poses)
+            self.pose = pose_manager.poses[data["index"]]
 
-    new_combo_poses = []
+        if data["input_poses"]:
+            self.input_poses = []
 
-    for i, pose_names in enumerate(additional_combos):
-        combo = ComboPose()
+            for pose_index in data["input_poses"]:
+                if pose_index >= len(pose_manager.poses):
+                    raise MHError("input pose index out of range: {}".format(pose_index))
 
-        combo.pose = Pose()
-        combo.pose.name = "_".join(pose_names)
-        combo.pose.index = pose_count + i
-        combo.pose.defaults = joints_attr_defaults
+                self.input_poses.append(pose_manager.poses[pose_index])
 
-        combo.input_poses = [pose_dict[pose_name] for pose_name in pose_names]
-        combo.input_weights = [1.0] * len(pose_names)
+        if data["input_weights"]:
+            self.input_weights = data["input_weights"]
 
-        combo.update_name(override=True)
+        if data["input_combos"]:
+            self.input_combos = []
 
-        if combo.pose.name in pose_dict:
-            LOG.info("existing combo found, skipping: {}".format(combo.pose.name))
-            continue
+            for pose_index in data["input_combos"]:
+                if pose_index not in pose_manager.combo_poses:
+                    raise MHError("input combo index not found: {}".format(pose_index))
 
-        combo_poses[combo.pose.index] = combo
-        poses.append(combo.pose)
-        new_combo_poses.append(combo)
-        pose_dict[combo.pose.name] = combo.pose
+                self.input_combos.append(pose_manager.combo_poses[pose_index])
 
-    return poses, combo_poses, new_combo_poses
-
-
-def add_combo_pose_permutations(poses, combo_poses, joints_attr_defaults, pose_names, permutation_count):
-    # TODO
-    pass
+        return True
 
 
-def update_input_combo_poses(combo_poses):
-    """add input combos for 3+ way combos
-    """
-    for combo_pose in combo_poses.values():
-        if len(combo_pose.input_poses) < 3:
-            continue
+class PoseManager(object):
+    # TODO test!!
 
-        for input_combo_pose in combo_poses.values():
-            if input_combo_pose is combo_pose:
+    def __init__(self):
+        super(PoseManager, self).__init__()
+
+        # TODO neutral pose
+        #      get attrs and attr defaults from that
+        #      all poses reference manager to get defaults
+        #      utilities to create/update neutral based on any new attrs from new poses etc.
+
+        self.attrs = []
+        self.attr_defaults = {}
+        self.poses = []
+        self.combo_poses = {}
+        self.blendshape_nodes = []
+
+    @property
+    def core_poses(self):
+        if not self.poses:
+            return None
+
+        return [pose for i, pose in enumerate(self.poses) if i not in self.combo_poses]
+
+    @property
+    def sorted_combo_poses(self):
+        return [self.combo_poses[i] for i in sorted(self.combo_poses.keys())]
+
+    def serialize(self):
+        data = {
+            "attrs": self.attrs,
+            "attr_defaults": self.attr_defaults,
+            "poses": None,
+            "combo_poses": None,
+            "pose_count": 0,
+            "combo_pose_count": 0,
+            "blendshape_nodes": self.blendshape_nodes,
+        }
+
+        if self.poses:
+            data["poses"] = [pose.serialize() for pose in self.poses]
+            data["pose_count"] = len(self.poses)
+
+        if self.combo_poses:
+            data["combo_poses"] = {i: combo.serialize() for i, combo in self.combo_poses.items()}
+            data["combo_pose_count"] = len(self.combo_poses)
+
+        return data
+
+    def deserialize(self, data):
+        # instance objects
+        self.poses = [Pose() for _ in range(data["pose_count"])]
+        self.combo_poses = {i: ComboPose() for i, data in data["combo_pose_count"].items()}
+
+        # deserialize after objects are instanced to ensure references are set correctly
+        if data["poses"]:
+            for i, pose_data in enumerate(data["poses"]):
+                self.poses[i].deserialize(pose_data)
+
+        if data["combo_poses"]:
+            for i, combo_data in data["combo_poses"].items():
+                self.combo_poses[i].deserialize(combo_data)
+
+        return True
+
+    def add_additional_poses(self, pose_names, pose_deltas=None):
+        pose_count = len(self.poses)
+
+        new_poses = []
+
+        for i, pose_name in enumerate(pose_names):
+            pose = Pose()
+            pose.name = pose_name
+            pose.index = pose_count + i
+            pose.defaults = self.attr_defaults
+
+            new_poses.append(pose)
+            self.poses.append(pose)
+
+            if pose_deltas:
+                if pose_name in pose_deltas:
+                    pose.deltas = pose_deltas[pose_name]
+
+        return new_poses
+
+    def add_additional_combo_poses(self, additional_combos):
+        """Create ComboPose for each additional combo and map input poses
+        """
+        pose_dict = {
+            pose.name: pose for pose in self.poses
+        }
+
+        pose_count = len(self.poses)
+
+        new_combo_poses = []
+
+        for i, pose_names in enumerate(additional_combos):
+            combo = ComboPose()
+
+            combo.pose = Pose()
+            combo.pose.name = "_".join(pose_names)
+            combo.pose.index = pose_count + i
+            combo.pose.defaults = self.attr_defaults
+
+            combo.input_poses = [pose_dict[pose_name] for pose_name in pose_names]
+            combo.input_weights = [1.0] * len(pose_names)
+
+            combo.update_name(override=True)
+
+            if combo.pose.name in pose_dict:
+                LOG.info("existing combo found, skipping: {}".format(combo.pose.name))
                 continue
 
-            if input_combo_pose in combo_pose.input_combos:
+            self.combo_poses[combo.pose.index] = combo
+            self.poses.append(combo.pose)
+            new_combo_poses.append(combo)
+            pose_dict[combo.pose.name] = combo.pose
+
+        return new_combo_poses
+
+    def add_combo_pose_permutations(self, pose_names, permutation_count):
+        # TODO
+        pass
+
+    def update_input_combo_poses(self):
+        """add input combos for 3+ way combos
+        """
+        for combo_pose in self.combo_poses.values():
+            if len(combo_pose.input_poses) < 3:
                 continue
 
-            if len(input_combo_pose.input_poses) >= len(combo_pose.input_poses):
+            for input_combo_pose in self.combo_poses.values():
+                if input_combo_pose is combo_pose:
+                    continue
+
+                if input_combo_pose in combo_pose.input_combos:
+                    continue
+
+                if len(input_combo_pose.input_poses) >= len(combo_pose.input_poses):
+                    continue
+
+                # check if all input_combo_pose input poses are contained
+                # within the input combo poses for this combo
+                if all([
+                    pose in combo_pose.input_poses for pose in input_combo_pose.input_poses
+                ]):
+                    combo_pose.input_combos.append(input_combo_pose)
+
+        return True
+
+    def initialize_shape_names(self):
+        """Add shape name to poses without shape names and ensure they are all unique
+        """
+        target_names = []
+
+        for pose in self.poses:
+            if not pose.name:
                 continue
 
-            # check if all input_combo_pose input poses are contained
-            # within the input combo poses for this combo
-            if all([
-                pose in combo_pose.input_poses for pose in input_combo_pose.input_poses
-            ]):
-                combo_pose.input_combos.append(input_combo_pose)
+            if not pose.shape_name:
+                # use pose name
+                pose.shape_name = pose.name
 
-    return combo_poses
+            # ensure shape name is unique
+            duplicate_index = 1
+
+            while pose.shape_name in target_names:
+                pose.shape_name = "{}_{}".format(pose.name, duplicate_index)
+                duplicate_index += 1
+
+            target_names.append(pose.shape_name)
+
+        return True
 
 
 class Project(object):

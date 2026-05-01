@@ -18,9 +18,13 @@
 from maya import cmds
 
 import dna
+import dnacalib2
+from mh_assemble_lib.model.dnalib import DNAReader, Layer
 
 from brenmeta.core import mhCore
 from brenmeta.maya import mhMayaUtils
+from brenmeta.dna2 import mhUtils
+from brenmeta.dna2 import mhMesh
 
 LOG = mhCore.get_basic_logger(__name__)
 
@@ -150,11 +154,14 @@ def get_all_poses(reader, verbose=False):
     return poses
 
 
-def set_all_poses(reader, writer, pose_data):
+def set_all_poses(reader, writer, poses):
+
+    # TODO add new poses!!
+
     # validate data
-    if len(pose_data) != reader.getJointColumnCount():
-        LOG.warning("Joint column count ({}) != pose_data length ({})".format(
-            len(pose_data), reader.getJointColumnCount()
+    if len(poses) != reader.getJointColumnCount():
+        LOG.warning("Joint column count ({}) != pose count ({})".format(
+            len(poses), reader.getJointColumnCount()
         ))
 
     # get data
@@ -166,18 +173,20 @@ def set_all_poses(reader, writer, pose_data):
         input_indices = reader.getJointGroupInputIndices(group_index)
 
         if not input_indices:
-            print("No input indices for joint group: {}".format(group_index))
+            LOG.info("No input indices for joint group: {}".format(group_index))
             continue
 
         output_indices = reader.getJointGroupOutputIndices(group_index)
         group_attrs = [joint_attrs[i] for i in output_indices]
 
         # get values for group
+        values = reader.getJointGroupValues(group_index)
+
         group_values = []
 
         for input_index in input_indices:
-            if input_index < len(pose_data):
-                pose = pose_data[input_index]
+            if input_index < len(poses):
+                pose = poses[input_index]
             else:
                 LOG.warning("input index out of range: {}".format(input_index))
                 pose = None
@@ -185,10 +194,11 @@ def set_all_poses(reader, writer, pose_data):
             output_values = []
 
             for attr in group_attrs:
+                value = 0.0  # TODO use existing value
+
                 if pose:
-                    value = pose.deltas[attr]
-                else:
-                    value = 0.0 # TODO use existing value
+                    if attr in pose.deltas:
+                        value = pose.deltas[attr]
 
                 output_values.append(value)
 
@@ -383,6 +393,31 @@ def initialize_blendshape_targets(calib_reader, poses):
         calib_reader.setMeshBlendShapeChannelMapping(target_index, mesh_index, target_index)
 
     return calib_reader
+
+
+def load_poses_from_dna(file_path, pose_manager=None):
+    # load dna data
+    LOG.info("Loading dna: {}".format(file_path))
+    dna_obj = DNAReader.read(file_path, Layer.all)
+
+    LOG.info("Getting reader...")
+    reader = mhUtils.load_dna(file_path)
+    calib_reader = dnacalib2.DNACalibDNAReader(reader)
+
+    # get pose data
+    if not pose_manager:
+        pose_manager = mhCore.PoseManager()
+
+    LOG.info("Getting pose data...")
+
+    pose_manager.attrs = get_joint_attrs(calib_reader)
+    pose_manager.attr_defaults = get_joint_defaults(calib_reader)
+    pose_manager.poses = get_all_poses(calib_reader)
+    pose_manager.combo_poses = get_psd_poses(calib_reader, pose_manager.poses)
+
+    pose_manager.bs_nodes = mhMesh.get_blendshape_nodes(dna_obj, calib_reader)
+
+    return pose_manager
 
 
 def save_dna(reader, path, validate=True, as_json=False, poses=None):

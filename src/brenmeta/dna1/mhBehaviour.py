@@ -19,9 +19,11 @@ from maya import cmds
 
 import dna
 import dnacalib
+import dna_viewer
 
 from brenmeta.core import mhCore
 from brenmeta.maya import mhMayaUtils
+from brenmeta.dna1 import mhSrc
 
 LOG = mhCore.get_basic_logger(__name__)
 
@@ -286,3 +288,29 @@ def get_psd_poses(reader, poses, update_names=True):
             psd_pose.update_name()
 
     return psd_poses
+
+
+def load_poses_from_dna(file_path, pose_manager=None):
+    # TODO test
+    mhSrc.validate_plugin()
+
+    # load dna data
+    LOG.info("Loading dna: {}".format(file_path))
+
+    dna_obj = dna_viewer.DNA(file_path)
+
+    LOG.info("Getting reader...")
+    calib_reader = dnacalib.DNACalibDNAReader(dna_obj.reader)
+
+    # get pose data
+    if not pose_manager:
+        pose_manager = mhCore.PoseManager()
+
+    LOG.info("Getting pose data...")
+
+    pose_manager.attrs = get_joint_attrs(calib_reader)
+    pose_manager.attr_defaults = get_joint_defaults(calib_reader)
+    pose_manager.poses = get_all_poses(calib_reader)
+    pose_manager.combo_poses = get_psd_poses(calib_reader, pose_manager.poses)
+
+    return pose_manager
