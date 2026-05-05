@@ -1197,6 +1197,8 @@ class DnaPosesWidget(DnaTab):
         return True
 
     def save(self):
+        # TODO support writing new poses to dna
+
         # check we have an output path
         if not self.project.output_dna_path:
             QtWidgets.QMessageBox.critical(
@@ -1295,52 +1297,6 @@ class DnaPosesWidget(DnaTab):
             pass
 
         return True
-
-    def reload(self):
-        # TODO warning that this will reset data?
-        # TODO review init blendshapes process
-        #   we want to just init shape names
-        #   (and not need to keep the reader etc)
-        #   then initialize targets when writing dna file
-
-        use_bake_config = self.bake_config_checkbox.isChecked()
-
-        self.core_poses_widget.set_poses(None)
-        self.combo_poses_widget.set_poses(None)
-        self.combo_poses_widget.set_ref_poses(None)
-
-        self.bs_nodes = mhMesh.get_blendshape_nodes(self.dna_obj, self.calib_reader)
-
-        self.pose_manager = mhCore.PoseManager()
-
-        self.pose_manager.attrs = mhBehaviour.get_joint_attrs(self.calib_reader)
-        self.pose_manager.attr_defaults = mhBehaviour.get_joint_defaults(self.calib_reader)
-        self.pose_manager.poses = mhBehaviour.get_all_poses(self.calib_reader)
-        self.pose_manager.combo_poses = mhBehaviour.get_psd_poses(self.calib_reader, self.pose_manager.poses)
-
-        # self.poses = mhBehaviour.get_all_poses(self.calib_reader)
-        # self.combo_poses = mhBehaviour.get_psd_poses(self.calib_reader, self.poses)
-
-        if use_bake_config:
-            bake_config = mhBakeRig.BakeConfig.load(self.project.bake_config_path)
-
-            bake_config.update_pose_manager(self.pose_manager)
-
-            self.bs_nodes += bake_config.blendshape_nodes
-
-        # self.core_poses = [pose for i, pose in enumerate(self.poses) if i not in self.combo_poses]
-        # self.sorted_combo_poses = [self.combo_poses[i] for i in sorted(self.combo_poses.keys())]
-
-        self.blendshapes_label.setText("\n"+"\n".join(self.bs_nodes)+"\n")
-
-        self.core_poses_widget.set_poses(self.core_poses)
-        self.core_poses_widget.blendshape_nodes = self.bs_nodes
-
-        self.combo_poses_widget.set_poses(self.sorted_combo_poses)
-        self.combo_poses_widget.blendshape_nodes = self.bs_nodes
-
-        self.core_poses_widget.attr_defaults = self.attr_defaults
-        self.combo_poses_widget.attr_defaults = self.attr_defaults
 
     def init_blendshapes(self):
         if not self.pose_manager:
@@ -1785,6 +1741,7 @@ class DnaBakeRigWidget(DnaTab):
         self.delete_targets_checkbox = QtWidgets.QCheckBox("delete targets")
         self.delete_unused_checkbox = QtWidgets.QCheckBox("delete unused")
         self.use_combo_network_checkbox = QtWidgets.QCheckBox("use combo network")
+        self.use_sdks_checkbox = QtWidgets.QCheckBox("use SDKs")
 
         for checkbox in [
             self.bake_shapes_checkbox,
@@ -1796,6 +1753,7 @@ class DnaBakeRigWidget(DnaTab):
             self.delete_targets_checkbox,
             self.delete_unused_checkbox,
             self.use_combo_network_checkbox,
+            self.use_sdks_checkbox,
         ]:
             checkbox.setChecked(True)
             bake_lyt.addWidget(checkbox)
@@ -1857,22 +1815,24 @@ class DnaBakeRigWidget(DnaTab):
         self.reconnect_targets_checkbox = QtWidgets.QCheckBox("reconnect targets")
         self.reconnect_joints_checkbox = QtWidgets.QCheckBox("reconnect joints")
         self.reconnect_baked_joints_only_checkbox = QtWidgets.QCheckBox("baked joints only")
+        self.reconnect_use_sdks_checkbox = QtWidgets.QCheckBox("use SDKs")
 
-        self.add_missing_targets_checkbox.setChecked(True)
-        self.reconnect_combo_network_checkbox.setChecked(True)
-        self.reconnect_targets_checkbox.setChecked(True)
-        self.reconnect_joints_checkbox.setChecked(True)
-        self.reconnect_baked_joints_only_checkbox.setChecked(True)
 
         # reconnect btn
         self.reconnect_btn = QtWidgets.QPushButton("Reconnect")
         self.reconnect_btn.clicked.connect(self._reconnect_clicked)
 
-        reconnect_lyt.addWidget(self.add_missing_targets_checkbox)
-        reconnect_lyt.addWidget(self.reconnect_combo_network_checkbox)
-        reconnect_lyt.addWidget(self.reconnect_targets_checkbox)
-        reconnect_lyt.addWidget(self.reconnect_joints_checkbox)
-        reconnect_lyt.addWidget(self.reconnect_baked_joints_only_checkbox)
+        for checkbox in [
+            self.add_missing_targets_checkbox,
+            self.reconnect_combo_network_checkbox,
+            self.reconnect_targets_checkbox,
+            self.reconnect_joints_checkbox,
+            self.reconnect_baked_joints_only_checkbox,
+            self.reconnect_use_sdks_checkbox
+        ]:
+            checkbox.setChecked(True)
+            reconnect_lyt.addWidget(checkbox)
+
         reconnect_lyt.addWidget(self.reconnect_btn)
 
         # edit layout
@@ -1987,49 +1947,14 @@ class DnaBakeRigWidget(DnaTab):
             return False
 
         # load dna data
-        LOG.info("Loading dna: {}".format(dna_path))
-
-        dna_obj = DNAReader.read(dna_path, Layer.all)
-
-        LOG.info("Getting reader...")
-        calib_reader = dnacalib2.DNACalibDNAReader(dna_obj._reader)
-
-        # get pose data
-        LOG.info("Getting pose data...")
-
-        pose_manager = mhCore.PoseManager()
-
-        pose_manager.poses = mhBehaviour.get_all_poses(calib_reader)
-        pose_manager.psd_poses = mhBehaviour.get_psd_poses(calib_reader, poses)
-        pose_manager.attr_defaults = mhBehaviour.get_joint_defaults(calib_reader)
+        pose_manager = mhBehaviour.load_poses_from_dna(dna_path)
 
         # load config
         bake_config = mhBakeRig.BakeConfig.load(bake_config_file)
-
-        # create additional poses
-        LOG.info("Adding additional poses...")
-
-        pose_manager.add_additional_poses(bake_config.shapes)
-
-        # mhCore.add_additional_poses(
-        #     poses, bake_config.shapes, joints_attr_defaults
-        # )
-
-        # create additional combos
-        LOG.info("Adding additional combo poses...")
-
-        new_psd_poses = pose_manager.add_additional_combo_poses(bake_config.combos)
-
-        pose_manager.update_input_combo_poses()
-
-        # _, _, new_psd_poses = mhCore.add_additional_combo_poses(
-        #     poses, psd_poses, bake_config.combos, joints_attr_defaults
-        # )
-
-        # mhCore.update_input_combo_poses(psd_poses)
+        new_poses, new_combos = bake_config.update_pose_manager(pose_manager)
 
         new_targets = list(bake_config.shapes)
-        new_targets += [psd_pose.pose.name for psd_pose in new_psd_poses]
+        new_targets += [combo_pose.pose.name for combo_pose in new_combos]
 
         target_text = (
             "meshes: \n{}  \n\n"
@@ -2096,6 +2021,7 @@ class DnaBakeRigWidget(DnaTab):
             delete_unused=self.delete_unused_checkbox.isChecked(),
             expressions_node="CTRL_expressions",
             use_combo_network=self.use_combo_network_checkbox.isChecked(),
+            use_sdks=self.use_sdks_checkbox.isChecked(),
         )
 
         QtWidgets.QMessageBox.information(
@@ -2167,6 +2093,7 @@ class DnaBakeRigWidget(DnaTab):
                 reconnect_joints=self.reconnect_joints_checkbox.isChecked(),
                 baked_joints_only=self.reconnect_baked_joints_only_checkbox.isChecked(),
                 reconnect_targets=self.reconnect_targets_checkbox.isChecked(),
+                use_sdks=self.reconnect_use_sdks_checkbox.isChecked(),
             )
 
             QtWidgets.QMessageBox.information(

@@ -13,6 +13,8 @@ LOG = mhCore.get_basic_logger(__name__)
 
 
 class PosesModel(QtCore.QAbstractItemModel):
+    # TODO use pose manager!
+
     HEADERS = ["", "pose", "shape"]
 
     POSE_ROLE = QtCore.Qt.UserRole
@@ -416,6 +418,9 @@ class PoseWidget(QtWidgets.QWidget):
 
 
 class PoseEditorWidget(QtWidgets.QFrame):
+
+    # TODO use pose manager!!
+
     def __init__(self, combo_mode=False, parent=None):
         super(PoseEditorWidget, self).__init__(parent=parent)
 

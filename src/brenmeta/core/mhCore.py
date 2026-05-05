@@ -103,7 +103,8 @@ def validate_arg(arg_name, arg_value, expected_type, can_be_none=False):
 
 
 class Pose(object):
-    def __init__(self, name=None, index=None, shape_name=None):
+    def __init__(self, pose_manager=None, name=None, index=None, shape_name=None):
+        self.pose_manager = pose_manager
         self.index = index
         self.name = name
         self.shape_name = shape_name
@@ -114,10 +115,10 @@ class Pose(object):
     def __add__(self, other):
         """Returned summed Pose
         """
-        summed_pose = Pose(name="{}_{}".format(self.name, other.name))
-
-        summed_pose.defaults = self.defaults
-        summed_pose.defaults.update(other.defaults)
+        summed_pose = Pose(
+            pose_manager=self.pose_manager,
+            name="{}_{}".format(self.name, other.name)
+        )
 
         for attr, delta in self.deltas.items():
             if attr in summed_pose.deltas:
@@ -152,11 +153,17 @@ class Pose(object):
 
     def get_values(self, absolute=True, blend=1.0):
         if absolute:
+            if not self.pose_manager:
+                raise MHError("Cannot get absolute values without pose manager")
+
             values = {}
 
             for attr, delta in self.deltas.items():
+                if attr not in self.pose_manager.attr_defaults:
+                    raise MHError("attr not in defaults: {}".format(attr))
+
                 delta *= blend
-                values[attr] = self.defaults[attr] + delta
+                values[attr] = self.pose_manager.attr_defaults[attr] + delta
 
             return values
         else:
@@ -186,24 +193,8 @@ class Pose(object):
 
         return True
 
-    def reset_joints(self):
-        for attr, value in self.defaults.items():
-            if not cmds.objExists(attr):
-                continue
-
-            if value is None:
-                continue
-
-            try:
-                cmds.setAttr(attr, value)
-            except RuntimeError as err:
-                LOG.warning("failed to reset joint attr: {}".format(attr))
-                continue
-
-        return True
-
     def update_from_scene(self):
-        for attr, default in self.defaults.items():
+        for attr, old_value in self.deltas.items():
             value = cmds.getAttr(attr)
             self.deltas[attr] = value - default
 
@@ -255,7 +246,6 @@ class Pose(object):
             "name": self.name,
             "shape_name": self.shape_name,
             "deltas": self.deltas,
-            "defaults": self.defaults,
         }
 
         if self.opposite:
@@ -270,7 +260,6 @@ class Pose(object):
         self.name = data["name"]
         self.shape_name = data["shape_name"]
         self.deltas = data["deltas"]
-        self.defaults = data["defaults"]
 
         if data["opposite"]:
             self.opposite = None  # TODO
@@ -279,8 +268,10 @@ class Pose(object):
 
 
 class ComboPose(object):
-    def __init__(self):
+    def __init__(self, pose_manager=None):
         super(ComboPose, self).__init__()
+
+        self.pose_manager = pose_manager
         self.pose = None
         self.input_poses = []
         self.input_weights = []  # TODO deprecate?
@@ -321,14 +312,16 @@ class ComboPose(object):
                     summed_deltas[attr] = delta
 
         if absolute:
+            if not self.pose_manager:
+                raise MHError("Cannot get absolute values without pose manager")
+
             values = {}
 
-            for attr, default in defaults.items():
-                if attr not in summed_deltas:
-                    continue
+            for attr, value in summed_deltas.items():
+                if attr not in self.pose_manager.attr_defaults:
+                    raise MHError("attr not in defaults: {}".format(attr))
 
-                delta = summed_deltas[attr] * blend
-                values[attr] = default + delta
+                values[attr] = self.pose_manager.attr_defaults[attr] + (value * blend)
 
             return values
 
@@ -352,15 +345,6 @@ class ComboPose(object):
                 pose.pose.activate_targets(blendshape_nodes, blend=blend)
             else:
                 pose.activate_targets(blendshape_nodes, blend=blend)
-
-        return True
-
-    def reset_joints(self):
-        for attr, value in self.get_defaults().items():
-            if not cmds.objExists(attr):
-                continue
-
-            cmds.setAttr(attr, value)
 
         return True
 
@@ -645,6 +629,22 @@ class PoseManager(object):
                 duplicate_index += 1
 
             target_names.append(pose.shape_name)
+
+        return True
+
+    def reset_joints(self):
+        for attr, value in self.attr_defaults.items():
+            if not cmds.objExists(attr):
+                continue
+
+            if value is None:
+                continue
+
+            try:
+                cmds.setAttr(attr, value)
+            except RuntimeError as err:
+                LOG.warning("failed to reset joint attr: {}".format(attr))
+                continue
 
         return True
 

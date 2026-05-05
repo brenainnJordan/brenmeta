@@ -406,7 +406,8 @@ def create_driver_logic(
                     expressions_node,
                     longName=shape_name,
                     min=0.0,
-                    max=1.0
+                    max=1.0,
+                    keyable=True
                 )
 
             expressions.append(shape_name)
@@ -646,6 +647,27 @@ def create_joint_poses(poses, driver_mapping, pose_joints=None):
 
     return True
 
+def create_sdk(node, attr, driver, driver_value, driven_value):
+    old_blends = cmds.ls(type="blendWeighted")
+
+    cmds.setDrivenKeyframe(
+        node,
+        attribute=attr,
+        currentDriver=driver,
+        driverValue=driver_value,
+        value=driven_value,
+        inTangentType="linear",
+        outTangentType="linear",
+    )
+
+    updated_blends = cmds.ls(type="blendWeighted")
+    new_blends = [i for i in updated_blends if i not in old_blends]
+
+    if new_blends:
+        cmds.rename(new_blends[0], "{}_{}_SDK_blendWeighted".format(node, attr))
+
+    return True
+
 
 def create_joint_poses_sdk(poses, driver_mapping, pose_joints=None):
     attr_pose_data = get_attr_pose_data(poses, pose_joints=pose_joints)
@@ -664,25 +686,41 @@ def create_joint_poses_sdk(poses, driver_mapping, pose_joints=None):
         joint, attr = joint_attr.split(".")
 
         # sdk for attr default value
-        cmds.setDrivenKeyframe(
+        create_sdk(
             joint,
-            attribute=attr,
-            currentDriver="{}.default".format(default_network_node),
-            driverValue=0.0,
-            value=0.0,
-            inTangentType="linear",
-            outTangentType="linear",
+            attr,
+            "{}.default".format(default_network_node),
+            0.0,
+            0.0
         )
 
-        cmds.setDrivenKeyframe(
+        create_sdk(
             joint,
-            attribute=attr,
-            currentDriver="{}.default".format(default_network_node),
-            driverValue=1.0,
-            value=attr_poses[0].defaults[joint_attr],
-            inTangentType="linear",
-            outTangentType="linear",
+            attr,
+            "{}.default".format(default_network_node),
+            1.0,
+            attr_poses[0].defaults[joint_attr]
         )
+
+        # cmds.setDrivenKeyframe(
+        #     joint,
+        #     attribute=attr,
+        #     currentDriver="{}.default".format(default_network_node),
+        #     driverValue=0.0,
+        #     value=0.0,
+        #     inTangentType="linear",
+        #     outTangentType="linear",
+        # )
+        #
+        # cmds.setDrivenKeyframe(
+        #     joint,
+        #     attribute=attr,
+        #     currentDriver="{}.default".format(default_network_node),
+        #     driverValue=1.0,
+        #     value=attr_poses[0].defaults[joint_attr],
+        #     inTangentType="linear",
+        #     outTangentType="linear",
+        # )
 
         for pose in attr_poses:
             if pose.deltas[joint_attr] == 0.0:
@@ -701,30 +739,46 @@ def create_joint_poses_sdk(poses, driver_mapping, pose_joints=None):
                 LOG.warning("no expression for {}".format(pose.name))
                 continue
 
-            cmds.setDrivenKeyframe(
+            create_sdk(
                 joint,
-                attribute=attr,
-                currentDriver=driver_mapping[pose.name],
-                driverValue=0.0,
-                value=0.0,
-                inTangentType="linear",
-                outTangentType="linear",
+                attr,
+                driver_mapping[pose.name],
+                0.0,
+                0.0
             )
 
-            cmds.setDrivenKeyframe(
+            create_sdk(
                 joint,
-                attribute=attr,
-                currentDriver=driver_mapping[pose.name],
-                driverValue=1.0,
-                value=pose.deltas[joint_attr],
-                inTangentType="linear",
-                outTangentType="linear",
+                attr,
+                driver_mapping[pose.name],
+                1.0,
+                pose.deltas[joint_attr]
             )
+
+            # cmds.setDrivenKeyframe(
+            #     joint,
+            #     attribute=attr,
+            #     currentDriver=driver_mapping[pose.name],
+            #     driverValue=0.0,
+            #     value=0.0,
+            #     inTangentType="linear",
+            #     outTangentType="linear",
+            # )
+            #
+            # cmds.setDrivenKeyframe(
+            #     joint,
+            #     attribute=attr,
+            #     currentDriver=driver_mapping[pose.name],
+            #     driverValue=1.0,
+            #     value=pose.deltas[joint_attr],
+            #     inTangentType="linear",
+            #     outTangentType="linear",
+            # )
 
     return True
 
 
-def bake_shapes_from_poses(mesh_blendshapes, poses, combo_poses, in_betweens, detailed_verbose=True, skip_empty=False):
+def bake_shapes_from_poses(mesh_blendshapes, pose_manager, in_betweens, detailed_verbose=True, skip_empty=False):
     """Pose rig and create blendshape targets for the given meshes
     """
     # get nodes
@@ -776,7 +830,7 @@ def bake_shapes_from_poses(mesh_blendshapes, poses, combo_poses, in_betweens, de
         maxValue=len(poses)
     )
 
-    for pose_index, pose in enumerate(poses):
+    for pose_index, pose in enumerate(pose_manager.poses):
         if cmds.progressBar(gMainProgressBar, query=True, isCancelled=True):
             cmds.progressBar(gMainProgressBar, edit=True, endProgress=True)
             return False
@@ -784,8 +838,8 @@ def bake_shapes_from_poses(mesh_blendshapes, poses, combo_poses, in_betweens, de
         cmds.progressBar(gMainProgressBar, edit=True, step=1)
 
         # pose rig
-        if pose_index in combo_poses:
-            combo_pose = combo_poses[pose_index]
+        if pose_index in pose_manager.combo_poses:
+            combo_pose = pose_manager.combo_poses[pose_index]
             combo_pose.pose_joints(summed=True)
             pose_name = combo_pose.pose.name
             pose = combo_pose
@@ -828,7 +882,7 @@ def bake_shapes_from_poses(mesh_blendshapes, poses, combo_poses, in_betweens, de
                 bs_node, base_mesh, target, default_weight=0.0
             )
 
-        pose.reset_joints()
+        pose_manager.reset_joints()
 
         # create in-betweens
         if pose_name in in_betweens:
@@ -852,7 +906,7 @@ def bake_shapes_from_poses(mesh_blendshapes, poses, combo_poses, in_betweens, de
                         bs_node, base_mesh, pose_name, in_between_target, ib_value
                     )
 
-                pose.reset_joints()
+                pose_manager.reset_joints()
 
     cmds.progressBar(gMainProgressBar, edit=True, endProgress=True)
 
@@ -990,7 +1044,8 @@ def bake_rig(
         delete_unused=True,
         expressions_node="CTRL_expressions",
         use_combo_network=False,
-        detailed_verbose=False
+        detailed_verbose=False,
+        use_sdks=False,
 ):
     """
     """
@@ -1072,7 +1127,22 @@ def bake_rig(
     if connect_joints:
         LOG.info("Creating joint poses...")
 
-        create_joint_poses(pose_manager.poses, driver_mapping, pose_joints=bake_config.pose_joints)
+        if use_sdks:
+            LOG.info("Using SDKs...")
+
+            create_joint_poses_sdk(
+                pose_manager.poses,
+                driver_mapping,
+                pose_joints=bake_config.pose_joints
+            )
+        else:
+            LOG.info("Using math nodes...")
+
+            create_joint_poses(
+                pose_manager.poses,
+                driver_mapping,
+                pose_joints=bake_config.pose_joints
+            )
 
     # cleanup
     if delete_unused:
@@ -1142,7 +1212,7 @@ def disconnect(
         redundant_nodes = cmds.ls("*_poses", type="network")
         cmds.delete(redundant_nodes)
 
-        redundant_nodes = cmds.ls(type="blendWeighted")
+        redundant_nodes = cmds.ls("*_SDK_blendWeighted", type="blendWeighted")
         cmds.delete(redundant_nodes)
 
     if delete_combo_network:
@@ -1181,7 +1251,7 @@ def reconnect(
         reconnect_targets=True,
         use_combo_network=False,
         add_missing_targets=True,
-        use_sdk=False
+        use_sdks=False
 ):
     """
     """
@@ -1246,7 +1316,7 @@ def reconnect(
     if reconnect_joints and baked_joints_only:
         LOG.info("Reconnecting baked joints")
 
-        if use_sdk:
+        if use_sdks:
             LOG.info("Using SDKs...")
 
             create_joint_poses_sdk(
@@ -1265,7 +1335,7 @@ def reconnect(
     elif reconnect_joints:
         LOG.info("Reconnecting all joints")
 
-        if use_sdk:
+        if use_sdks:
             LOG.info("Using SDKs...")
 
             create_joint_poses_sdk(
