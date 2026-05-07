@@ -12,6 +12,19 @@ from brenmeta.maya import mhBlendshape
 LOG = mhCore.get_basic_logger(__name__)
 
 
+class PoseMode:
+    class AllPoses:
+        name = "all poses"
+
+    class CorePoses:
+        name = "core poses"
+
+    class ComboPoses:
+        name = "combo poses"
+
+    items = [AllPoses, CorePoses, ComboPoses]
+
+
 class PosesModel(QtCore.QAbstractItemModel):
     # TODO use pose manager!
 
@@ -21,15 +34,22 @@ class PosesModel(QtCore.QAbstractItemModel):
 
     def __init__(self, parent=None):
         super(PosesModel, self).__init__(parent)
-        self.poses = None
+
+        self.pose_manager = None
+        self.pose_mode = PoseMode.AllPoses
 
         self.show_indices = True
         self.show_poses = True
         self.show_shapes = True
 
-    def set_poses(self, poses):
+    def set_pose_manager(self, pose_manager):
         self.beginResetModel()
-        self.poses = poses
+        self.pose_manager = pose_manager
+        self.endResetModel()
+
+    def set_pose_mode(self, pose_mode):
+        self.beginResetModel()
+        self.pose_mode = pose_mode
         self.endResetModel()
 
     def set_show_indices(self, value):
@@ -72,17 +92,30 @@ class PosesModel(QtCore.QAbstractItemModel):
 
         return super(PosesModel, self).headerData(section, orientation, role)
 
+    def get_poses(self):
+        if not self.pose_manager:
+            return None
+
+        if self.pose_mode is PoseMode.AllPoses:
+            return self.pose_manager.poses
+        elif self.pose_mode is PoseMode.CorePoses:
+            return self.pose_manager.core_poses
+        elif self.pose_mode is PoseMode.ComboPoses:
+            return self.pose_manager.sorted_combo_poses
+
+        return None
+
     def rowCount(self, parent=QtCore.QModelIndex()):
-        if not self.poses:
+        if not self.pose_manager:
             return 0
 
         if parent.isValid():
             return 0
         else:
-            return len(self.poses)
+            return len(self.get_poses())
 
     def data(self, index, role=QtCore.Qt.DisplayRole):
-        if not index.isValid() or not self.poses:
+        if not index.isValid() or not self.pose_manager:
             return None
 
         pose = index.internalPointer()
@@ -111,7 +144,7 @@ class PosesModel(QtCore.QAbstractItemModel):
         return None
 
     def setData(self, index, value, role=QtCore.Qt.EditRole):
-        if not index.isValid() or not self.poses:
+        if not index.isValid() or not self.pose_manager:
             return None
 
         pose = index.internalPointer()
@@ -124,19 +157,19 @@ class PosesModel(QtCore.QAbstractItemModel):
         return False
 
     def index(self, row, column, parent=QtCore.QModelIndex()):
-        if not self.poses:
+        if not self.pose_manager:
             return QtCore.QModelIndex()
 
         if parent.isValid():
             return QtCore.QModelIndex()
 
-        return self.createIndex(row, column, self.poses[row])
+        return self.createIndex(row, column, self.get_poses()[row])
 
     def parent(self, index):
         return QtCore.QModelIndex()
 
     def flags(self, index):
-        if not self.poses:
+        if not self.pose_manager:
             return QtCore.Qt.NoItemFlags
 
         flags = QtCore.Qt.ItemFlags()
@@ -180,13 +213,10 @@ class PoseFilterModel(QtCore.QSortFilterProxyModel):
 
     HIGHLIGHT_COLOR = QtGui.QColor(0, 100, 0)
 
-    def __init__(self, combo_mode=False, parent=None):
+    def __init__(self, parent=None):
         super(PoseFilterModel, self).__init__(parent=parent)
 
         self.ref_poses = None
-
-        self.combo_mode = combo_mode
-
         self._match_mode = MatchMode.Any
         self._filter_mode = FilterMode.Highlight
 
@@ -214,28 +244,56 @@ class PoseFilterModel(QtCore.QSortFilterProxyModel):
         self.endResetModel()
 
     def ref_pose_match(self, pose):
-        if self.combo_mode:
-            matches = [ref_pose in pose.input_poses for ref_pose in self.ref_poses]
+        # TODO continue!!
+        if not self.ref_poses:
+            return False
 
-            if self.match_mode is MatchMode.Exact:
-                return all(matches) and len(matches) == len(pose.input_poses)
+        if isinstance(pose, mhCore.ComboPose):
+            poses = list(pose.input_poses)
         else:
-            matches = [pose in ref_pose.input_poses for ref_pose in self.ref_poses]
+            poses = [pose]
 
-            # TODO?
-            if self.match_mode is MatchMode.Exact:
-                return all(matches)
+        ref_poses = set([])
 
-        if self.match_mode is MatchMode.Any:
+        for ref_pose in self.ref_poses:
+            if isinstance(ref_pose, mhCore.ComboPose):
+                ref_poses.update(ref_pose.input_poses)
+            else:
+                ref_poses.add(ref_pose)
+
+        matches = [pose in ref_poses for pose in poses]
+
+        if self.match_mode is MatchMode.Exact:
+            return all(matches) and len(matches) == len(ref_poses)
+        elif self.match_mode is MatchMode.Any:
             return any(matches)
-
         elif self.match_mode is MatchMode.All:
             return all(matches)
-
-        # elif self.match_mode is MatchMode.Exact:
-        #     return all(matches) and len(matches) == len(ref_poses)
         else:
             raise mhCore.MHError("Filter mode not recognised: {}".format(self.match_mode))
+
+        # if self.sourceModel().pose_mode is PoseMode.ComboPoses:
+        #     matches = [ref_pose in pose.input_poses for ref_pose in self.ref_poses]
+        #
+        #     if self.match_mode is MatchMode.Exact:
+        #         return all(matches) and len(matches) == len(pose.input_poses)
+        # else:
+        #     matches = [pose in ref_pose.input_poses for ref_pose in self.ref_poses]
+        #
+        #     # TODO?
+        #     if self.match_mode is MatchMode.Exact:
+        #         return all(matches)
+        #
+        # if self.match_mode is MatchMode.Any:
+        #     return any(matches)
+        #
+        # elif self.match_mode is MatchMode.All:
+        #     return all(matches)
+        #
+        # # elif self.match_mode is MatchMode.Exact:
+        # #     return all(matches) and len(matches) == len(ref_poses)
+        # else:
+        #     raise mhCore.MHError("Filter mode not recognised: {}".format(self.match_mode))
 
     def data(self, index, role):
         """Override source model data method.
@@ -269,22 +327,22 @@ class PoseFilterModel(QtCore.QSortFilterProxyModel):
             return False
 
         if self.filter_mode is FilterMode.Isolate:
-            # index = self.sourceModel().index(source_row, 0, parent=source_parent)
-            # pose = self.data(index, PosesModel.POSE_ROLE)
-            pose = self.sourceModel().poses[source_row]
+            index = self.sourceModel().index(source_row, 0, parent=source_parent)
+            pose = self.sourceModel().data(index, PosesModel.POSE_ROLE)
             return self.ref_pose_match(pose)
 
         return super(PoseFilterModel, self).filterAcceptsRow(source_row, source_parent)
 
 
 class PoseWidget(QtWidgets.QWidget):
-
     SELECTION_CHANGED = QtCore.Signal()
 
-    def __init__(self, combo_mode=False, parent=None):
+    def __init__(self, pose_mode=PoseMode.AllPoses, parent=None):
         super(PoseWidget, self).__init__(parent=parent)
 
-        self._create_widgets(combo_mode=combo_mode)
+        self.emit_selection_changes = True
+
+        self._create_widgets(pose_mode)
 
     def error(self, err):
 
@@ -299,32 +357,50 @@ class PoseWidget(QtWidgets.QWidget):
             QtWidgets.QMessageBox.Ok
         )
 
-    def set_poses(self, poses):
-        self.poses_model.set_poses(poses)
+    @property
+    def pose_manager(self):
+        return self.poses_model.pose_manager
+
+    def set_pose_manager(self, pose_manager):
+        self.poses_model.set_pose_manager(pose_manager)
 
     def set_ref_poses(self, poses):
+        """Set ref poses then update selection
+        TODO safeguard for if ref poses hasn't changed
+            safe emit for in no poses match
+        """
+
+        sl_poses = self.get_selected_poses(warn=False)
+
         self.proxy_model.set_ref_poses(poses)
 
-    def _create_widgets(self, combo_mode=False):
-        # type label
-        if combo_mode:
-            self.type_label = QtWidgets.QLabel("Combo Poses")
-        else:
-            self.type_label = QtWidgets.QLabel("Poses")
+        if self.proxy_model.match_mode is MatchMode.Exact:
+            sl_poses = [
+                pose for pose in sl_poses if self.proxy_model.ref_pose_match(pose)
+            ]
 
-        self.type_label.setAlignment(QtCore.Qt.AlignHCenter)
+        self.select_poses(sl_poses, emit=False)
+
+
+    def _create_widgets(self, pose_mode):
+        # models
+        self.poses_model = PosesModel()
+        self.proxy_model = PoseFilterModel()
+
+        self.proxy_model.setSourceModel(self.poses_model)
+        self.proxy_model.setFilterCaseSensitivity(QtCore.Qt.CaseSensitivity.CaseInsensitive)
+        self.proxy_model.setFilterKeyColumn(-1)
+
+        # mode combo
+        self.mode_combo = QtWidgets.QComboBox()
+        self.mode_combo.addItems([item.name for item in PoseMode.items])
+        self.mode_combo.currentIndexChanged.connect(self._mode_changed)
+        self.mode_combo.setCurrentIndex(PoseMode.items.index(pose_mode))
 
         # filter
         self.filter_line_edit = QtWidgets.QLineEdit()
         self.filter_line_edit.setFixedHeight(30)
         self.filter_line_edit.textChanged.connect(self.filter_changed)
-
-        self.poses_model = PosesModel()
-        self.proxy_model = PoseFilterModel(combo_mode=combo_mode)
-
-        self.proxy_model.setSourceModel(self.poses_model)
-        self.proxy_model.setFilterCaseSensitivity(QtCore.Qt.CaseSensitivity.CaseInsensitive)
-        self.proxy_model.setFilterKeyColumn(-1)
 
         # column checkboxes
         self.show_index_checkbox = QtWidgets.QCheckBox("index")
@@ -356,7 +432,7 @@ class PoseWidget(QtWidgets.QWidget):
 
         # layout
         self.lyt = QtWidgets.QVBoxLayout()
-        self.lyt.addWidget(self.type_label)
+        self.lyt.addWidget(self.mode_combo)
         self.lyt.addWidget(self.filter_line_edit)
         self.lyt.addWidget(self.view)
         self.lyt.addLayout(self.show_column_lyt)
@@ -364,7 +440,8 @@ class PoseWidget(QtWidgets.QWidget):
         self.setLayout(self.lyt)
 
     def _selection_changed(self):
-        self.SELECTION_CHANGED.emit()
+        if self.emit_selection_changes:
+            self.SELECTION_CHANGED.emit()
 
     def _show_index_toggled(self):
         self.poses_model.set_show_indices(self.show_index_checkbox.isChecked())
@@ -380,6 +457,16 @@ class PoseWidget(QtWidgets.QWidget):
             "*{}*".format(self.filter_line_edit.text())
         )
 
+    def _mode_changed(self):
+        if not self.pose_manager:
+            return
+
+        self.proxy_model.beginResetModel()
+        self.set_ref_poses(None)
+        mode = PoseMode.items[self.mode_combo.currentIndex()]
+        self.poses_model.set_pose_mode(mode)
+        self.proxy_model.endResetModel()
+
     def get_selected_poses(self, warn=False, as_combo=False):
         poses = []
 
@@ -387,7 +474,8 @@ class PoseWidget(QtWidgets.QWidget):
 
         for proxy_index in selection.indexes():
             index = self.proxy_model.mapToSource(proxy_index)
-            pose = self.poses_model.poses[int(index.row())]
+            pose = index.internalPointer()
+            # pose = self.poses_model.poses[int(index.row())]
 
             if pose not in poses:
                 poses.append(pose)
@@ -416,26 +504,70 @@ class PoseWidget(QtWidgets.QWidget):
         else:
             return poses
 
+    def select_poses(self, poses, add=False, emit=True):
+        if not self.pose_manager:
+            return
+
+        if self.view.selectionModel() and not add:
+            old_emit = self.emit_selection_changes
+
+            if not emit:
+                self.emit_selection_changes = False
+
+            self.view.selectionModel().clearSelection()
+
+            self.emit_selection_changes = old_emit
+
+        if not poses:
+            return
+
+        selection = QtCore.QItemSelection()
+
+        model_poses = self.poses_model.get_poses()
+
+        for pose in poses:
+            if pose not in model_poses:
+                continue
+
+            row = model_poses.index(pose)
+
+            for column in range(self.poses_model.columnCount()):
+                index = self.poses_model.createIndex(row, column, pose)
+                index = self.proxy_model.mapFromSource(index)
+
+                selection.merge(
+                    QtCore.QItemSelection(index, index),
+                    QtCore.QItemSelectionModel.Select
+                )
+
+        old_emit = self.emit_selection_changes
+
+        if not emit:
+            self.emit_selection_changes = False
+
+        self.view.selectionModel().select(selection, QtCore.QItemSelectionModel.Select)
+
+        self.emit_selection_changes = old_emit
+
 
 class PoseEditorWidget(QtWidgets.QFrame):
 
     # TODO use pose manager!!
 
-    def __init__(self, combo_mode=False, parent=None):
+    def __init__(self, pose_mode=PoseMode.CorePoses, parent=None):
         super(PoseEditorWidget, self).__init__(parent=parent)
 
         self.setFrameStyle(QtWidgets.QFrame.StyledPanel | QtWidgets.QFrame.Sunken)
 
-        self._poses = None
+        self._pose_manager = None
         self.blendshape_nodes = None
 
         self.attr_defaults = None
-        self._combo_mode = combo_mode
 
         self._resetting_scene = False
         self._updating_scene = False
 
-        self._create_widgets(combo_mode=combo_mode)
+        self._create_widgets(pose_mode=pose_mode)
 
     def error(self, err):
 
@@ -451,19 +583,19 @@ class PoseEditorWidget(QtWidgets.QFrame):
         )
 
     @property
-    def poses(self):
-        return self._poses
+    def pose_manager(self):
+        return self._pose_manager
 
-    def set_poses(self, poses):
-        self._poses = poses
-        self.pose_widget.set_poses(poses)
+    def set_pose_manager(self, pose_manager):
+        self._pose_manager = pose_manager
+        self.pose_widget.set_pose_manager(pose_manager)
 
     def set_ref_poses(self, poses):
         self.pose_widget.set_ref_poses(poses)
 
-    def _create_widgets(self, combo_mode=False):
+    def _create_widgets(self, pose_mode):
         # pose widget
-        self.pose_widget = PoseWidget(combo_mode=combo_mode)
+        self.pose_widget = PoseWidget(pose_mode=pose_mode)
 
         # match options
         self.match_group_box = QtWidgets.QGroupBox("Match")
@@ -542,7 +674,7 @@ class PoseEditorWidget(QtWidgets.QFrame):
         # main layout
         self.lyt = QtWidgets.QHBoxLayout()
 
-        if combo_mode:
+        if pose_mode is PoseMode.ComboPoses:
             self.lyt.addWidget(self.pose_widget)
             self.lyt.addLayout(self.tool_lyt)
         else:
@@ -556,14 +688,14 @@ class PoseEditorWidget(QtWidgets.QFrame):
 
     def _match_mode_changed(self):
         mode = MatchMode.items[self.match_mode_combo.currentIndex()]
-        self.proxy_model.set_match_mode(mode)
+        self.pose_widget.proxy_model.set_match_mode(mode)
 
     def _filter_mode_changed(self):
         mode = FilterMode.items[self.filter_mode_combo.currentIndex()]
-        self.proxy_model.set_filter_mode(mode)
+        self.pose_widget.proxy_model.set_filter_mode(mode)
 
     def get_selected_poses(self, warn=True, as_combo=False):
-        return self.pose_widget.get_selected_poses(warn=True, as_combo=as_combo)
+        return self.pose_widget.get_selected_poses(warn=warn, as_combo=as_combo)
 
     def reset_scene(self):
         if self._resetting_scene or self._updating_scene:

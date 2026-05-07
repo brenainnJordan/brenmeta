@@ -1118,12 +1118,11 @@ class DnaPosesWidget(DnaTab):
 
         # pose widgets
 
-
         # edit
         self.splitter = QtWidgets.QSplitter()
 
-        self.core_poses_widget = mhPoseWidgets.PoseEditorWidget()
-        self.combo_poses_widget = mhPoseWidgets.PoseEditorWidget(combo_mode=True)
+        self.core_poses_widget = mhPoseWidgets.PoseEditorWidget(pose_mode=mhPoseWidgets.PoseMode.CorePoses)
+        self.combo_poses_widget = mhPoseWidgets.PoseEditorWidget(pose_mode=mhPoseWidgets.PoseMode.ComboPoses)
 
         self.splitter.addWidget(self.core_poses_widget)
         self.splitter.addWidget(self.combo_poses_widget)
@@ -1143,7 +1142,7 @@ class DnaPosesWidget(DnaTab):
 
         self.centralWidget().setLayout(lyt)
 
-        self.core_poses_widget.pose_widget.SELECTION_CHANGED.connect(self.selection_changed)
+        self.core_poses_widget.pose_widget.SELECTION_CHANGED.connect(self.core_selection_changed)
         self.combo_poses_widget.pose_widget.SELECTION_CHANGED.connect(self.combo_selection_changed)
 
 
@@ -1263,13 +1262,12 @@ class DnaPosesWidget(DnaTab):
 
         return True
 
-    def selection_changed(self, *args):
-        poses = self.core_poses_widget.get_selected_poses()
+    def core_selection_changed(self, *args):
+        poses = self.core_poses_widget.get_selected_poses(warn=False)
         self.combo_poses_widget.set_ref_poses(poses)
 
-    def combo_selection_changed(self, old_selection, new_selection):
-        # pass
-        poses = self.combo_poses_widget.get_selected_poses()
+    def combo_selection_changed(self, *args):
+        poses = self.combo_poses_widget.get_selected_poses(warn=False)
         self.core_poses_widget.set_ref_poses(poses)
 
     def refresh(self):
@@ -1284,11 +1282,8 @@ class DnaPosesWidget(DnaTab):
             self.core_poses_widget.blendshape_nodes = self.pose_manager.bs_nodes
             self.combo_poses_widget.blendshape_nodes = self.pose_manager.bs_nodes
 
-            # TODO set widget pose manager instead
-            #   then have mode enum to switch between (maybe a drop down box too?)
-            self.core_poses_widget.set_poses(self.pose_manager.core_poses)
-
-            self.combo_poses_widget.set_poses(self.pose_manager.sorted_combo_poses)
+            self.core_poses_widget.set_pose_manager(self.pose_manager)
+            self.combo_poses_widget.set_pose_manager(self.pose_manager)
 
             self.core_poses_widget.attr_defaults = self.pose_manager.attr_defaults
             self.combo_poses_widget.attr_defaults = self.pose_manager.attr_defaults
