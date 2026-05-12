@@ -203,7 +203,7 @@ class BakeConfig(object):
         # add additional blendshape nodes
         if self.blendshape_nodes:
             LOG.info("Adding additional blendshape nodes...")
-            pose_manager.bs_nodes += self.blendshape_nodes
+            pose_manager.blendshape_nodes += self.blendshape_nodes
 
         return new_poses, new_combos
 
@@ -391,7 +391,7 @@ def create_cone_reader(transform, parent_space_transform, name, vector, rotation
 
 
 def create_driver_logic(
-        poses, combo_poses, expressions_node, additional_shapes=None, use_combo_network=True, reader_configs=None
+        core_poses, combo_poses, expressions_node, additional_shapes=None, use_combo_network=True, reader_configs=None
 ):
     # get expressions
     expressions = cmds.listAttr(expressions_node, userDefined=True)
@@ -415,8 +415,10 @@ def create_driver_logic(
     # create driver mapping for non-combo poses
     driver_mapping = {}
 
-    for pose_index, pose in enumerate(poses):
-        if pose_index in combo_poses or pose.name is None:
+    for pose_index, pose in enumerate(core_poses):
+        # if pose_index in combo_poses or pose.name is None:
+        #     continue
+        if pose.name is None:
             continue
 
         if pose.name in expressions:
@@ -432,7 +434,7 @@ def create_driver_logic(
     else:
         combo_network_node = None
 
-    for combo_pose in combo_poses.values():
+    for combo_pose in combo_poses:#.values():
         combo_node = cmds.createNode(
             "combinationShape",
             name="{}_combinationShape".format(combo_pose.pose.name)
@@ -521,7 +523,7 @@ def connect_targets(driver_mapping, bs_nodes):
     return True
 
 
-def get_attr_pose_data(poses, pose_joints=None):
+def get_attr_pose_data(pose_manager, pose_joints=None):
     """Build a dict where key is every attr for all joints we want to still have driven
     and value is all poses that drive that attr
     """
@@ -539,14 +541,20 @@ def get_attr_pose_data(poses, pose_joints=None):
 
                 joint_poses = []
 
-                for pose in poses:
+                for pose in pose_manager.poses:
+                    if isinstance(pose, mhCore.ComboPose):
+                        pose = pose.pose
+
                     if joint_attr in pose.deltas:
                         joint_poses.append(pose)
 
                 attr_pose_data[joint_attr] = joint_poses
     else:
         # remap all poses to attrs
-        for pose in poses:
+        for pose in pose_manager.poses:
+            if isinstance(pose, mhCore.ComboPose):
+                pose = pose.pose
+
             for attr, value in pose.deltas.items():
                 if attr in attr_pose_data:
                     attr_pose_data[attr].append(pose)
@@ -556,8 +564,8 @@ def get_attr_pose_data(poses, pose_joints=None):
     return attr_pose_data
 
 
-def create_joint_poses(poses, driver_mapping, pose_joints=None):
-    attr_pose_data = get_attr_pose_data(poses, pose_joints=pose_joints)
+def create_joint_poses(pose_manager, driver_mapping, pose_joints=None):
+    attr_pose_data = get_attr_pose_data(pose_manager, pose_joints=pose_joints)
 
     # loop through driven attrs
     for attr, attr_poses in attr_pose_data.items():
@@ -569,7 +577,7 @@ def create_joint_poses(poses, driver_mapping, pose_joints=None):
             name="{}_poses".format(attr.replace(".", "_"))
         )
 
-        default = attr_poses[0].defaults[attr]
+        default = pose_manager.attr_defaults[attr]
 
         cmds.addAttr(
             network_node, longName="default", defaultValue=default
@@ -669,8 +677,8 @@ def create_sdk(node, attr, driver, driver_value, driven_value):
     return True
 
 
-def create_joint_poses_sdk(poses, driver_mapping, pose_joints=None):
-    attr_pose_data = get_attr_pose_data(poses, pose_joints=pose_joints)
+def create_joint_poses_sdk(pose_manager, driver_mapping, pose_joints=None):
+    attr_pose_data = get_attr_pose_data(pose_manager, pose_joints=pose_joints)
 
     default_network_node = cmds.createNode("network", name="sdkDefault_network")
 
@@ -699,28 +707,8 @@ def create_joint_poses_sdk(poses, driver_mapping, pose_joints=None):
             attr,
             "{}.default".format(default_network_node),
             1.0,
-            attr_poses[0].defaults[joint_attr]
+            pose_manager.attr_defaults[joint_attr]
         )
-
-        # cmds.setDrivenKeyframe(
-        #     joint,
-        #     attribute=attr,
-        #     currentDriver="{}.default".format(default_network_node),
-        #     driverValue=0.0,
-        #     value=0.0,
-        #     inTangentType="linear",
-        #     outTangentType="linear",
-        # )
-        #
-        # cmds.setDrivenKeyframe(
-        #     joint,
-        #     attribute=attr,
-        #     currentDriver="{}.default".format(default_network_node),
-        #     driverValue=1.0,
-        #     value=attr_poses[0].defaults[joint_attr],
-        #     inTangentType="linear",
-        #     outTangentType="linear",
-        # )
 
         for pose in attr_poses:
             if pose.deltas[joint_attr] == 0.0:
@@ -754,26 +742,6 @@ def create_joint_poses_sdk(poses, driver_mapping, pose_joints=None):
                 1.0,
                 pose.deltas[joint_attr]
             )
-
-            # cmds.setDrivenKeyframe(
-            #     joint,
-            #     attribute=attr,
-            #     currentDriver=driver_mapping[pose.name],
-            #     driverValue=0.0,
-            #     value=0.0,
-            #     inTangentType="linear",
-            #     outTangentType="linear",
-            # )
-            #
-            # cmds.setDrivenKeyframe(
-            #     joint,
-            #     attribute=attr,
-            #     currentDriver=driver_mapping[pose.name],
-            #     driverValue=1.0,
-            #     value=pose.deltas[joint_attr],
-            #     inTangentType="linear",
-            #     outTangentType="linear",
-            # )
 
     return True
 
@@ -816,7 +784,7 @@ def bake_shapes_from_poses(mesh_blendshapes, pose_manager, in_betweens, detailed
     # bake core shapes
     targets_list = [[] for _ in meshes]
 
-    pose_names = []
+    # pose_names = []
 
     # start progress bar
     gMainProgressBar = mel.eval('$tmp = $gMainProgressBar')
@@ -827,7 +795,7 @@ def bake_shapes_from_poses(mesh_blendshapes, pose_manager, in_betweens, detailed
         beginProgress=True,
         isInterruptable=True,
         status='Baking shapes...',
-        maxValue=len(poses)
+        maxValue=len(pose_manager.poses)
     )
 
     for pose_index, pose in enumerate(pose_manager.poses):
@@ -838,15 +806,23 @@ def bake_shapes_from_poses(mesh_blendshapes, pose_manager, in_betweens, detailed
         cmds.progressBar(gMainProgressBar, edit=True, step=1)
 
         # pose rig
-        if pose_index in pose_manager.combo_poses:
-            combo_pose = pose_manager.combo_poses[pose_index]
-            combo_pose.pose_joints(summed=True)
-            pose_name = combo_pose.pose.name
-            pose = combo_pose
+        # if pose_index in pose_manager.combo_poses:
+        #     combo_pose = pose_manager.combo_poses[pose_index]
+        #     combo_pose.pose_joints(summed=True)
+        #     pose_name = combo_pose.pose.name
+        #     pose = combo_pose
+        # else:
+        #     pose.pose_joints()
+        #     pose_name = pose.name
+        #     pose_names.append(pose_name)
+
+        if isinstance(pose, mhCore.ComboPose):
+            pose.pose_joints(summed=True)
+            pose_name = pose.pose.name
         else:
             pose.pose_joints()
             pose_name = pose.name
-            pose_names.append(pose_name)
+            # pose_names.append(pose_name)
 
         # create shape
         if detailed_verbose:
@@ -936,10 +912,10 @@ def calculate_combo_deltas(
         beginProgress=True,
         isInterruptable=True,
         status='Calculating Combo deltas ({})...'.format(bs_node),
-        maxValue=len(combo_poses.keys())
+        maxValue=len(combo_poses)
     )
 
-    for pose_index, combo_pose in combo_poses.items():
+    for combo_pose in combo_poses:
         if cmds.progressBar(gMainProgressBar, query=True, isCancelled=True):
             cmds.progressBar(gMainProgressBar, edit=True, endProgress=True)
             return False
@@ -1000,7 +976,7 @@ def calculate_combo_deltas(
 
         # do this in order of least combos to most combos
         for combo_count in range(3, 10):
-            for combo_pose in combo_poses.values():
+            for combo_pose in combo_poses:
                 if len(combo_pose.input_poses) != combo_count:
                     continue
 
@@ -1068,8 +1044,7 @@ def bake_rig(
 
         base_meshes, bs_nodes, target_groups = bake_shapes_from_poses(
             bake_config.mesh_blendshapes,
-            pose_manager.poses,
-            pose_manager.combo_poses,
+            pose_manager,
             bake_config.in_betweens,
             detailed_verbose=detailed_verbose
         )
@@ -1096,7 +1071,7 @@ def bake_rig(
 
             calculate_combo_deltas(
                 bs_node,
-                combo_poses,
+                pose_manager.combo_poses,
                 bake_config.in_betweens,
                 detailed_verbose=True,
                 optimise=optimise
@@ -1107,7 +1082,7 @@ def bake_rig(
         LOG.info("Creating driver logic...")
 
         driver_mapping = create_driver_logic(
-            pose_manager.poses,
+            pose_manager.core_poses,
             pose_manager.combo_poses,
             expressions_node,
             additional_shapes=bake_config.shapes,
@@ -1131,7 +1106,7 @@ def bake_rig(
             LOG.info("Using SDKs...")
 
             create_joint_poses_sdk(
-                pose_manager.poses,
+                pose_manager,
                 driver_mapping,
                 pose_joints=bake_config.pose_joints
             )
@@ -1139,7 +1114,7 @@ def bake_rig(
             LOG.info("Using math nodes...")
 
             create_joint_poses(
-                pose_manager.poses,
+                pose_manager,
                 driver_mapping,
                 pose_joints=bake_config.pose_joints
             )
@@ -1268,7 +1243,7 @@ def reconnect(
     LOG.info("Creating driver logic...")
 
     driver_mapping = create_driver_logic(
-        pose_manager.poses,
+        pose_manager.core_poses,
         pose_manager.combo_poses,
         expressions_node,
         additional_shapes=bake_config.shapes,
@@ -1320,7 +1295,7 @@ def reconnect(
             LOG.info("Using SDKs...")
 
             create_joint_poses_sdk(
-                pose_manager.poses,
+                pose_manager,
                 driver_mapping,
                 pose_joints=bake_config.pose_joints
             )
@@ -1328,7 +1303,7 @@ def reconnect(
             LOG.info("Using math nodes...")
 
             create_joint_poses(
-                pose_manager.poses,
+                pose_manager,
                 driver_mapping,
                 pose_joints=bake_config.pose_joints
             )

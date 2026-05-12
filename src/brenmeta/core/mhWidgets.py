@@ -30,6 +30,21 @@ from Qt import QtGui
 from brenmeta.core import mhCore
 
 
+def error(parent, err):
+    # TODO traceback
+
+    print(traceback.format_exc())
+
+    LOG.critical(str(err))
+
+    QtWidgets.QMessageBox.critical(
+        parent,
+        "Error",
+        str(err),
+        QtWidgets.QMessageBox.Ok
+    )
+
+
 class LabelledSpinBox(QtWidgets.QWidget):
     SPIN_BOX_CLS = QtWidgets.QSpinBox
 
@@ -310,6 +325,7 @@ class DnaPathManagerWidget(QtWidgets.QGroupBox):
 
         self.file_edit = PathOpenWidget("dna file")
         self.file_edit.setVisible(False)
+        self.file_edit.filter = "metahuman dna files (*.dna)"
 
         self.dna_file_label = QtWidgets.QLabel()
         self.dna_file_label.setEnabled(False)

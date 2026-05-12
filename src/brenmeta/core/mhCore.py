@@ -103,7 +103,9 @@ def validate_arg(arg_name, arg_value, expected_type, can_be_none=False):
 
 
 class Pose(object):
-    def __init__(self, pose_manager=None, name=None, index=None, shape_name=None):
+    def __init__(self, pose_manager, name=None, index=None, shape_name=None):
+        validate_arg("pose_manager", pose_manager, PoseManager)
+
         self.pose_manager = pose_manager
         self.index = index
         self.name = name
@@ -116,7 +118,7 @@ class Pose(object):
         """Returned summed Pose
         """
         summed_pose = Pose(
-            pose_manager=self.pose_manager,
+            self.pose_manager,
             name="{}_{}".format(self.name, other.name)
         )
 
@@ -151,6 +153,15 @@ class Pose(object):
 
         return display_name
 
+    def get_default(self, attr):
+        if attr in self.pose_manager.attr_defaults:
+            default = self.pose_manager.attr_defaults[attr]
+        else:
+            LOG.warning("attr not in defaults: {} ({})".format(attr, self))
+            default = 0.0
+
+        return default
+
     def get_values(self, absolute=True, blend=1.0):
         if absolute:
             if not self.pose_manager:
@@ -159,11 +170,9 @@ class Pose(object):
             values = {}
 
             for attr, delta in self.deltas.items():
-                if attr not in self.pose_manager.attr_defaults:
-                    raise MHError("attr not in defaults: {}".format(attr))
-
+                default = self.get_default(attr)
                 delta *= blend
-                values[attr] = self.pose_manager.attr_defaults[attr] + delta
+                values[attr] = default + delta
 
             return values
         else:
@@ -195,6 +204,7 @@ class Pose(object):
 
     def update_from_scene(self):
         for attr, old_value in self.deltas.items():
+            default = self.get_default(attr)
             value = cmds.getAttr(attr)
             self.deltas[attr] = value - default
 
@@ -255,21 +265,23 @@ class Pose(object):
 
         return data
 
-    def deserialize(self, data, pose_manager):
+    def deserialize(self, data):
         self.index = data["index"]
         self.name = data["name"]
         self.shape_name = data["shape_name"]
         self.deltas = data["deltas"]
 
-        if data["opposite"]:
-            self.opposite = None  # TODO
+        if data["opposite"] is not None:
+            self.opposite = self.pose_manager.poses[data["opposite"]]
 
         return True
 
 
 class ComboPose(object):
-    def __init__(self, pose_manager=None):
+    def __init__(self, pose_manager):
         super(ComboPose, self).__init__()
+
+        validate_arg("pose_manager", pose_manager, PoseManager)
 
         self.pose_manager = pose_manager
         self.pose = None
@@ -283,16 +295,6 @@ class ComboPose(object):
             [pose.name or pose.index for pose in self.input_poses]
         )
 
-    def get_defaults(self):
-        defaults = dict(self.pose.defaults)
-
-        for input_pose in self.input_poses:
-            for attr, default in input_pose.defaults.items():
-                if attr not in defaults:
-                    defaults[attr] = default
-
-        return defaults
-
     def get_values(self, summed=True, absolute=True, blend=1.0):
         """
         Note the input weight is not used here (nor in the rig logic)
@@ -302,7 +304,6 @@ class ComboPose(object):
             return self.pose.get_values(absolute=absolute, blend=blend)
 
         summed_deltas = dict(self.pose.deltas)
-        defaults = self.get_defaults()
 
         for pose in self.get_all_input_poses(include_combos=True):
             for attr, delta in pose.deltas.items():
@@ -313,15 +314,21 @@ class ComboPose(object):
 
         if absolute:
             if not self.pose_manager:
-                raise MHError("Cannot get absolute values without pose manager")
+                raise MHError("Cannot get absolute values without pose manager: {}".format(self))
 
             values = {}
 
             for attr, value in summed_deltas.items():
-                if attr not in self.pose_manager.attr_defaults:
-                    raise MHError("attr not in defaults: {}".format(attr))
+                # if attr not in self.pose_manager.attr_defaults:
+                #     raise MHError("attr not in defaults: {}".format(attr))
 
-                values[attr] = self.pose_manager.attr_defaults[attr] + (value * blend)
+                if attr in self.pose_manager.attr_defaults:
+                    default = self.pose_manager.attr_defaults[attr]
+                else:
+                    LOG.warning("attr not in defaults: {} ({})".format(attr, self))
+                    default = 0.0
+
+                values[attr] = default + (value * blend)
 
             return values
 
@@ -407,14 +414,14 @@ class ComboPose(object):
 
     def serialize(self):
         data = {
-            "index": None,
+            "pose": None,
             "input_poses": None,
             "input_weights": None,
             "input_combos": None
         }
 
         if self.pose:
-            data["index"] = self.pose.index
+            data["pose"] = self.pose.serialize()
 
         if self.input_poses:
             data["input_poses"] = [pose.index for pose in self.input_poses]
@@ -427,21 +434,27 @@ class ComboPose(object):
 
         return data
 
-    def deserialize(self, data, pose_manager):
-        if data["index"]:
-            if data["index"] >= len(pose_manager.poses):
-                raise MHError("combo pose index out of range: {}".format(data["index"]))
+    def deserialize(self, data):  # , pose_manager):
+        # if data["index"]:
+        #     if data["index"] >= len(pose_manager.poses):
+        #         raise MHError("combo pose index out of range: {}".format(data["index"]))
+        #
+        #     self.pose = pose_manager.poses[data["index"]]
 
-            self.pose = pose_manager.poses[data["index"]]
+        # self.pose_manager = pose_manager
+
+        if data["pose"]:
+            self.pose = Pose(self.pose_manager)
+            self.pose.deserialize(data["pose"])
 
         if data["input_poses"]:
             self.input_poses = []
 
             for pose_index in data["input_poses"]:
-                if pose_index >= len(pose_manager.poses):
+                if pose_index >= len(self.pose_manager.poses):
                     raise MHError("input pose index out of range: {}".format(pose_index))
 
-                self.input_poses.append(pose_manager.poses[pose_index])
+                self.input_poses.append(self.pose_manager.poses[pose_index])
 
         if data["input_weights"]:
             self.input_weights = data["input_weights"]
@@ -450,76 +463,100 @@ class ComboPose(object):
             self.input_combos = []
 
             for pose_index in data["input_combos"]:
-                if pose_index not in pose_manager.combo_poses:
-                    raise MHError("input combo index not found: {}".format(pose_index))
+                # TODO check is actually combo?
+                self.input_combos.append(self.pose_manager.poses[pose_index])
 
-                self.input_combos.append(pose_manager.combo_poses[pose_index])
+                # if pose_index not in pose_manager.combo_poses:
+                #     raise MHError("input combo index not found: {}".format(pose_index))
+                #
+                # self.input_combos.append(pose_manager.combo_poses[pose_index])
 
         return True
 
 
 class PoseManager(object):
-    # TODO test!!
 
     def __init__(self):
         super(PoseManager, self).__init__()
 
-        # TODO neutral pose
-        #      get attrs and attr defaults from that
-        #      all poses reference manager to get defaults
-        #      utilities to create/update neutral based on any new attrs from new poses etc.
-
         self.attrs = []
         self.attr_defaults = {}
-        self.poses = []
-        self.combo_poses = {}
+        self._poses = []
+        # self.combo_poses = {}
         self.blendshape_nodes = []
+
+    # @property
+    # def core_poses(self):
+    #     if not self.poses:
+    #         return None
+    #
+    #     return [pose for i, pose in enumerate(self.poses) if i not in self.combo_poses]
+
+    # @property
+    # def sorted_combo_poses(self):
+    #     return [self.combo_poses[i] for i in sorted(self.combo_poses.keys())]
+
+    @property
+    def poses(self):
+        return self._poses
+
+    def set_poses(self, poses):
+        self._poses = poses
+
+        for pose in poses:
+            pose.pose_manager = self
 
     @property
     def core_poses(self):
-        if not self.poses:
-            return None
-
-        return [pose for i, pose in enumerate(self.poses) if i not in self.combo_poses]
+        return [pose for pose in self.poses if isinstance(pose, Pose)]
 
     @property
-    def sorted_combo_poses(self):
-        return [self.combo_poses[i] for i in sorted(self.combo_poses.keys())]
+    def combo_poses(self):
+        return [pose for pose in self.poses if isinstance(pose, ComboPose)]
+
+    def reset(self):
+        self.attrs = []
+        self.attr_defaults = {}
+        self._poses = []
+        self.blendshape_nodes = []
 
     def serialize(self):
         data = {
             "attrs": self.attrs,
             "attr_defaults": self.attr_defaults,
             "poses": None,
-            "combo_poses": None,
+            # "combo_poses": None,
             "pose_count": 0,
-            "combo_pose_count": 0,
+            # "combo_pose_count": 0,
+            "combo_indices": None,
             "blendshape_nodes": self.blendshape_nodes,
         }
 
         if self.poses:
             data["poses"] = [pose.serialize() for pose in self.poses]
             data["pose_count"] = len(self.poses)
+            data["combo_indices"] = [i for i, pose in enumerate(self.poses) if isinstance(pose, ComboPose)]
 
-        if self.combo_poses:
-            data["combo_poses"] = {i: combo.serialize() for i, combo in self.combo_poses.items()}
-            data["combo_pose_count"] = len(self.combo_poses)
+        # if self.combo_poses:
+        #     data["combo_poses"] = {i: combo.serialize() for i, combo in self.combo_poses.items()}
+        #     data["combo_pose_count"] = len(self.combo_poses)
 
         return data
 
     def deserialize(self, data):
         # instance objects
-        self.poses = [Pose() for _ in range(data["pose_count"])]
-        self.combo_poses = {i: ComboPose() for i, data in data["combo_pose_count"].items()}
-
-        # deserialize after objects are instanced to ensure references are set correctly
         if data["poses"]:
-            for i, pose_data in enumerate(data["poses"]):
-                self.poses[i].deserialize(pose_data)
+            self._poses = [
+                ComboPose(self) if i in data["combo_indices"] else Pose(self) for i in range(data["pose_count"])
+            ]
 
-        if data["combo_poses"]:
-            for i, combo_data in data["combo_poses"].items():
-                self.combo_poses[i].deserialize(combo_data)
+            # deserialize after objects are instanced to ensure references are set correctly
+            for i, pose_data in enumerate(data["poses"]):
+                self._poses[i].deserialize(pose_data)
+
+        # if data["combo_poses"]:
+        #     for i, combo_data in data["combo_poses"].items():
+        #         self.combo_poses[i].deserialize(combo_data)
 
         return True
 
@@ -529,10 +566,13 @@ class PoseManager(object):
         new_poses = []
 
         for i, pose_name in enumerate(pose_names):
-            pose = Pose()
-            pose.name = pose_name
-            pose.index = pose_count + i
-            pose.defaults = self.attr_defaults
+            pose = Pose(
+                self,
+                name=pose_name,
+                index=pose_count + i,
+            )
+
+            # pose.defaults = self.attr_defaults
 
             new_poses.append(pose)
             self.poses.append(pose)
@@ -547,7 +587,7 @@ class PoseManager(object):
         """Create ComboPose for each additional combo and map input poses
         """
         pose_dict = {
-            pose.name: pose for pose in self.poses
+            pose.pose.name if isinstance(pose, ComboPose) else pose.name: pose for pose in self.poses
         }
 
         pose_count = len(self.poses)
@@ -555,12 +595,15 @@ class PoseManager(object):
         new_combo_poses = []
 
         for i, pose_names in enumerate(additional_combos):
-            combo = ComboPose()
+            combo = ComboPose(self)
 
-            combo.pose = Pose()
-            combo.pose.name = "_".join(pose_names)
-            combo.pose.index = pose_count + i
-            combo.pose.defaults = self.attr_defaults
+            combo.pose = Pose(
+                self,
+                name="_".join(pose_names),
+                index=pose_count + i,
+            )
+
+            # combo.pose.defaults = self.attr_defaults
 
             combo.input_poses = [pose_dict[pose_name] for pose_name in pose_names]
             combo.input_weights = [1.0] * len(pose_names)
@@ -571,8 +614,9 @@ class PoseManager(object):
                 LOG.info("existing combo found, skipping: {}".format(combo.pose.name))
                 continue
 
-            self.combo_poses[combo.pose.index] = combo
-            self.poses.append(combo.pose)
+            # self.combo_poses[combo.pose.index] = combo
+            # self.poses.append(combo.pose)
+            self.poses.append(combo)
             new_combo_poses.append(combo)
             pose_dict[combo.pose.name] = combo.pose
 
@@ -585,11 +629,11 @@ class PoseManager(object):
     def update_input_combo_poses(self):
         """add input combos for 3+ way combos
         """
-        for combo_pose in self.combo_poses.values():
+        for combo_pose in self.combo_poses:  # .values():
             if len(combo_pose.input_poses) < 3:
                 continue
 
-            for input_combo_pose in self.combo_poses.values():
+            for input_combo_pose in self.combo_poses:  # .values():
                 if input_combo_pose is combo_pose:
                     continue
 
@@ -614,6 +658,9 @@ class PoseManager(object):
         target_names = []
 
         for pose in self.poses:
+            if isinstance(pose, ComboPose):
+                pose = pose.pose
+
             if not pose.name:
                 continue
 
@@ -629,6 +676,64 @@ class PoseManager(object):
                 duplicate_index += 1
 
             target_names.append(pose.shape_name)
+
+        return True
+
+    def find_pose(self, pose_name):
+        for pose in self.poses:
+            if isinstance(pose, Pose):
+                if pose.name == pose_name:
+                    return pose
+            elif isinstance(pose, ComboPose):
+                if pose.pose.name == pose_name:
+                    return pose
+
+        return None
+
+    def find_opposite(self, pose, find, replace, ends_with=True):
+        if isinstance(pose, ComboPose):
+            pose = pose.pose
+
+        if ends_with:
+            if not pose.name.endswith(find):
+                raise MHError("Pose does not end with '{}': {}".format(find, pose.name))
+
+            opposite_name = pose.name[:-1] + replace
+        else:
+            opposite_name = pose.name.replace(find, replace)
+
+        opposite = self.find_pose(opposite_name)
+
+        if not opposite:
+            return None
+
+        if isinstance(opposite, ComboPose):
+            pose.opposite = opposite.pose
+        else:
+            pose.opposite = opposite
+
+        return pose.opposite
+
+    def find_opposites(self, search_str_a, search_str_b, ends_with=True):
+        """
+        TODO dialog
+            enum for startswith, endswith, contains
+
+        """
+        for find, replace in [(search_str_a, search_str_b), (search_str_b, search_str_a)]:
+            for pose in self.poses:
+                if isinstance(pose, ComboPose):
+                    pose = pose.pose
+
+                if not pose.name:
+                    continue
+                if ends_with:
+                    if not pose.name.endswith(find):
+                        continue
+                elif find not in pose.name:
+                    continue
+
+                opposite = self.find_opposite(pose, find, replace, ends_with=ends_with)
 
         return True
 
@@ -649,6 +754,30 @@ class PoseManager(object):
         return True
 
 
+class PoseViewSettings(object):
+    ATTRS = ["show_index", "show_pose", "show_shape", "show_opposite"]
+
+    def __init__(self):
+        self.show_index = True
+        self.show_pose = True
+        self.show_shape = True
+        self.show_opposite = True
+
+    def serialize(self):
+        data = {
+            attr: getattr(self, attr) for attr in self.ATTRS
+        }
+
+        return data
+
+    def deserialize(self, data):
+        for attr in self.ATTRS:
+            if attr not in data:
+                continue
+
+            setattr(self, attr, data[attr])
+
+
 class Project(object):
     def __init__(self, dna_assets_path):
         self.current_file = None
@@ -657,6 +786,19 @@ class Project(object):
         self.input_dna_path = None
         self.output_dna_path = None
         self.bake_config_path = None
+
+        # poses
+        self.pose_manager = PoseManager()
+
+        self.pose_config_view_settings = PoseViewSettings()
+        self.core_pose_view_settings = PoseViewSettings()
+        self.combo_pose_view_settings = PoseViewSettings()
+
+        self.core_pose_view_settings.show_opposite = False
+        self.core_pose_view_settings.show_shape = False
+
+        self.combo_pose_view_settings.show_opposite = False
+        self.combo_pose_view_settings.show_shape = False
 
         self.reset(dna_assets_path)
 
@@ -674,18 +816,30 @@ class Project(object):
     def reset(self, dna_assets_path):
         self.current_file = None
 
+        self.pose_manager.reset()
+
         self.dna_assets_path = dna_assets_path
         self.input_dna_path = None
         self.output_dna_path = None
         self.bake_config_path = os.path.join(DATA_DIR, "configs", "bake_config.json")
 
-    def write(self, filepath):
+    def serialize(self):
         data = {
             "dna_assets_path": self.dna_assets_path,
             "input_dna_path": self.input_dna_path,
             "output_dna_path": self.output_dna_path,
             "bake_config_path": self.bake_config_path,
+            # pose editor
+            "pose_manager": self.pose_manager.serialize(),
+            "pose_config_view_settings": self.pose_config_view_settings.serialize(),
+            "core_pose_view_settings": self.core_pose_view_settings.serialize(),
+            "combo_pose_view_settings": self.combo_pose_view_settings.serialize(),
         }
+
+        return data
+
+    def write(self, filepath):
+        data = self.serialize()
 
         json_data = json.dumps(
             data, sort_keys=True, indent=4, separators=(',', ': ')
@@ -708,6 +862,15 @@ class Project(object):
         self.output_dna_path = data["output_dna_path"]
         self.bake_config_path = data["bake_config_path"]
 
+        self.pose_config_view_settings.deserialize(data["pose_config_view_settings"])
+        self.core_pose_view_settings.deserialize(data["core_pose_view_settings"])
+        self.combo_pose_view_settings.deserialize(data["combo_pose_view_settings"])
+
         self.current_file = filepath
+
+        self.pose_manager.reset()
+
+        if "pose_manager" in data:
+            self.pose_manager.deserialize(data["pose_manager"])
 
         return True

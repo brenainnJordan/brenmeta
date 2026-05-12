@@ -105,7 +105,7 @@ def get_joint_defaults(reader):
     return joints_attr_defaults
 
 
-def get_all_poses(reader, verbose=False):
+def get_all_poses(reader, pose_manager, verbose=False):
     """
 
     """
@@ -118,7 +118,7 @@ def get_all_poses(reader, verbose=False):
 
     # get pose values for each joint group
     poses = [
-        mhCore.Pose(name=name, index=i, shape_name=shape_name)
+        mhCore.Pose(pose_manager, name=name, index=i, shape_name=shape_name)
         for i, (name, shape_name) in enumerate(zip(pose_names, blendshape_names))
     ]
 
@@ -149,7 +149,7 @@ def get_all_poses(reader, verbose=False):
                 value = values[value_index]
 
                 pose.deltas[attr] = value
-                pose.defaults[attr] = joints_attr_defaults[attr]
+                # pose.defaults[attr] = joints_attr_defaults[attr]
 
     return poses
 
@@ -190,6 +190,9 @@ def set_all_poses(reader, writer, poses):
             else:
                 LOG.warning("input index out of range: {}".format(input_index))
                 pose = None
+
+            if isinstance(pose, mhCore.ComboPose):
+                pose = pose.pose
 
             output_values = []
 
@@ -274,7 +277,7 @@ def get_psd_indices(reader):
     return psd_indices
 
 
-def get_psd_poses(reader, poses, override_name=True):
+def get_psd_poses(reader, pose_manager, override_name=True):
     """Get a list of PSDPose objects referencing given Pose objects
     """
     psd_indices = get_psd_indices(reader)
@@ -283,17 +286,17 @@ def get_psd_poses(reader, poses, override_name=True):
 
     # create psd pose objects
     for psd_index, psd_data in psd_indices.items():
-        psd_pose = mhCore.ComboPose()
-        psd_pose.pose = poses[psd_index]
+        psd_pose = mhCore.ComboPose(pose_manager)
+        psd_pose.pose = pose_manager.poses[psd_index]
         psd_valid = True
 
         for pose_index, weight in psd_data:
-            if pose_index >= len(poses):
+            if pose_index >= len(pose_manager.poses):
                 LOG.warning("psd input pose out of range: {} {}".format(psd_pose.pose.name, pose_index))
                 psd_valid = False
                 continue
 
-            psd_pose.input_poses.append(poses[pose_index])
+            psd_pose.input_poses.append(pose_manager.poses[pose_index])
             psd_pose.input_weights.append(weight)
 
         if psd_valid:
@@ -412,10 +415,16 @@ def load_poses_from_dna(file_path, pose_manager=None):
 
     pose_manager.attrs = get_joint_attrs(calib_reader)
     pose_manager.attr_defaults = get_joint_defaults(calib_reader)
-    pose_manager.poses = get_all_poses(calib_reader)
-    pose_manager.combo_poses = get_psd_poses(calib_reader, pose_manager.poses)
+    pose_manager.set_poses(get_all_poses(calib_reader, pose_manager))
 
-    pose_manager.bs_nodes = mhMesh.get_blendshape_nodes(dna_obj, calib_reader)
+    # substitute combo poses in-place
+    combos = get_psd_poses(calib_reader, pose_manager)
+
+    for pose_index, combo in combos.items():
+        pose_manager.poses[pose_index] = combo
+
+    # set blendshape nodes
+    pose_manager.blendshape_nodes = mhMesh.get_blendshape_nodes(dna_obj, calib_reader)
 
     return pose_manager
 

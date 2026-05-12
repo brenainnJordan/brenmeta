@@ -100,7 +100,7 @@ def get_joint_defaults(reader):
     return joints_attr_defaults
 
 
-def get_all_poses(reader, absolute=True):
+def get_all_poses(reader, pose_manager, absolute=True):
     """
 
     """
@@ -113,7 +113,7 @@ def get_all_poses(reader, absolute=True):
 
     # get pose values for each joint group
     poses = [
-        mhCore.Pose(name=name, index=i, shape_name=shape_name)
+        mhCore.Pose(pose_manager, name=name, index=i, shape_name=shape_name)
         for i, (name, shape_name) in enumerate(zip(pose_names, blendshape_names))
     ]
 
@@ -139,7 +139,7 @@ def get_all_poses(reader, absolute=True):
                 value = values[value_index]
 
                 pose.deltas[attr] = value
-                pose.defaults[attr] = joints_attr_defaults[attr]
+                # pose.defaults[attr] = joints_attr_defaults[attr]
 
                 # if absolute and attr in joints_attr_defaults:
                 #     value += joints_attr_defaults[attr]
@@ -255,7 +255,7 @@ def get_psd_indices(reader):
     return psd_indices
 
 
-def get_psd_poses(reader, poses, update_names=True):
+def get_psd_poses(reader, poses, pose_manager, update_names=True):
     """Get a list of PSDPose objects referencing given Pose objects
     """
     psd_indices = get_psd_indices(reader)
@@ -264,7 +264,7 @@ def get_psd_poses(reader, poses, update_names=True):
 
     # create psd pose objects
     for psd_index, psd_data in psd_indices.items():
-        psd_pose = mhCore.ComboPose()
+        psd_pose = mhCore.ComboPose(pose_manager)
         psd_pose.pose = poses[psd_index]
 
         for pose_index, weight in psd_data:
@@ -310,7 +310,7 @@ def load_poses_from_dna(file_path, pose_manager=None):
 
     pose_manager.attrs = get_joint_attrs(calib_reader)
     pose_manager.attr_defaults = get_joint_defaults(calib_reader)
-    pose_manager.poses = get_all_poses(calib_reader)
-    pose_manager.combo_poses = get_psd_poses(calib_reader, pose_manager.poses)
+    pose_manager.poses = get_all_poses(calib_reader, pose_manager)
+    pose_manager.combo_poses = get_psd_poses(calib_reader, pose_manager.poses, pose_manager)
 
     return pose_manager
