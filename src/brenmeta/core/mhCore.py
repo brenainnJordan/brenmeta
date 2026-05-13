@@ -16,6 +16,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 """Core functionality with no dependencies on dna"""
+from typing import Any
 
 import os
 import sys
@@ -102,378 +103,6 @@ def validate_arg(arg_name, arg_value, expected_type, can_be_none=False):
     return True
 
 
-class Pose(object):
-    def __init__(self, pose_manager, name=None, index=None, shape_name=None):
-        validate_arg("pose_manager", pose_manager, PoseManager)
-
-        self.pose_manager = pose_manager
-        self.index = index
-        self.name = name
-        self.shape_name = shape_name
-        self.deltas = {}
-        self.defaults = {}
-        self.opposite = None  # TODO
-
-    def __add__(self, other):
-        """Returned summed Pose
-        """
-        summed_pose = Pose(
-            self.pose_manager,
-            name="{}_{}".format(self.name, other.name)
-        )
-
-        for attr, delta in self.deltas.items():
-            if attr in summed_pose.deltas:
-                summed_pose.deltas[attr] += delta
-            else:
-                summed_pose.deltas[attr] = delta
-
-        for attr, delta in other.deltas.items():
-            if attr in summed_pose.deltas:
-                summed_pose.deltas[attr] += delta
-            else:
-                summed_pose.deltas[attr] = delta
-
-        return summed_pose
-
-    def __repr__(self):
-        return "{}({}: {})".format(self.__class__.__name__, self.index, self.name)
-
-    def get_display_name(self, index=True, blendshape=True):
-        display_name = ""
-
-        if index:
-            display_name += "{}: ".format(self.index)
-
-        if self.name:
-            display_name += "{}".format(self.name)
-
-        if blendshape:
-            display_name += " ({})".format(self.shape_name)
-
-        return display_name
-
-    def get_default(self, attr):
-        if attr in self.pose_manager.attr_defaults:
-            default = self.pose_manager.attr_defaults[attr]
-        else:
-            LOG.warning("attr not in defaults: {} ({})".format(attr, self))
-            default = 0.0
-
-        return default
-
-    def get_values(self, absolute=True, blend=1.0):
-        if absolute:
-            if not self.pose_manager:
-                raise MHError("Cannot get absolute values without pose manager")
-
-            values = {}
-
-            for attr, delta in self.deltas.items():
-                default = self.get_default(attr)
-                delta *= blend
-                values[attr] = default + delta
-
-            return values
-        else:
-            return self.deltas
-
-    def pose_joints(self, blend=1.0):
-        for attr, value in self.get_values(absolute=True, blend=blend).items():
-            if not cmds.objExists(attr):
-                continue
-
-            cmds.setAttr(attr, value)
-
-        return True
-
-    def activate_targets(self, blendshape_nodes, blend=1.0):
-        if not self.shape_name:
-            return False
-
-        for blendshape_node in blendshape_nodes:
-            if not cmds.objExists(blendshape_node):
-                continue
-
-            if not cmds.attributeQuery(self.shape_name, node=blendshape_node, exists=True):
-                continue
-
-            cmds.setAttr("{}.{}".format(blendshape_node, self.shape_name), blend)
-
-        return True
-
-    def update_from_scene(self):
-        for attr, old_value in self.deltas.items():
-            default = self.get_default(attr)
-            value = cmds.getAttr(attr)
-            self.deltas[attr] = value - default
-
-        return True
-
-    def scale_deltas(self, value, attrs=None, joints=None):
-        # default to just scaling translation
-        if attrs is None:
-            attrs = ["tx", "ty", "tz"]
-
-        for pose_attr in self.deltas.keys():
-            joint, attr = pose_attr.split(".")
-
-            if attr not in attrs:
-                continue
-
-            if joints:
-                if joint not in joints:
-                    continue
-
-            self.deltas[pose_attr] *= value
-
-        return True
-
-    def affects_joint(self, joint):
-        for attr, value in self.deltas.items():
-            if value == 0.0:
-                continue
-
-            attr_joint, attr = attr.split(".")
-
-            if attr_joint == joint:
-                return True
-
-        return False
-
-    def affects_joints(self, joints):
-        for attr in self.deltas.keys():
-            attr_joint, attr = attr.split(".")
-
-            if attr_joint in joints:
-                return True
-
-        return False
-
-    def serialize(self):
-        data = {
-            "index": self.index,
-            "name": self.name,
-            "shape_name": self.shape_name,
-            "deltas": self.deltas,
-        }
-
-        if self.opposite:
-            data["opposite"] = self.opposite.index
-        else:
-            data["opposite"] = None
-
-        return data
-
-    def deserialize(self, data):
-        self.index = data["index"]
-        self.name = data["name"]
-        self.shape_name = data["shape_name"]
-        self.deltas = data["deltas"]
-
-        if data["opposite"] is not None:
-            self.opposite = self.pose_manager.poses[data["opposite"]]
-
-        return True
-
-
-class ComboPose(object):
-    def __init__(self, pose_manager):
-        super(ComboPose, self).__init__()
-
-        validate_arg("pose_manager", pose_manager, PoseManager)
-
-        self.pose_manager = pose_manager
-        self.pose = None
-        self.input_poses = []
-        self.input_weights = []  # TODO deprecate?
-        self.input_combos = []
-
-    def __repr__(self):
-        return "{}({}: {}) <- [{}]".format(
-            self.__class__.__name__, self.pose.index, self.pose.name,
-            [pose.name or pose.index for pose in self.input_poses]
-        )
-
-    def get_values(self, summed=True, absolute=True, blend=1.0):
-        """
-        Note the input weight is not used here (nor in the rig logic)
-        it actually seems to cause issues
-        """
-        if not summed:
-            return self.pose.get_values(absolute=absolute, blend=blend)
-
-        summed_deltas = dict(self.pose.deltas)
-
-        for pose in self.get_all_input_poses(include_combos=True):
-            for attr, delta in pose.deltas.items():
-                if attr in summed_deltas:
-                    summed_deltas[attr] += delta
-                else:
-                    summed_deltas[attr] = delta
-
-        if absolute:
-            if not self.pose_manager:
-                raise MHError("Cannot get absolute values without pose manager: {}".format(self))
-
-            values = {}
-
-            for attr, value in summed_deltas.items():
-                # if attr not in self.pose_manager.attr_defaults:
-                #     raise MHError("attr not in defaults: {}".format(attr))
-
-                if attr in self.pose_manager.attr_defaults:
-                    default = self.pose_manager.attr_defaults[attr]
-                else:
-                    LOG.warning("attr not in defaults: {} ({})".format(attr, self))
-                    default = 0.0
-
-                values[attr] = default + (value * blend)
-
-            return values
-
-        else:
-            return summed_deltas
-
-    def pose_joints(self, summed=True, blend=1.0):
-        for attr, value in self.get_values(summed=summed, absolute=True, blend=blend).items():
-            if not cmds.objExists(attr):
-                continue
-
-            cmds.setAttr(attr, value)
-
-        return True
-
-    def activate_targets(self, blendshape_nodes, blend=1.0):
-        poses = self.get_all_input_poses(include_combos=True)
-
-        for pose in poses:
-            if isinstance(pose, ComboPose):
-                pose.pose.activate_targets(blendshape_nodes, blend=blend)
-            else:
-                pose.activate_targets(blendshape_nodes, blend=blend)
-
-        return True
-
-    def get_all_input_poses(self, include_combos=False):
-        poses = set(self.input_poses)
-
-        for input_combo_pose in self.input_combos:
-            if include_combos:
-                poses.add(input_combo_pose.pose)
-
-            poses.update(input_combo_pose.get_all_input_poses())
-
-        # sort by index
-        poses = sorted(poses, key=lambda p: p.index)
-
-        return poses
-
-    def update_name(self, override=True):
-        if self.pose.name and not override:
-            raise MHError("ComboPose is already named: {}".format(self))
-
-        sides = set([])
-
-        name_tokens = []
-
-        for pose in self.get_all_input_poses():
-            if not pose.name:
-                LOG.info("unable to update Combo name: {}".format(self))
-                return self.pose.name
-
-            if pose.name[-1] in "LR":
-                sides.add(pose.name[-1])
-                pose_name = pose.name[:-1]
-            else:
-                pose_name = pose.name
-
-            if pose_name not in name_tokens:
-                name_tokens.append(pose_name)
-
-        self.pose.name = "_".join(name_tokens)
-
-        if sides:
-            self.pose.name = "{}_{}".format(self.pose.name, "".join(sorted(sides)))
-
-        return self.pose.name
-
-    def affects_joint(self, joints):
-        for pose in self.get_all_input_poses():
-            if pose.affects_joint(joints):
-                return True
-
-        return False
-
-    def affects_joints(self, joints):
-        for pose in self.get_all_input_poses():
-            if pose.affects_joints(joints):
-                return True
-
-        return False
-
-    def serialize(self):
-        data = {
-            "pose": None,
-            "input_poses": None,
-            "input_weights": None,
-            "input_combos": None
-        }
-
-        if self.pose:
-            data["pose"] = self.pose.serialize()
-
-        if self.input_poses:
-            data["input_poses"] = [pose.index for pose in self.input_poses]
-
-        if self.input_weights:
-            data["input_weights"] = self.input_weights
-
-        if self.input_combos:
-            data["input_combos"] = [combo.pose.index for combo in self.input_combos]
-
-        return data
-
-    def deserialize(self, data):  # , pose_manager):
-        # if data["index"]:
-        #     if data["index"] >= len(pose_manager.poses):
-        #         raise MHError("combo pose index out of range: {}".format(data["index"]))
-        #
-        #     self.pose = pose_manager.poses[data["index"]]
-
-        # self.pose_manager = pose_manager
-
-        if data["pose"]:
-            self.pose = Pose(self.pose_manager)
-            self.pose.deserialize(data["pose"])
-
-        if data["input_poses"]:
-            self.input_poses = []
-
-            for pose_index in data["input_poses"]:
-                if pose_index >= len(self.pose_manager.poses):
-                    raise MHError("input pose index out of range: {}".format(pose_index))
-
-                self.input_poses.append(self.pose_manager.poses[pose_index])
-
-        if data["input_weights"]:
-            self.input_weights = data["input_weights"]
-
-        if data["input_combos"]:
-            self.input_combos = []
-
-            for pose_index in data["input_combos"]:
-                # TODO check is actually combo?
-                self.input_combos.append(self.pose_manager.poses[pose_index])
-
-                # if pose_index not in pose_manager.combo_poses:
-                #     raise MHError("input combo index not found: {}".format(pose_index))
-                #
-                # self.input_combos.append(pose_manager.combo_poses[pose_index])
-
-        return True
-
-
 class PoseManager(object):
 
     def __init__(self):
@@ -482,19 +111,15 @@ class PoseManager(object):
         self.attrs = []
         self.attr_defaults = {}
         self._poses = []
-        # self.combo_poses = {}
-        self.blendshape_nodes = []
+        self.mesh_blendshapes = []
 
-    # @property
-    # def core_poses(self):
-    #     if not self.poses:
-    #         return None
-    #
-    #     return [pose for i, pose in enumerate(self.poses) if i not in self.combo_poses]
+    @property
+    def meshes(self):
+        return [a for a, b in self.mesh_blendshapes]
 
-    # @property
-    # def sorted_combo_poses(self):
-    #     return [self.combo_poses[i] for i in sorted(self.combo_poses.keys())]
+    @property
+    def blendshape_nodes(self):
+        return [b for a, b in self.mesh_blendshapes]
 
     @property
     def poses(self):
@@ -504,7 +129,9 @@ class PoseManager(object):
         self._poses = poses
 
         for pose in poses:
-            pose.pose_manager = self
+            if pose.pose_manager is not self:
+                # TODO?
+                pass
 
     @property
     def core_poses(self):
@@ -518,28 +145,22 @@ class PoseManager(object):
         self.attrs = []
         self.attr_defaults = {}
         self._poses = []
-        self.blendshape_nodes = []
+        self.mesh_blendshapes = []
 
     def serialize(self):
         data = {
             "attrs": self.attrs,
             "attr_defaults": self.attr_defaults,
             "poses": None,
-            # "combo_poses": None,
             "pose_count": 0,
-            # "combo_pose_count": 0,
             "combo_indices": None,
-            "blendshape_nodes": self.blendshape_nodes,
+            "mesh_blendshapes": self.mesh_blendshapes,
         }
 
         if self.poses:
             data["poses"] = [pose.serialize() for pose in self.poses]
             data["pose_count"] = len(self.poses)
             data["combo_indices"] = [i for i, pose in enumerate(self.poses) if isinstance(pose, ComboPose)]
-
-        # if self.combo_poses:
-        #     data["combo_poses"] = {i: combo.serialize() for i, combo in self.combo_poses.items()}
-        #     data["combo_pose_count"] = len(self.combo_poses)
 
         return data
 
@@ -554,9 +175,10 @@ class PoseManager(object):
             for i, pose_data in enumerate(data["poses"]):
                 self._poses[i].deserialize(pose_data)
 
-        # if data["combo_poses"]:
-        #     for i, combo_data in data["combo_poses"].items():
-        #         self.combo_poses[i].deserialize(combo_data)
+        # deserialize other data
+        self.mesh_blendshapes = data["mesh_blendshapes"]
+        self.attrs = data["attrs"]
+        self.attr_defaults = data["attr_defaults"]
 
         return True
 
@@ -750,6 +372,407 @@ class PoseManager(object):
             except RuntimeError as err:
                 LOG.warning("failed to reset joint attr: {}".format(attr))
                 continue
+
+        return True
+
+    def reset_blendshape_targets(self):
+        for blendshape_node in self.blendshape_nodes:
+            if not cmds.objExists(blendshape_node):
+                continue
+
+            targets = mhBlendshape.get_blendshape_weight_aliases(blendshape_node)
+
+            for target in targets:
+                cmds.setAttr("{}.{}".format(blendshape_node, target), 0.0)
+
+        return True
+
+
+class Pose(object):
+    # TODO use attr index instead of attr name to be more data efficient
+
+    def __init__(self, pose_manager, name=None, index=None, shape_name=None):
+        validate_arg("pose_manager", pose_manager, PoseManager)
+
+        self._pose_manager = pose_manager
+
+        self.index = index
+        self.name = name
+        self.shape_name = shape_name
+        self.shape_in_betweens = None
+        self.deltas = {}
+        self.opposite = None
+
+    def __add__(self, other):
+        """Returned summed Pose
+        """
+        summed_pose = Pose(
+            self.pose_manager,
+            name="{}_{}".format(self.name, other.name)
+        )
+
+        for attr, delta in self.deltas.items():
+            if attr in summed_pose.deltas:
+                summed_pose.deltas[attr] += delta
+            else:
+                summed_pose.deltas[attr] = delta
+
+        for attr, delta in other.deltas.items():
+            if attr in summed_pose.deltas:
+                summed_pose.deltas[attr] += delta
+            else:
+                summed_pose.deltas[attr] = delta
+
+        return summed_pose
+
+    def __repr__(self):
+        return "{}({}: {})".format(self.__class__.__name__, self.index, self.name)
+
+    @property
+    def pose_manager(self) -> PoseManager:
+        return self._pose_manager
+
+    def get_display_name(self, index=True, blendshape=True):
+        display_name = ""
+
+        if index:
+            display_name += "{}: ".format(self.index)
+
+        if self.name:
+            display_name += "{}".format(self.name)
+
+        if blendshape:
+            display_name += " ({})".format(self.shape_name)
+
+        return display_name
+
+    def get_default(self, attr):
+        if attr in self.pose_manager.attr_defaults:
+            default = self.pose_manager.attr_defaults[attr]
+        else:
+            LOG.warning("attr not in defaults: {} ({})".format(attr, self))
+            default = 0.0
+
+        return default
+
+    def get_values(self, absolute=True, blend=1.0):
+        if absolute:
+            if not self.pose_manager:
+                raise MHError("Cannot get absolute values without pose manager")
+
+            values = {}
+
+            for attr, delta in self.deltas.items():
+                default = self.get_default(attr)
+                delta *= blend
+                values[attr] = default + delta
+
+            return values
+        else:
+            return self.deltas
+
+    def pose_joints(self, blend=1.0):
+        for attr, value in self.get_values(absolute=True, blend=blend).items():
+            if not cmds.objExists(attr):
+                continue
+
+            cmds.setAttr(attr, value)
+
+        return True
+
+    def activate_targets(self, blendshape_nodes=None, blend=1.0):
+        if not self.shape_name:
+            return False
+
+        if blendshape_nodes is None:
+            blendshape_nodes = self.pose_manager.blendshape_nodes
+
+        for blendshape_node in blendshape_nodes:
+            if not cmds.objExists(blendshape_node):
+                continue
+
+            if not cmds.attributeQuery(self.shape_name, node=blendshape_node, exists=True):
+                continue
+
+            cmds.setAttr("{}.{}".format(blendshape_node, self.shape_name), blend)
+
+        return True
+
+    def update_from_scene(self):
+        for attr, old_value in self.deltas.items():
+            default = self.get_default(attr)
+            value = cmds.getAttr(attr)
+            self.deltas[attr] = value - default
+
+        return True
+
+    def scale_deltas(self, value, attrs=None, joints=None):
+        # default to just scaling translation
+        if attrs is None:
+            attrs = ["tx", "ty", "tz"]
+
+        for pose_attr in self.deltas.keys():
+            joint, attr = pose_attr.split(".")
+
+            if attr not in attrs:
+                continue
+
+            if joints:
+                if joint not in joints:
+                    continue
+
+            self.deltas[pose_attr] *= value
+
+        return True
+
+    def affects_joint(self, joint):
+        for attr, value in self.deltas.items():
+            if value == 0.0:
+                continue
+
+            attr_joint, attr = attr.split(".")
+
+            if attr_joint == joint:
+                return True
+
+        return False
+
+    def affects_joints(self, joints):
+        for attr in self.deltas.keys():
+            attr_joint, attr = attr.split(".")
+
+            if attr_joint in joints:
+                return True
+
+        return False
+
+    def serialize(self):
+        data = {
+            "index": self.index,
+            "name": self.name,
+            "shape_name": self.shape_name,
+            "deltas": self.deltas,
+        }
+
+        if self.opposite:
+            data["opposite"] = self.opposite.index
+        else:
+            data["opposite"] = None
+
+        return data
+
+    def deserialize(self, data):
+        self.index = data["index"]
+        self.name = data["name"]
+        self.shape_name = data["shape_name"]
+        self.deltas = data["deltas"]
+
+        if data["opposite"] is not None:
+            self.opposite = self.pose_manager.poses[data["opposite"]]
+
+        return True
+
+
+class ComboPose(object):
+    def __init__(self, pose_manager):
+        super(ComboPose, self).__init__()
+
+        validate_arg("pose_manager", pose_manager, PoseManager)
+
+        self._pose_manager = pose_manager
+        self.pose = None
+        self.input_poses = []
+        self.input_weights = []  # TODO deprecate?
+        self.input_combos = []
+
+    def __repr__(self):
+        return "{}({}: {}) <- [{}]".format(
+            self.__class__.__name__, self.pose.index, self.pose.name,
+            [pose.name or pose.index for pose in self.input_poses]
+        )
+
+    @property
+    def pose_manager(self) -> PoseManager:
+        return self._pose_manager
+
+    def get_values(self, summed=True, absolute=True, blend=1.0):
+        """
+        Note the input weight is not used here (nor in the rig logic)
+        it actually seems to cause issues
+        """
+        if not summed:
+            return self.pose.get_values(absolute=absolute, blend=blend)
+
+        summed_deltas = dict(self.pose.deltas)
+
+        for pose in self.get_all_input_poses(include_combos=True):
+            for attr, delta in pose.deltas.items():
+                if attr in summed_deltas:
+                    summed_deltas[attr] += delta
+                else:
+                    summed_deltas[attr] = delta
+
+        if absolute:
+            if not self.pose_manager:
+                raise MHError("Cannot get absolute values without pose manager: {}".format(self))
+
+            values = {}
+
+            for attr, value in summed_deltas.items():
+                # if attr not in self.pose_manager.attr_defaults:
+                #     raise MHError("attr not in defaults: {}".format(attr))
+
+                if attr in self.pose_manager.attr_defaults:
+                    default = self.pose_manager.attr_defaults[attr]
+                else:
+                    LOG.warning("attr not in defaults: {} ({})".format(attr, self))
+                    default = 0.0
+
+                values[attr] = default + (value * blend)
+
+            return values
+
+        else:
+            return summed_deltas
+
+    def pose_joints(self, summed=True, blend=1.0):
+        for attr, value in self.get_values(summed=summed, absolute=True, blend=blend).items():
+            if not cmds.objExists(attr):
+                continue
+
+            cmds.setAttr(attr, value)
+
+        return True
+
+    def activate_targets(self, blendshape_nodes=None, blend=1.0):
+        if blendshape_nodes is None:
+            blendshape_nodes = self.pose_manager.blendshape_nodes
+
+        poses = self.get_all_input_poses(include_combos=True)
+
+        for pose in poses:
+            if isinstance(pose, ComboPose):
+                pose.pose.activate_targets(blendshape_nodes=blendshape_nodes, blend=blend)
+            else:
+                pose.activate_targets(blendshape_nodes=blendshape_nodes, blend=blend)
+
+        return True
+
+    def get_all_input_poses(self, include_combos=False):
+        poses = set(self.input_poses)
+
+        for input_combo_pose in self.input_combos:
+            if include_combos:
+                poses.add(input_combo_pose.pose)
+
+            poses.update(input_combo_pose.get_all_input_poses())
+
+        # sort by index
+        poses = sorted(poses, key=lambda p: p.index)
+
+        return poses
+
+    def update_name(self, override=True):
+        if self.pose.name and not override:
+            raise MHError("ComboPose is already named: {}".format(self))
+
+        sides = set([])
+
+        name_tokens = []
+
+        for pose in self.get_all_input_poses():
+            if not pose.name:
+                LOG.info("unable to update Combo name: {}".format(self))
+                return self.pose.name
+
+            if pose.name[-1] in "LR":
+                sides.add(pose.name[-1])
+                pose_name = pose.name[:-1]
+            else:
+                pose_name = pose.name
+
+            if pose_name not in name_tokens:
+                name_tokens.append(pose_name)
+
+        self.pose.name = "_".join(name_tokens)
+
+        if sides:
+            self.pose.name = "{}_{}".format(self.pose.name, "".join(sorted(sides)))
+
+        return self.pose.name
+
+    def affects_joint(self, joints):
+        for pose in self.get_all_input_poses():
+            if pose.affects_joint(joints):
+                return True
+
+        return False
+
+    def affects_joints(self, joints):
+        for pose in self.get_all_input_poses():
+            if pose.affects_joints(joints):
+                return True
+
+        return False
+
+    def serialize(self):
+        data = {
+            "pose": None,
+            "input_poses": None,
+            "input_weights": None,
+            "input_combos": None
+        }
+
+        if self.pose:
+            data["pose"] = self.pose.serialize()
+
+        if self.input_poses:
+            data["input_poses"] = [pose.index for pose in self.input_poses]
+
+        if self.input_weights:
+            data["input_weights"] = self.input_weights
+
+        if self.input_combos:
+            data["input_combos"] = [combo.pose.index for combo in self.input_combos]
+
+        return data
+
+    def deserialize(self, data):  # , pose_manager):
+        # if data["index"]:
+        #     if data["index"] >= len(pose_manager.poses):
+        #         raise MHError("combo pose index out of range: {}".format(data["index"]))
+        #
+        #     self.pose = pose_manager.poses[data["index"]]
+
+        # self.pose_manager = pose_manager
+
+        if data["pose"]:
+            self.pose = Pose(self.pose_manager)
+            self.pose.deserialize(data["pose"])
+
+        if data["input_poses"]:
+            self.input_poses = []
+
+            for pose_index in data["input_poses"]:
+                if pose_index >= len(self.pose_manager.poses):
+                    raise MHError("input pose index out of range: {}".format(pose_index))
+
+                self.input_poses.append(self.pose_manager.poses[pose_index])
+
+        if data["input_weights"]:
+            self.input_weights = data["input_weights"]
+
+        if data["input_combos"]:
+            self.input_combos = []
+
+            for pose_index in data["input_combos"]:
+                # TODO check is actually combo?
+                self.input_combos.append(self.pose_manager.poses[pose_index])
+
+                # if pose_index not in pose_manager.combo_poses:
+                #     raise MHError("input combo index not found: {}".format(pose_index))
+                #
+                # self.input_combos.append(pose_manager.combo_poses[pose_index])
 
         return True
 

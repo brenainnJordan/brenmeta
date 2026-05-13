@@ -424,7 +424,7 @@ def load_poses_from_dna(file_path, pose_manager=None):
         pose_manager.poses[pose_index] = combo
 
     # set blendshape nodes
-    pose_manager.blendshape_nodes = mhMesh.get_blendshape_nodes(dna_obj, calib_reader)
+    pose_manager.mesh_blendshapes = mhMesh.get_mesh_blendshapes(dna_obj, calib_reader)
 
     return pose_manager
 

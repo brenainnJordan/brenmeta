@@ -129,7 +129,7 @@ def calculate_lods(dna_obj, calib_reader, from_lod=0):
     return True
 
 
-def get_blendshape_nodes(dna_obj, reader, lod=0):
+def get_mesh_blendshapes(dna_obj, reader, lod=0):
     if lod is None:
         mesh_indices = list(range(reader.getMeshCount()))
     else:
@@ -141,7 +141,7 @@ def get_blendshape_nodes(dna_obj, reader, lod=0):
 
     meshes = dna_obj.get_meshes()
 
-    bs_nodes = []
+    mesh_blendshapes = []
 
     for mesh_index in mesh_indices:
         target_count = reader.getBlendShapeTargetCount(mesh_index)
@@ -149,10 +149,11 @@ def get_blendshape_nodes(dna_obj, reader, lod=0):
         if not target_count:
             continue
 
-        bs_node = "{}_blendShapes".format(meshes[mesh_index].name)
-        bs_nodes.append(bs_node)
+        mesh = meshes[mesh_index].name
+        bs_node = "{}_blendShapes".format(mesh)
+        mesh_blendshapes.append((mesh, bs_node))
 
-    return bs_nodes
+    return mesh_blendshapes
 
 
 def get_blendshape_deltas(dna_obj, reader, lod=0):

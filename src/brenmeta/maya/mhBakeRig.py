@@ -156,31 +156,6 @@ class BakeConfig(object):
 
         return config
 
-    # def update_poses(self, poses, combo_poses, joints_attr_defaults):
-    #     LOG.info(
-    #         "Adding additional shapes and combos from bake config: {}".format(self.file_path)
-    #     )
-    #
-    #     # create additional poses
-    #     if self.shapes:
-    #         LOG.info("Adding additional poses...")
-    #
-    #         mhCore.add_additional_poses(
-    #             poses, self.shapes, joints_attr_defaults
-    #         )
-    #
-    #     # create additional combos
-    #     if self.combos:
-    #         LOG.info("Adding additional combo poses...")
-    #
-    #         mhCore.add_additional_combo_poses(
-    #             poses, combo_poses, self.combos, joints_attr_defaults
-    #         )
-    #
-    #         mhCore.update_input_combo_poses(combo_poses)
-    #
-    #     return True
-
     def update_pose_manager(self, pose_manager):
         LOG.info(
             "Adding additional shapes and combos from bake config: {}".format(self.file_path)
@@ -201,9 +176,9 @@ class BakeConfig(object):
             pose_manager.update_input_combo_poses()
 
         # add additional blendshape nodes
-        if self.blendshape_nodes:
-            LOG.info("Adding additional blendshape nodes...")
-            pose_manager.blendshape_nodes += self.blendshape_nodes
+        if self.mesh_blendshapes:
+            LOG.info("Adding additional meshes and blendshapes...")
+            pose_manager.mesh_blendshapes += self.mesh_blendshapes
 
         return new_poses, new_combos
 

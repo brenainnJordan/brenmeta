@@ -64,6 +64,10 @@ class PosesModel(QtCore.QAbstractItemModel):
         self.pose_manager = None
         self.pose_mode = PoseMode.AllPoses
 
+    def refresh(self):
+        self.beginResetModel()
+        self.endResetModel()
+
     def set_pose_manager(self, pose_manager):
         self.beginResetModel()
         self.pose_manager = pose_manager
@@ -356,7 +360,7 @@ class PoseWidget(QtWidgets.QWidget):
         )
 
     @property
-    def pose_manager(self):
+    def pose_manager(self) -> mhCore.PoseManager:
         if not self.poses_model:
             return None
         else:
@@ -583,11 +587,6 @@ class PoseEditorWidget(QtWidgets.QFrame):
 
         self.setFrameStyle(QtWidgets.QFrame.StyledPanel | QtWidgets.QFrame.Sunken)
 
-        self._pose_manager = None
-        self.blendshape_nodes = None
-
-        self.attr_defaults = None
-
         self._resetting_scene = False
         self._updating_scene = False
 
@@ -606,8 +605,16 @@ class PoseEditorWidget(QtWidgets.QFrame):
             QtWidgets.QMessageBox.Ok
         )
 
+    @property
+    def pose_model(self):
+        return self.pose_widget.poses_model
+
     def set_pose_model(self, pose_model):
         self.pose_widget.set_pose_model(pose_model)
+
+    @property
+    def pose_manager(self):
+        return self.pose_widget.pose_manager
 
     def set_ref_poses(self, poses):
         self.pose_widget.set_ref_poses(poses)
@@ -664,7 +671,7 @@ class PoseEditorWidget(QtWidgets.QFrame):
         self.selected_scene_lyt.addWidget(self.pose_slider)
 
         self.pose_btn_lyt = QtWidgets.QHBoxLayout()
-        self.pose_btn_lyt.setContentsMargins(0,0,0,0)
+        self.pose_btn_lyt.setContentsMargins(0, 0, 0, 0)
         self.pose_btn_lyt.setSpacing(0)
 
         self.pose_btn_lyt.addWidget(self.pose_off_btn)
@@ -739,20 +746,8 @@ class PoseEditorWidget(QtWidgets.QFrame):
 
         # blendshapes
 
-
-
     def context_menu_handler(self, position):
-        '''
-        Get information about what items are selected.
-        Then show the appropriate context menu.
-        '''
-        # nodes = self.get_selected_nodes()
-        #
-        # self.view_menu.set_context(nodes)
-
-        # call menu
         self.view_menu.exec_(self.pose_widget.view.mapToGlobal(position))
-
         return True
 
     def _match_mode_changed(self):
@@ -770,35 +765,11 @@ class PoseEditorWidget(QtWidgets.QFrame):
         if self._resetting_scene or self._updating_scene:
             return False
 
-        if not self.attr_defaults:
-            return False
-
         self._resetting_scene = True
 
         try:
-            # reset joints to defaults
-            for attr, value in self.attr_defaults.items():
-                if not cmds.objExists(attr):
-                    continue
-
-                if value is None:
-                    continue
-
-                try:
-                    cmds.setAttr(attr, value)
-                except RuntimeError as err:
-                    LOG.warning("failed to reset joint attr: {}".format(attr))
-                    continue
-
-            # reset blendshape targets
-            for blendshape_node in self.blendshape_nodes:
-                if not cmds.objExists(blendshape_node):
-                    continue
-
-                targets = mhBlendshape.get_blendshape_weight_aliases(blendshape_node)
-
-                for target in targets:
-                    cmds.setAttr("{}.{}".format(blendshape_node, target), 0.0)
+            self.pose_manager.reset_joints()
+            self.pose_manager.reset_blendshape_targets()
 
             self.pose_slider.setValue(0)
             self.pose_value_widget.setValue(0.0)
@@ -836,7 +807,7 @@ class PoseEditorWidget(QtWidgets.QFrame):
             pose = self.get_selected_poses(warn=True, as_combo=True)
 
             pose.pose_joints(blend=blend)
-            pose.activate_targets(self.blendshape_nodes, blend=blend)
+            pose.activate_targets(blend=blend)
 
             # update widgets
             self.pose_slider.setValue(int(blend * 100))
@@ -933,3 +904,86 @@ class PoseEditorWidget(QtWidgets.QFrame):
 
     def refresh(self):
         self.pose_widget.refresh()
+
+
+class MeshBlendshapesModel(QtCore.QAbstractItemModel):
+    HEADERS = ["mesh", "blendshape"]
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+
+        self.pose_manager = None
+
+    def refresh(self):
+        self.beginResetModel()
+        self.endResetModel()
+
+    def set_pose_manager(self, pose_manager):
+        self.beginResetModel()
+        self.pose_manager = pose_manager
+        self.endResetModel()
+
+    def columnCount(self, parent=QtCore.QModelIndex()):
+        return len(self.HEADERS)
+
+    def headerData(self, section, orientation, role):
+        if role in [QtCore.Qt.DisplayRole, QtCore.Qt.EditRole]:
+            if orientation == QtCore.Qt.Horizontal:
+                if section < len(self.HEADERS):
+                    return self.HEADERS[section]
+
+        return super().headerData(section, orientation, role)
+
+    def rowCount(self, parent=QtCore.QModelIndex()):
+        if not self.pose_manager:
+            return 0
+
+        if parent.isValid():
+            return 0
+        else:
+            return len(self.pose_manager.mesh_blendshapes)
+
+    def index(self, row, column, parent=QtCore.QModelIndex()):
+        if not self.pose_manager:
+            return QtCore.QModelIndex()
+
+        if parent.isValid():
+            return QtCore.QModelIndex()
+
+        return self.createIndex(row, column, None)
+
+    def data(self, index, role=QtCore.Qt.DisplayRole):
+        if not index.isValid() or not self.pose_manager:
+            return None
+
+        if role in [QtCore.Qt.DisplayRole, QtCore.Qt.EditRole]:
+            return self.pose_manager.mesh_blendshapes[index.row()][index.column()]
+
+        return None
+
+    def setData(self, index, value, role=QtCore.Qt.EditRole):
+        if not index.isValid() or not self.pose_manager:
+            return False
+
+        pose = index.internalPointer()
+
+        if role == QtCore.Qt.EditRole:
+            self.pose_manager.mesh_blendshapes[index.row()][index.column()] = value
+
+        return False
+
+    def parent(self, index):
+        return QtCore.QModelIndex()
+
+    def flags(self, index):
+        if not self.pose_manager:
+            return QtCore.Qt.NoItemFlags
+
+        flags = QtCore.Qt.ItemFlags()
+
+        # set as appropriate
+        flags = flags | QtCore.Qt.ItemIsEnabled
+        flags = flags | QtCore.Qt.ItemIsSelectable
+        flags = flags | QtCore.Qt.ItemIsEditable
+
+        return flags

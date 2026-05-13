@@ -1095,12 +1095,18 @@ class PosesTab(Tab):
             self.refresh_action.triggered.connect(self._refresh)
             self.addAction(self.refresh_action)
 
+            # TODO!
+            self.reset_action = QtWidgets.QAction(empty_icon, 'reset', self)
+            self.reset_action.setStatusTip('reset data')
+            # self.reset_action.triggered.connect(self._reset)
+            self.addAction(self.reset_action)
+
         def _import(self):
             dialog = PosesTab.ImportDialog(
                 self.parent().project, parent=self.parent()
             )
 
-            dialog.exec_()
+            dialog.open()
 
         def _export(self):
             # check we have data loaded
@@ -1118,7 +1124,7 @@ class PosesTab(Tab):
                 self.parent().project, parent=self.parent()
             )
 
-            dialog.exec_()
+            dialog.open()
 
         def _refresh(self):
             self.parent().refresh()
@@ -1139,24 +1145,14 @@ class PosesTab(Tab):
 
             self.bake_config_checkbox = QtWidgets.QCheckBox("include bake config")
 
-            self.load_btn = QtWidgets.QPushButton("load")
-            self.load_btn.clicked.connect(self.load)
-
-            self.cancel_btn = QtWidgets.QPushButton("cancel")
-            self.cancel_btn.clicked.connect(self.reject)
-
-            self.btn_lyt = QtWidgets.QHBoxLayout()
-            self.btn_lyt.addWidget(self.load_btn)
-            self.btn_lyt.addWidget(self.cancel_btn)
-
             lyt = QtWidgets.QVBoxLayout()
             lyt.addWidget(self.dna_file_combo)
             lyt.addWidget(self.bake_config_checkbox)
-            lyt.addLayout(self.btn_lyt)
-
             self.setLayout(lyt)
 
-        def load(self):
+            self.add_accept_reject_buttons(accept="load")
+
+        def do_action(self):
             dna_path = self.dna_file_combo.get_path()
 
             # check we have paths
@@ -1184,17 +1180,15 @@ class PosesTab(Tab):
             )
 
             if confirm is QtWidgets.QMessageBox.Cancel:
-                return None
+                return False
 
             # load dna and get poses
-            self.project.pose_manager = mhBehaviour.load_poses_from_dna(dna_path)
+            mhBehaviour.load_poses_from_dna(dna_path, pose_manager=self.project.pose_manager)
 
             if use_bake_config:
                 bake_config = mhBakeRig.BakeConfig.load(self.project.bake_config_path)
 
                 bake_config.update_pose_manager(self.project.pose_manager)
-
-            self.parent().refresh()
 
             QtWidgets.QMessageBox.information(
                 self,
@@ -1203,7 +1197,7 @@ class PosesTab(Tab):
                 QtWidgets.QMessageBox.Ok
             )
 
-            self.accept()
+            self.parent().refresh()
 
             return True
 
@@ -1226,24 +1220,15 @@ class PosesTab(Tab):
             self.output_dna_combo.combo.setCurrentIndex(1)
             self.output_dna_combo.refresh()
 
-            self.export_btn = QtWidgets.QPushButton("export")
-            self.export_btn.clicked.connect(self.save)
-
-            self.cancel_btn = QtWidgets.QPushButton("cancel")
-            self.cancel_btn.clicked.connect(self.reject)
-
-            self.btn_lyt = QtWidgets.QHBoxLayout()
-            self.btn_lyt.addWidget(self.export_btn)
-            self.btn_lyt.addWidget(self.cancel_btn)
-
             lyt = QtWidgets.QVBoxLayout()
             lyt.addWidget(self.input_dna_combo)
             lyt.addWidget(self.output_dna_combo)
-            lyt.addLayout(self.btn_lyt)
 
             self.setLayout(lyt)
 
-        def save(self):
+            self.add_accept_reject_buttons(accept="Export")
+
+        def do_action(self):
             # TODO support writing new poses to dna
             input_dna_path = self.input_dna_combo.get_path()
             output_dna_path = self.output_dna_combo.get_path()
@@ -1257,7 +1242,7 @@ class PosesTab(Tab):
                     QtWidgets.QMessageBox.Ok
                 )
 
-                return
+                return False
 
             if not output_dna_path:
                 QtWidgets.QMessageBox.critical(
@@ -1267,7 +1252,7 @@ class PosesTab(Tab):
                     QtWidgets.QMessageBox.Ok
                 )
 
-                return
+                return False
 
             # confirm
             confirm = QtWidgets.QMessageBox.warning(
@@ -1278,7 +1263,7 @@ class PosesTab(Tab):
             )
 
             if confirm is QtWidgets.QMessageBox.Cancel:
-                return
+                return False
 
             # read dna file to update
             reader = mhUtils.load_dna(input_dna_path)
@@ -1299,6 +1284,7 @@ class PosesTab(Tab):
                     status,
                     QtWidgets.QMessageBox.Ok
                 )
+                return False
             else:
                 QtWidgets.QMessageBox.information(
                     self,
@@ -1306,17 +1292,10 @@ class PosesTab(Tab):
                     "Dna file exported:\n{}".format(output_dna_path),
                     QtWidgets.QMessageBox.Ok
                 )
-
-                self.accept()
-
-            return True
+                return True
 
     def __init__(self, project, parent=None):
         super(PosesTab, self).__init__(project, parent=parent)
-
-        self.bs_nodes = None
-
-        # self.pose_manager = None
 
         self._create_menus()
         self._create_widgets()
@@ -1335,6 +1314,7 @@ class PosesTab(Tab):
     def _create_widgets(self):
         # pose model
         self.pose_model = mhPoseWidgets.PosesModel()
+        self.pose_model.set_pose_manager(self.project.pose_manager)
 
         # tabs
         self.tabs = QtWidgets.QTabWidget()
@@ -1345,16 +1325,20 @@ class PosesTab(Tab):
 
         self.configure_widget.setLayout(self.configure_lyt)
 
-        self.blendshapes_group_box = QtWidgets.QGroupBox("Blendshape nodes")
+        # mesh blendshapes
+        self.mesh_bs_group_box = QtWidgets.QGroupBox("Meshes and Blendshapes")
 
-        self.blendshapes_lyt = QtWidgets.QVBoxLayout()
-        self.blendshapes_group_box.setLayout(self.blendshapes_lyt)
+        self.mesh_bs_model = mhPoseWidgets.MeshBlendshapesModel()
+        self.mesh_bs_model.set_pose_manager(self.project.pose_manager)
 
-        self.blendshapes_label = QtWidgets.QLabel()
-        self.blendshapes_label.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse)
-        self.blendshapes_label.setFrameStyle(QtWidgets.QFrame.Panel | QtWidgets.QFrame.Sunken)
+        self.mesh_bs_lyt = QtWidgets.QVBoxLayout()
+        self.mesh_bs_group_box.setLayout(self.mesh_bs_lyt)
 
-        self.blendshapes_lyt.addWidget(self.blendshapes_label)
+        self.mesh_bs_view = QtWidgets.QTreeView()
+        self.mesh_bs_view.setModel(self.mesh_bs_model)
+        self.mesh_bs_view.header().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
+
+        self.mesh_bs_lyt.addWidget(self.mesh_bs_view)
 
         # poses
         self.pose_widget = mhPoseWidgets.PoseWidget(
@@ -1365,7 +1349,7 @@ class PosesTab(Tab):
         self.pose_widget.set_pose_model(self.pose_model)
 
         # layout
-        self.configure_lyt.addWidget(self.blendshapes_group_box)
+        self.configure_lyt.addWidget(self.mesh_bs_group_box)
         self.configure_lyt.addWidget(self.pose_widget)
         # self.configure_lyt.addStretch()
 
@@ -1397,14 +1381,6 @@ class PosesTab(Tab):
         # main layout
         self.setCentralWidget(self.tabs)
 
-        # lyt = QtWidgets.QVBoxLayout()
-
-        # lyt.addLayout(self.input_lyt)
-        # lyt.addWidget(self.tabs)
-        # lyt.addWidget(self.save_btn)
-
-        # self.centralWidget().setLayout(lyt)
-
         self.core_poses_widget.pose_widget.SELECTION_CHANGED.connect(self.core_selection_changed)
         self.combo_poses_widget.pose_widget.SELECTION_CHANGED.connect(self.combo_selection_changed)
 
@@ -1417,32 +1393,11 @@ class PosesTab(Tab):
         self.core_poses_widget.set_ref_poses(poses)
 
     def refresh(self):
-        # self.dna_file_combo.refresh()
-
-        self.blendshapes_label.setText("")
-
-        if self.project.pose_manager:
-            if self.project.pose_manager.blendshape_nodes:
-                self.blendshapes_label.setText("\n" + "\n".join(self.project.pose_manager.blendshape_nodes) + "\n")
-
-            self.core_poses_widget.blendshape_nodes = self.project.pose_manager.blendshape_nodes
-            self.combo_poses_widget.blendshape_nodes = self.project.pose_manager.blendshape_nodes
-
-            self.pose_model.set_pose_manager(self.project.pose_manager)
-
-            # self.core_poses_widget.set_pose_manager(self.pose_manager)
-            # self.combo_poses_widget.set_pose_manager(self.pose_manager)
-
-            self.core_poses_widget.attr_defaults = self.project.pose_manager.attr_defaults
-            self.combo_poses_widget.attr_defaults = self.project.pose_manager.attr_defaults
-        else:
-            # TODO
-            pass
-
+        self.mesh_bs_model.refresh()
+        self.pose_model.refresh()
         self.core_poses_widget.refresh()
         self.combo_poses_widget.refresh()
         self.pose_widget.refresh()
-
         return True
 
     def init_blendshapes(self):
@@ -1481,6 +1436,7 @@ class PosesTab(Tab):
         self.project.pose_manager.find_opposites("L", "R", ends_with=True)
         self.refresh()
 
+
 class ConnectControlBoardsDialog(Dialog):
     def __init__(self, project, parent=None):
         super().__init__(project, parent=parent)
@@ -1509,6 +1465,7 @@ class ConnectControlBoardsDialog(Dialog):
         src_namespace = self.src_namespace_edit.line_edit.text()
         dst_namespace = self.dst_namespace_edit.line_edit.text()
         return mhAnimUtils.connect_control_boards(src_namespace, dst_namespace)
+
 
 class DisconnectControlBoardsDialog(Dialog):
     def __init__(self, project, parent=None):
@@ -2725,7 +2682,6 @@ class DnaModWidget(QtWidgets.QMainWindow):
             )
 
             dialog.show()
-
 
     def __init__(self, parent=None):
         super(DnaModWidget, self).__init__(parent=parent)
