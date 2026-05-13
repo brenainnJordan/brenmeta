@@ -18,6 +18,7 @@
 """General reusable widgets"""
 
 import json
+import traceback
 
 from maya import cmds
 from maya import OpenMayaUI
@@ -28,6 +29,9 @@ from Qt import QtWidgets
 from Qt import QtGui
 
 from brenmeta.core import mhCore
+from brenmeta.maya import mhMayaUtils
+
+LOG = mhCore.get_basic_logger(__name__)
 
 
 def error(parent, err):
@@ -289,24 +293,25 @@ class LabelledNamespaceLineEdit(QtWidgets.QWidget):
         self.lyt.setContentsMargins(0, 0, 0, 0)
         self.lyt.setSpacing(0)
 
-        self.set_btn.clicked.connect(self.set_clicked)
+        self.set_btn.clicked.connect(self.set_from_selected)
 
     @property
     def node(self):
         return self.line_edit.text()
 
-    def set_clicked(self):
+    def set_from_selected(self, index=0):
         self.line_edit.setText("")
 
-        nodes = cmds.ls(sl=True)
+        namespaces = mhMayaUtils.get_selected_namespaces()
 
-        if not nodes:
+        if not namespaces:
             return
 
-        if ":" not in nodes[0]:
-            return
+        if index < len(namespaces):
+            namespace = namespaces[index]
 
-        self.line_edit.setText(nodes[0].split(":")[0])
+            if namespace:
+                self.line_edit.setText(namespace)
 
         return
 

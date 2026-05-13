@@ -64,10 +64,10 @@ LOG = mhCore.get_basic_logger(__name__)
 DEFAULT_DNA_DATA_DIR = mhSrc.get_dna_data_dir()
 
 
-class DnaTab(QtWidgets.QMainWindow):
+class Tab(QtWidgets.QMainWindow):
 
     def __init__(self, project, parent=None):
-        super(DnaTab, self).__init__(parent=parent)
+        super().__init__(parent=parent)
         self._project = project
         self.setCentralWidget(QtWidgets.QWidget())
 
@@ -76,28 +76,58 @@ class DnaTab(QtWidgets.QMainWindow):
         return self._project
 
     def error(self, err):
-        # TODO traceback
-
-        print(traceback.format_exc())
-
-        LOG.critical(str(err))
-
-        QtWidgets.QMessageBox.critical(
-            self,
-            "Error",
-            str(err),
-            QtWidgets.QMessageBox.Ok
-        )
+        mhWidgets.error(self, err)
 
     def refresh(self):
         pass
 
 
-class ProjectWidget(DnaTab):
+class Dialog(QtWidgets.QDialog):
+    def __init__(self, project, parent=None):
+        super().__init__(parent=parent)
+
+        self._project = project
+
+    @property
+    def project(self) -> mhCore.Project:
+        return self._project
+
+    def error(self, err):
+        mhWidgets.error(self, err)
+
+    def add_accept_reject_buttons(self, accept="OK", reject="Cancel"):
+        self.btn_lyt = QtWidgets.QHBoxLayout()
+
+        self.accept_btn = QtWidgets.QPushButton(accept)
+        self.accept_btn.clicked.connect(self.accept)
+
+        self.cancel_btn = QtWidgets.QPushButton(reject)
+        self.cancel_btn.clicked.connect(self.reject)
+
+        self.btn_lyt.addWidget(self.accept_btn)
+        self.btn_lyt.addWidget(self.cancel_btn)
+
+        self.layout().addLayout(self.btn_lyt)
+
+    def do_action(self):
+        return True
+
+    def accept(self):
+        try:
+            result = self.do_action()
+
+            if result:
+                super().accept()
+
+        except Exception as err:
+            self.error(err)
+
+
+class ProjectWidget(Tab):
     PATHS_CHANGED = QtCore.Signal()
 
     def __init__(self, project, parent=None):
-        super(ProjectWidget, self).__init__(project, parent=parent)
+        super().__init__(project, parent=parent)
 
         self.is_refreshing = False
 
@@ -150,7 +180,7 @@ class ProjectWidget(DnaTab):
         self.is_refreshing = False
 
 
-class DnaTransferWidget(DnaTab):
+class DnaTransferWidget(Tab):
     class UtilsMenu(QtWidgets.QMenu):
         def __init__(self, parent=None):
             super().__init__(parent=parent)
@@ -676,7 +706,7 @@ Mesh count: {mesh_count}
         self.centralWidget().setLayout(self.lyt)
 
 
-class DnaBuildWidget(DnaTab):
+class DnaBuildWidget(Tab):
     class DnaMenu(QtWidgets.QMenu):
         def __init__(self, parent=None):
             super().__init__(parent=parent)
@@ -1027,7 +1057,7 @@ class DnaBuildWidget(DnaTab):
         return True
 
 
-class PosesTab(DnaTab):
+class PosesTab(Tab):
     class UtilsMenu(QtWidgets.QMenu):
         def __init__(self, parent=None):
             super().__init__(parent=parent)
@@ -1093,20 +1123,15 @@ class PosesTab(DnaTab):
         def _refresh(self):
             self.parent().refresh()
 
-
-    class ImportDialog(QtWidgets.QDialog):
+    class ImportDialog(Dialog):
         def __init__(self, project, parent=None):
-            super().__init__(parent=parent)
+            super().__init__(project, parent=parent)
 
             self.setWindowTitle("Import dna")
 
-            self.project = project
             self.create_widgets()
 
             self.resize(600, 100)
-
-        def error(self, err):
-            mhWidgets.error(self, err)
 
         def create_widgets(self):
             self.dna_file_combo = mhWidgets.DnaPathManagerWidget(self.project, "dna file")
@@ -1182,19 +1207,15 @@ class PosesTab(DnaTab):
 
             return True
 
-    class ExportDialog(QtWidgets.QDialog):
+    class ExportDialog(Dialog):
         def __init__(self, project, parent=None):
-            super().__init__(parent=parent)
+            super().__init__(project, parent=parent)
 
             self.setWindowTitle("Export dna")
 
-            self.project = project
             self.create_widgets()
 
             self.resize(600, 100)
-
-        def error(self, err):
-            mhWidgets.error(self, err)
 
         def create_widgets(self):
             self.input_dna_combo = mhWidgets.DnaPathManagerWidget(self.project, "input dna file")
@@ -1460,47 +1481,82 @@ class PosesTab(DnaTab):
         self.project.pose_manager.find_opposites("L", "R", ends_with=True)
         self.refresh()
 
-
-class DnaQCWidget(DnaTab):
+class ConnectControlBoardsDialog(Dialog):
     def __init__(self, project, parent=None):
-        super(DnaQCWidget, self).__init__(project, parent=parent)
+        super().__init__(project, parent=parent)
 
-        self.dna_obj = None
-        self.calib_reader = None
+        self.setWindowTitle("Connect control boards")
+
+        self.resize(500, 100)
 
         self.create_widgets()
 
-    def refresh(self):
-        self.dna_file_combo.refresh()
+    def create_widgets(self):
+        self.src_namespace_edit = mhWidgets.LabelledNamespaceLineEdit("Src Namespace")
+        self.src_namespace_edit.set_from_selected()
+
+        self.dst_namespace_edit = mhWidgets.LabelledNamespaceLineEdit("Dst Namespace")
+        self.dst_namespace_edit.set_from_selected(index=1)
+
+        lyt = QtWidgets.QVBoxLayout()
+        lyt.addWidget(self.src_namespace_edit)
+        lyt.addWidget(self.dst_namespace_edit)
+
+        self.setLayout(lyt)
+        self.add_accept_reject_buttons(accept="Connect")
+
+    def do_action(self):
+        src_namespace = self.src_namespace_edit.line_edit.text()
+        dst_namespace = self.dst_namespace_edit.line_edit.text()
+        return mhAnimUtils.connect_control_boards(src_namespace, dst_namespace)
+
+class DisconnectControlBoardsDialog(Dialog):
+    def __init__(self, project, parent=None):
+        super().__init__(project, parent=parent)
+
+        self.setWindowTitle("Disconnect control boards")
+
+        self.resize(500, 100)
+
+        self.create_widgets()
 
     def create_widgets(self):
-        # utils
-        self.utils_box = QtWidgets.QGroupBox("Utils")
-        self.namespace_edit = mhWidgets.LabelledNamespaceLineEdit("Namespace")
         self.src_namespace_edit = mhWidgets.LabelledNamespaceLineEdit("Src Namespace")
+        self.src_namespace_edit.set_from_selected()
 
-        self.reset_anim_btn = QtWidgets.QPushButton("reset anim")
-        self.reset_anim_btn.clicked.connect(self._reset_anim_clicked)
+        self.dst_namespace_edit = mhWidgets.LabelledNamespaceLineEdit("Dst Namespace")
+        self.dst_namespace_edit.set_from_selected(index=1)
 
-        self.connect_btn = QtWidgets.QPushButton("connect control boards")
-        self.connect_btn.clicked.connect(self._connect_clicked)
+        lyt = QtWidgets.QVBoxLayout()
+        lyt.addWidget(self.src_namespace_edit)
+        lyt.addWidget(self.dst_namespace_edit)
 
-        self.disconnect_btn = QtWidgets.QPushButton("disconnect control boards")
-        self.disconnect_btn.clicked.connect(self._disconnect_clicked)
+        self.setLayout(lyt)
+        self.add_accept_reject_buttons(accept="Disconnect")
 
-        utils_lyt = QtWidgets.QVBoxLayout()
-        self.utils_box.setLayout(utils_lyt)
+    def do_action(self):
+        src_namespace = self.src_namespace_edit.line_edit.text()
+        dst_namespace = self.dst_namespace_edit.line_edit.text()
+        return mhAnimUtils.disconnect_control_boards(src_namespace, dst_namespace)
 
-        utils_lyt.addWidget(self.namespace_edit)
-        utils_lyt.addWidget(self.src_namespace_edit)
-        utils_lyt.addWidget(self.reset_anim_btn)
-        utils_lyt.addWidget(self.connect_btn)
-        utils_lyt.addWidget(self.disconnect_btn)
 
-        # Create tech ROM
-        self.tech_rom_box = QtWidgets.QGroupBox("Technical ROM")
+class TechRomDialog(Dialog):
+    def __init__(self, project, parent=None):
+        super().__init__(project, parent=parent)
 
+        self.setWindowTitle("Create tech ROM")
+
+        self.resize(500, 300)
+
+        self.create_widgets()
+
+    def create_widgets(self):
         self.dna_file_combo = mhWidgets.DnaPathManagerWidget(self.project, "dna file")
+        self.dna_file_combo.refresh()
+
+        self.namespace_edit = mhWidgets.LabelledNamespaceLineEdit("Namespace")
+        self.namespace_edit.set_from_selected()
+
         self.start_spin = mhWidgets.LabelledSpinBox("Start Frame", default=0, maximum=10000)
         self.frame_interval = mhWidgets.LabelledSpinBox("Frame Interval", default=10, maximum=100)
         self.update_timeline_checkbox = QtWidgets.QCheckBox("Update Timeline")
@@ -1516,69 +1572,41 @@ class DnaQCWidget(DnaTab):
         self.combine_lr_checkbox.setChecked(True)
         self.annotate_checkbox.setChecked(True)
 
-        self.create_btn = QtWidgets.QPushButton("Create Tech ROM")
-        self.create_btn.clicked.connect(self._create_rom_clicked)
-
-        tech_rom_lyt = QtWidgets.QVBoxLayout()
-        self.tech_rom_box.setLayout(tech_rom_lyt)
-
-        tech_rom_lyt.addWidget(self.dna_file_combo)
-        tech_rom_lyt.addWidget(self.start_spin)
-        tech_rom_lyt.addWidget(self.frame_interval)
-        tech_rom_lyt.addWidget(self.update_timeline_checkbox)
-        tech_rom_lyt.addWidget(self.combos_checkbox)
-        tech_rom_lyt.addWidget(self.use_bake_config_checkbox)
-        tech_rom_lyt.addWidget(self.combine_lr_checkbox)
-        tech_rom_lyt.addWidget(self.annotate_checkbox)
-        tech_rom_lyt.addWidget(self.selected_sculpts_checkbox)
-        tech_rom_lyt.addWidget(self.create_btn)
-
-        # Create eye ROM
-        # TODO
-        self.eye_rom_box = QtWidgets.QGroupBox("eye technical ROM")
-
-        self.eye_start_spin = mhWidgets.LabelledSpinBox("Start Frame", default=0, maximum=10000)
-        self.eye_frame_interval = mhWidgets.LabelledSpinBox("Frame Interval", default=10, maximum=100)
-        self.eye_update_timeline_checkbox = QtWidgets.QCheckBox("Update Timeline")
-
-        self.eye_update_timeline_checkbox.setChecked(True)
-
-        self.eye_create_btn = QtWidgets.QPushButton("Create eye ROM")
-        self.eye_create_btn.clicked.connect(self._create_rom_clicked)
-
-        eye_rom_lyt = QtWidgets.QVBoxLayout()
-        self.eye_rom_box.setLayout(eye_rom_lyt)
-
-        eye_rom_lyt.addWidget(self.eye_create_btn)
-
-        # main layout
         lyt = QtWidgets.QVBoxLayout()
-        self.centralWidget().setLayout(lyt)
+        self.setLayout(lyt)
 
-        lyt.addWidget(self.utils_box)
-        lyt.addWidget(self.tech_rom_box)
-        lyt.addStretch()
+        lyt.addWidget(self.dna_file_combo)
+        lyt.addWidget(self.namespace_edit)
+        lyt.addWidget(self.start_spin)
+        lyt.addWidget(self.frame_interval)
+        lyt.addWidget(self.update_timeline_checkbox)
+        lyt.addWidget(self.combos_checkbox)
+        lyt.addWidget(self.use_bake_config_checkbox)
+        lyt.addWidget(self.combine_lr_checkbox)
+        lyt.addWidget(self.annotate_checkbox)
+        lyt.addWidget(self.selected_sculpts_checkbox)
 
-    def _reset_anim_clicked(self):
-        namespace = self.namespace_edit.line_edit.text()
-        mhAnimUtils.reset_control_board_anim(namespace=namespace)
+        self.add_accept_reject_buttons(accept="Create tech ROM")
 
-    def _connect_clicked(self):
-        src_namespace = self.src_namespace_edit.line_edit.text()
-        dst_namespace = self.namespace_edit.line_edit.text()
-        mhAnimUtils.connect_control_boards(src_namespace, dst_namespace)
+        # # Create eye ROM
+        # # TODO
+        # self.eye_rom_box = QtWidgets.QGroupBox("eye technical ROM")
+        #
+        # self.eye_start_spin = mhWidgets.LabelledSpinBox("Start Frame", default=0, maximum=10000)
+        # self.eye_frame_interval = mhWidgets.LabelledSpinBox("Frame Interval", default=10, maximum=100)
+        # self.eye_update_timeline_checkbox = QtWidgets.QCheckBox("Update Timeline")
+        #
+        # self.eye_update_timeline_checkbox.setChecked(True)
+        #
+        # self.eye_create_btn = QtWidgets.QPushButton("Create eye ROM")
+        # self.eye_create_btn.clicked.connect(self._create_rom_clicked)
+        #
+        # eye_rom_lyt = QtWidgets.QVBoxLayout()
+        # self.eye_rom_box.setLayout(eye_rom_lyt)
+        #
+        # eye_rom_lyt.addWidget(self.eye_create_btn)
 
-    def _disconnect_clicked(self):
-        src_namespace = self.src_namespace_edit.line_edit.text()
-        dst_namespace = self.namespace_edit.line_edit.text()
-        mhAnimUtils.disconnect_control_boards(src_namespace, dst_namespace)
-
-    def _create_rom_clicked(self):
-        try:
-            mhSrc.validate_plugin()
-        except mhCore.MHError as err:
-            self.error(err)
-            return False
+    def do_action(self):
 
         namespace = self.namespace_edit.line_edit.text()
         update_timeline = self.update_timeline_checkbox.isChecked()
@@ -1602,17 +1630,15 @@ class DnaQCWidget(DnaTab):
             # get combos from dna file and map to controls
             dna_path = self.dna_file_combo.get_path()
 
+            if not dna_path:
+                self.error("No Dna path specified")
+                return False
+
             if not os.path.exists(dna_path):
                 self.error("Dna path not found: {}".format(dna_path))
                 return False
 
             LOG.info("Loading dna: {}".format(dna_path))
-            # reader = mhUtils.load_dna(dna_path)
-            # calib_reader = dnacalib2.DNACalibDNAReader(reader)
-            #
-            # poses = mhBehaviour.get_all_poses(calib_reader)
-            # psd_poses = mhBehaviour.get_psd_poses(calib_reader, poses)
-            # joints_attr_defaults = mhBehaviour.get_joint_defaults(calib_reader)
 
             pose_manager = mhBehaviour.load_poses_from_dna(dna_path)
 
@@ -1663,13 +1689,12 @@ class DnaQCWidget(DnaTab):
         return True
 
 
-class DnaMergeDialog(QtWidgets.QDialog):
+class DnaMergeDialog(Dialog):
     def __init__(self, project, parent=None):
-        super(DnaMergeDialog, self).__init__(parent=parent)
+        super().__init__(project, parent=parent)
 
         self.setWindowTitle("Merge DNA files")
 
-        self.project = project
         self.create_widgets()
 
         self.resize(600, 300)
@@ -1724,9 +1749,6 @@ class DnaMergeDialog(QtWidgets.QDialog):
         lyt.addLayout(self.btn_lyt)
 
         # lyt.addStretch()
-
-    def error(self, err):
-        mhWidgets.error(self, err)
 
     def _merge_clicked(self):
 
@@ -1821,7 +1843,7 @@ class DnaMergeDialog(QtWidgets.QDialog):
         return True
 
 
-class DnaBakeRigWidget(DnaTab):
+class DnaBakeRigWidget(Tab):
     class UtilsMenu(QtWidgets.QMenu):
         def __init__(self, parent=None):
             super().__init__(parent=parent)
@@ -2317,7 +2339,7 @@ class DnaBakeRigWidget(DnaTab):
         return True
 
 
-class DnaSculptWidget(DnaTab):
+class DnaSculptWidget(Tab):
     def __init__(self, project, parent=None):
         super(DnaSculptWidget, self).__init__(project, parent=parent)
 
@@ -2655,14 +2677,55 @@ class DnaModWidget(QtWidgets.QMainWindow):
             self.merge_action.triggered.connect(self._merge)
             self.addAction(self.merge_action)
 
-            self.addSeparator()
+            self.addSection("animation")
+
+            self.tech_rom_action = QtWidgets.QAction(file_icon, 'Create Tech ROM', self)
+            self.tech_rom_action.triggered.connect(self._tech_rom)
+            self.addAction(self.tech_rom_action)
+
+            self.reset_anim_action = QtWidgets.QAction(file_icon, 'Reset anim', self)
+            self.reset_anim_action.triggered.connect(self._reset_anim)
+            self.addAction(self.reset_anim_action)
+
+            self.connect_boards_action = QtWidgets.QAction(file_icon, 'Connect control boards', self)
+            self.connect_boards_action.triggered.connect(self._connect_control_boards)
+            self.addAction(self.connect_boards_action)
+
+            self.disconnect_boards_action = QtWidgets.QAction(file_icon, 'Disconnect control boards', self)
+            self.disconnect_boards_action.triggered.connect(self._disconnect_control_boards)
+            self.addAction(self.disconnect_boards_action)
 
         def _merge(self):
             dialog = DnaMergeDialog(
                 self.parent().project, parent=self.parent()
             )
 
-            dialog.exec_()
+            dialog.open()
+
+        def _tech_rom(self):
+            dialog = TechRomDialog(
+                self.parent().project, parent=self.parent()
+            )
+
+            dialog.show()
+
+        def _reset_anim(self):
+            mhAnimUtils.reset_control_board_anim_sl()
+
+        def _connect_control_boards(self):
+            dialog = ConnectControlBoardsDialog(
+                self.parent().project, parent=self.parent()
+            )
+
+            dialog.show()
+
+        def _disconnect_control_boards(self):
+            dialog = DisconnectControlBoardsDialog(
+                self.parent().project, parent=self.parent()
+            )
+
+            dialog.show()
+
 
     def __init__(self, parent=None):
         super(DnaModWidget, self).__init__(parent=parent)
@@ -2693,20 +2756,16 @@ class DnaModWidget(QtWidgets.QMainWindow):
         self.project_widget = ProjectWidget(self.project)
         self.build_widget = DnaBuildWidget(self.project)
         self.transfer_widget = DnaTransferWidget(self.project)
-        # self.merge_widget = DnaMergeDialog(self.project)
         self.poses_widget = PosesTab(self.project)
         self.shape_bake_widget = DnaBakeRigWidget(self.project)
         self.sculpt_widget = DnaSculptWidget(self.project)
-        self.qc_widget = DnaQCWidget(self.project)
 
         self.tabs.addTab(self.project_widget, "project")
         self.tabs.addTab(self.build_widget, "build")
         self.tabs.addTab(self.transfer_widget, "transfer")
-        # self.tabs.addTab(self.merge_widget, "merge")
         self.tabs.addTab(self.poses_widget, "poses")
         self.tabs.addTab(self.shape_bake_widget, "bake")
         self.tabs.addTab(self.sculpt_widget, "sculpt")
-        self.tabs.addTab(self.qc_widget, "QC")
 
         self.project_widget.PATHS_CHANGED.connect(self.refresh)
 
@@ -2720,11 +2779,9 @@ class DnaModWidget(QtWidgets.QMainWindow):
             self.project_widget,
             self.build_widget,
             self.transfer_widget,
-            # self.merge_widget,
             self.poses_widget,
             self.shape_bake_widget,
             self.sculpt_widget,
-            self.qc_widget,
         ]:
             widget.refresh()
 

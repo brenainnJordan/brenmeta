@@ -790,6 +790,7 @@ def get_all_parents(transform, parents=None):
 
     return parents
 
+
 def transfer_skin(src_mesh, dst_mesh):
     # get skin cluster
     src_skin = find_related_skin_cluster(src_mesh)
@@ -834,3 +835,20 @@ def transfer_skin(src_mesh, dst_mesh):
     )
 
     return True
+
+
+def get_selected_namespaces():
+    nodes = cmds.ls(sl=True)
+
+    if not nodes:
+        return None
+
+    namespaces = []
+
+    for node in nodes:
+        if ":" not in node:
+            namespaces.append(None)
+        else:
+            namespaces.append(node.split(":")[0])
+
+    return namespaces

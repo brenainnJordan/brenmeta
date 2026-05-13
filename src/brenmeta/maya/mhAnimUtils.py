@@ -194,6 +194,14 @@ def reset_control_board_anim(namespace=None):
 
     return True
 
+def reset_control_board_anim_sl():
+    namespaces = mhMayaUtils.get_selected_namespaces()
+
+    if namespaces:
+        for namespace in namespaces:
+            reset_control_board_anim(namespace=namespace)
+    else:
+        reset_control_board_anim()
 
 def map_expressions_to_controls(tongue=False, eyelashes=False, head_turn=False, namespace=None):
     """Parse expression set driven keys and return dict mapping to driver controls and values
