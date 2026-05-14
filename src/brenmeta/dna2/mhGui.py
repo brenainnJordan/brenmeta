@@ -31,6 +31,8 @@ from Qt import QtCore
 from Qt import QtWidgets
 from Qt import QtGui
 
+from brenmeta.core import mhProject
+
 try:
     from shiboken2 import wrapInstance  # Maya with PySide2
 except ImportError:
@@ -1681,7 +1683,7 @@ class DnaMergeDialog(mhWidgets.Dialog):
             mhMesh.calculate_lods(dst_dna_obj, dst_calib_reader)
 
         if self.poses_checkbox.isChecked():
-            pose_manager = mhCore.PoseManager()
+            pose_manager = mhProject.PoseManager()
             poses = mhBehaviour.get_all_poses(src_calib_reader, pose_manager)
 
             mhBehaviour.save_dna(
@@ -2604,7 +2606,7 @@ class DnaModWidget(QtWidgets.QMainWindow):
     def __init__(self, parent=None):
         super(DnaModWidget, self).__init__(parent=parent)
 
-        self.project = mhCore.Project(DEFAULT_DNA_DATA_DIR)
+        self.project = mhProject.Project(DEFAULT_DNA_DATA_DIR)
 
         self.setWindowTitle(self.TITLE)
 

@@ -28,6 +28,7 @@ from Qt import QtCore
 from Qt import QtWidgets
 from Qt import QtGui
 
+from brenmeta.core import mhProject
 from brenmeta.core import mhCore
 from brenmeta.maya import mhMayaUtils
 
@@ -1073,7 +1074,7 @@ class Tab(QtWidgets.QMainWindow):
         self.setCentralWidget(QtWidgets.QWidget())
 
     @property
-    def project(self) -> mhCore.Project:
+    def project(self) -> mhProject.Project:
         return self._project
 
     def error(self, err):
@@ -1090,7 +1091,7 @@ class Dialog(QtWidgets.QDialog):
         self._project = project
 
     @property
-    def project(self) -> mhCore.Project:
+    def project(self) -> mhProject.Project:
         return self._project
 
     def error(self, err):

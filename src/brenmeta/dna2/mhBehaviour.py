@@ -21,6 +21,7 @@ import dna
 import dnacalib2
 from mh_assemble_lib.model.dnalib import DNAReader, Layer
 
+from brenmeta.core import mhProject
 from brenmeta.core import mhCore
 from brenmeta.maya import mhMayaUtils
 from brenmeta.dna2 import mhUtils
@@ -118,7 +119,7 @@ def get_all_poses(reader, pose_manager, verbose=False):
 
     # get pose values for each joint group
     poses = [
-        mhCore.Pose(pose_manager, name=name, index=i, shape_name=shape_name)
+        mhProject.Pose(pose_manager, name=name, index=i, shape_name=shape_name)
         for i, (name, shape_name) in enumerate(zip(pose_names, blendshape_names))
     ]
 
@@ -191,7 +192,7 @@ def set_all_poses(reader, writer, poses):
                 LOG.warning("input index out of range: {}".format(input_index))
                 pose = None
 
-            if isinstance(pose, mhCore.ComboPose):
+            if isinstance(pose, mhProject.ComboPose):
                 pose = pose.pose
 
             output_values = []
@@ -286,7 +287,7 @@ def get_psd_poses(reader, pose_manager, override_name=True):
 
     # create psd pose objects
     for psd_index, psd_data in psd_indices.items():
-        psd_pose = mhCore.ComboPose(pose_manager)
+        psd_pose = mhProject.ComboPose(pose_manager)
         psd_pose.pose = pose_manager.poses[psd_index]
         psd_valid = True
 
@@ -409,7 +410,7 @@ def load_poses_from_dna(file_path, pose_manager=None):
 
     # get pose data
     if not pose_manager:
-        pose_manager = mhCore.PoseManager()
+        pose_manager = mhProject.PoseManager()
 
     LOG.info("Getting pose data...")
 

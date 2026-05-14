@@ -21,6 +21,7 @@ import dna
 import dnacalib
 import dna_viewer
 
+from brenmeta.core import mhProject
 from brenmeta.core import mhCore
 from brenmeta.maya import mhMayaUtils
 from brenmeta.dna1 import mhSrc
@@ -113,7 +114,7 @@ def get_all_poses(reader, pose_manager, absolute=True):
 
     # get pose values for each joint group
     poses = [
-        mhCore.Pose(pose_manager, name=name, index=i, shape_name=shape_name)
+        mhProject.Pose(pose_manager, name=name, index=i, shape_name=shape_name)
         for i, (name, shape_name) in enumerate(zip(pose_names, blendshape_names))
     ]
 
@@ -264,7 +265,7 @@ def get_psd_poses(reader, poses, pose_manager, update_names=True):
 
     # create psd pose objects
     for psd_index, psd_data in psd_indices.items():
-        psd_pose = mhCore.ComboPose(pose_manager)
+        psd_pose = mhProject.ComboPose(pose_manager)
         psd_pose.pose = poses[psd_index]
 
         for pose_index, weight in psd_data:
@@ -304,7 +305,7 @@ def load_poses_from_dna(file_path, pose_manager=None):
 
     # get pose data
     if not pose_manager:
-        pose_manager = mhCore.PoseManager()
+        pose_manager = mhProject.PoseManager()
 
     LOG.info("Getting pose data...")
 

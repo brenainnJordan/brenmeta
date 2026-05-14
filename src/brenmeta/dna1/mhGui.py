@@ -28,6 +28,8 @@ from maya.api import OpenMaya
 from Qt import QtCore
 from Qt import QtWidgets
 
+from brenmeta.core import mhProject
+
 try:
     from shiboken2 import wrapInstance   # Maya with PySide2
 except ImportError:
@@ -1488,7 +1490,7 @@ class DnaModWidget(
     def __init__(self, *args, **kwargs):
         super(DnaModWidget, self).__init__(*args, **kwargs)
 
-        self.project = mhCore.Project()
+        self.project = mhProject.Project()
 
         self.setWindowTitle("Bren's MetaHuman DNA Modification Tool")
 

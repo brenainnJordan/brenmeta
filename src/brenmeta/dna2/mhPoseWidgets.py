@@ -8,6 +8,7 @@ from Qt import QtGui
 
 from maya import cmds
 
+from brenmeta.core import mhProject
 from brenmeta.core import mhCore
 from brenmeta.core import mhWidgets
 from brenmeta.maya import mhBlendshape
@@ -103,7 +104,7 @@ class PosesModel(QtCore.QAbstractItemModel):
         if role is self.POSE_ROLE:
             return pose
 
-        if isinstance(pose, mhCore.ComboPose):
+        if isinstance(pose, mhProject.ComboPose):
             pose = pose.pose
 
         if role in [QtCore.Qt.DisplayRole, QtCore.Qt.EditRole]:
@@ -214,7 +215,7 @@ class PoseFilterModel(QtCore.QSortFilterProxyModel):
         if not self.ref_poses:
             return False
 
-        if isinstance(pose, mhCore.ComboPose):
+        if isinstance(pose, mhProject.ComboPose):
             poses = list(pose.input_poses)
         else:
             poses = [pose]
@@ -222,7 +223,7 @@ class PoseFilterModel(QtCore.QSortFilterProxyModel):
         ref_poses = set([])
 
         for ref_pose in self.ref_poses:
-            if isinstance(ref_pose, mhCore.ComboPose):
+            if isinstance(ref_pose, mhProject.ComboPose):
                 ref_poses.update(ref_pose.input_poses)
             else:
                 ref_poses.add(ref_pose)
@@ -273,9 +274,9 @@ class PoseFilterModel(QtCore.QSortFilterProxyModel):
         index = self.sourceModel().index(source_row, 0, parent=source_parent)
         pose = self.sourceModel().data(index, PosesModel.POSE_ROLE)
 
-        if self.pose_mode is PoseMode.CorePoses and isinstance(pose, mhCore.ComboPose):
+        if self.pose_mode is PoseMode.CorePoses and isinstance(pose, mhProject.ComboPose):
             return False
-        elif self.pose_mode is PoseMode.ComboPoses and isinstance(pose, mhCore.Pose):
+        elif self.pose_mode is PoseMode.ComboPoses and isinstance(pose, mhProject.Pose):
             return False
 
         if self.filter_mode is FilterMode.Isolate:
@@ -321,7 +322,7 @@ class HeaderMenu(QtWidgets.QMenu):
         self.opposite_action.setChecked(self.view_settings.show_opposite)
 
     @property
-    def view_settings(self) -> mhCore.PoseViewSettings:
+    def view_settings(self) -> mhProject.PoseViewSettings:
         return self._view_settings
 
     def _toggled(self):
@@ -344,7 +345,7 @@ class PoseWidget(QtWidgets.QWidget):
         self._create_widgets(pose_mode)
 
     @property
-    def view_settings(self) -> mhCore.PoseViewSettings:
+    def view_settings(self) -> mhProject.PoseViewSettings:
         return self._view_settings
 
     def error(self, err):
@@ -361,7 +362,7 @@ class PoseWidget(QtWidgets.QWidget):
         )
 
     @property
-    def pose_manager(self) -> mhCore.PoseManager:
+    def pose_manager(self) -> mhProject.PoseManager:
         if not self.poses_model:
             return None
         else:
@@ -494,11 +495,11 @@ class PoseWidget(QtWidgets.QWidget):
             return None
 
         if as_combo:
-            combo_pose = mhCore.ComboPose(self.pose_manager)
-            combo_pose.pose = mhCore.Pose(self.pose_manager)
+            combo_pose = mhProject.ComboPose(self.pose_manager)
+            combo_pose.pose = mhProject.Pose(self.pose_manager)
 
             for pose in poses:
-                if isinstance(pose, mhCore.ComboPose):
+                if isinstance(pose, mhProject.ComboPose):
                     combo_pose.input_combos.append(pose)
                 else:
                     combo_pose.input_poses.append(pose)
@@ -934,7 +935,7 @@ class PoseEditorWidget(QtWidgets.QFrame):
 
         pose.update_from_scene()
 
-        if isinstance(pose, mhCore.ComboPose):
+        if isinstance(pose, mhProject.ComboPose):
             LOG.info("Combo pose data updated: {}".format(pose.pose.name))
         else:
             LOG.info("pose data updated: {}".format(pose.name))
@@ -1015,7 +1016,7 @@ class PoseEditorWidget(QtWidgets.QFrame):
             return
 
         for pose in poses:
-            if isinstance(pose, mhCore.ComboPose):
+            if isinstance(pose, mhProject.ComboPose):
                 pose_name = pose.pose.name
             else:
                 pose_name = pose.name
@@ -1034,7 +1035,7 @@ class PoseEditorWidget(QtWidgets.QFrame):
 
                     existing_targets = mhBlendshape.get_blendshape_weight_aliases(bs_node)
 
-                    if isinstance(pose, mhCore.ComboPose):
+                    if isinstance(pose, mhProject.ComboPose):
                         targets = []
 
                         for p in pose.get_all_poses():
@@ -1085,7 +1086,7 @@ class PoseEditorWidget(QtWidgets.QFrame):
             return
 
         for pose in poses:
-            if isinstance(pose, mhCore.ComboPose):
+            if isinstance(pose, mhProject.ComboPose):
                 pose_name = pose.pose.name
             else:
                 pose_name = pose.name
@@ -1228,7 +1229,7 @@ class MeshBlendshapesWidget(QtWidgets.QWidget):
         self.layout().addLayout(self.btn_lyt)
 
     @property
-    def project(self) -> mhCore.Project:
+    def project(self) -> mhProject.Project:
         return self._project
 
     def _add_clicked(self):

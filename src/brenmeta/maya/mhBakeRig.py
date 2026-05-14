@@ -28,6 +28,7 @@ from maya.api import OpenMaya
 from maya import cmds
 from maya import mel
 
+from brenmeta.core import mhProject
 from brenmeta.maya import mhBlendshape
 from brenmeta.maya import mhMayaUtils
 from brenmeta.core import mhCore
@@ -517,7 +518,7 @@ def get_attr_pose_data(pose_manager, pose_joints=None):
                 joint_poses = []
 
                 for pose in pose_manager.poses:
-                    if isinstance(pose, mhCore.ComboPose):
+                    if isinstance(pose, mhProject.ComboPose):
                         pose = pose.pose
 
                     if joint_attr in pose.deltas:
@@ -527,7 +528,7 @@ def get_attr_pose_data(pose_manager, pose_joints=None):
     else:
         # remap all poses to attrs
         for pose in pose_manager.poses:
-            if isinstance(pose, mhCore.ComboPose):
+            if isinstance(pose, mhProject.ComboPose):
                 pose = pose.pose
 
             for attr, value in pose.deltas.items():
@@ -791,7 +792,7 @@ def bake_shapes_from_poses(mesh_blendshapes, pose_manager, in_betweens, detailed
         #     pose_name = pose.name
         #     pose_names.append(pose_name)
 
-        if isinstance(pose, mhCore.ComboPose):
+        if isinstance(pose, mhProject.ComboPose):
             pose.pose_joints(summed=True)
             pose_name = pose.pose.name
         else:
@@ -1430,7 +1431,7 @@ def extract_pose_correctives(
 
         cmds.progressBar(gMainProgressBar, edit=True, step=1)
 
-        if isinstance(pose, mhCore.ComboPose):
+        if isinstance(pose, mhProject.ComboPose):
             pose_name = pose.pose.name
 
             relevant_shapes = [
@@ -1490,7 +1491,7 @@ def extract_pose_correctives(
     LOG.info("Resetting deltas...")
 
     for pose in driver_poses.values():
-        if isinstance(pose, mhCore.ComboPose):
+        if isinstance(pose, mhProject.ComboPose):
             pose_name = pose.pose.name
         else:
             pose_name = pose.name
@@ -1525,18 +1526,18 @@ def extract_pose_correctives(
                 cmds.progressBar(gMainProgressBar, edit=True, endProgress=True)
                 return False
 
-            if isinstance(pose, mhCore.ComboPose):
+            if isinstance(pose, mhProject.ComboPose):
                 pose_name = pose.pose.name
             else:
                 pose_name = pose.name
 
             if combo_count == 1:
                 # primary only, skip combos
-                if isinstance(pose, mhCore.ComboPose):
+                if isinstance(pose, mhProject.ComboPose):
                     continue
             else:
                 # combo only, skip primary
-                if not isinstance(pose, mhCore.ComboPose):
+                if not isinstance(pose, mhProject.ComboPose):
                     continue
 
                 if len(pose.input_poses) != combo_count:
