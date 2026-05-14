@@ -605,7 +605,7 @@ class ComboPose(object):
 
         summed_deltas = dict(self.pose.deltas)
 
-        for pose in self.get_all_input_poses(include_combos=True):
+        for pose in self.get_all_poses(include_combos=True):
             for attr, delta in pose.deltas.items():
                 if attr in summed_deltas:
                     summed_deltas[attr] += delta
@@ -648,7 +648,7 @@ class ComboPose(object):
         if blendshape_nodes is None:
             blendshape_nodes = self.pose_manager.blendshape_nodes
 
-        poses = self.get_all_input_poses(include_combos=True)
+        poses = self.get_all_poses(include_combos=True)
 
         for pose in poses:
             if isinstance(pose, ComboPose):
@@ -658,14 +658,17 @@ class ComboPose(object):
 
         return True
 
-    def get_all_input_poses(self, include_combos=False):
+    def get_sorted_input_poses(self):
+        return sorted(self.input_poses, key=lambda p: p.index)
+
+    def get_all_poses(self):
+        """Recursively get all poses that contribute to this combo
+        """
         poses = set(self.input_poses)
+        poses.add(self.pose)
 
         for input_combo_pose in self.input_combos:
-            if include_combos:
-                poses.add(input_combo_pose.pose)
-
-            poses.update(input_combo_pose.get_all_input_poses())
+            poses.update(input_combo_pose.get_all_poses())
 
         # sort by index
         poses = sorted(poses, key=lambda p: p.index)
@@ -680,7 +683,7 @@ class ComboPose(object):
 
         name_tokens = []
 
-        for pose in self.get_all_input_poses():
+        for pose in self.get_sorted_input_poses():
             if not pose.name:
                 LOG.info("unable to update Combo name: {}".format(self))
                 return self.pose.name
@@ -702,14 +705,14 @@ class ComboPose(object):
         return self.pose.name
 
     def affects_joint(self, joints):
-        for pose in self.get_all_input_poses():
+        for pose in self.get_all_poses():
             if pose.affects_joint(joints):
                 return True
 
         return False
 
     def affects_joints(self, joints):
-        for pose in self.get_all_input_poses():
+        for pose in self.get_all_poses():
             if pose.affects_joints(joints):
                 return True
 

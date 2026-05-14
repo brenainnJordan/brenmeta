@@ -1063,3 +1063,62 @@ class DebugDialog(QtWidgets.QDialog):
 
         layout = QtWidgets.QVBoxLayout(self)
         layout.addWidget(edit)
+
+
+class Tab(QtWidgets.QMainWindow):
+
+    def __init__(self, project, parent=None):
+        super().__init__(parent=parent)
+        self._project = project
+        self.setCentralWidget(QtWidgets.QWidget())
+
+    @property
+    def project(self) -> mhCore.Project:
+        return self._project
+
+    def error(self, err):
+        mhWidgets.error(self, err)
+
+    def refresh(self):
+        pass
+
+
+class Dialog(QtWidgets.QDialog):
+    def __init__(self, project, parent=None):
+        super().__init__(parent=parent)
+
+        self._project = project
+
+    @property
+    def project(self) -> mhCore.Project:
+        return self._project
+
+    def error(self, err):
+        mhWidgets.error(self, err)
+
+    def add_accept_reject_buttons(self, accept="OK", reject="Cancel"):
+        self.btn_lyt = QtWidgets.QHBoxLayout()
+
+        self.accept_btn = QtWidgets.QPushButton(accept)
+        self.accept_btn.clicked.connect(self.accept)
+
+        self.cancel_btn = QtWidgets.QPushButton(reject)
+        self.cancel_btn.clicked.connect(self.reject)
+
+        self.btn_lyt.addWidget(self.accept_btn)
+        self.btn_lyt.addWidget(self.cancel_btn)
+
+        self.layout().addLayout(self.btn_lyt)
+
+    def do_action(self):
+        return True
+
+    def accept(self):
+        try:
+            result = self.do_action()
+
+            if result:
+                super().accept()
+
+        except Exception as err:
+            self.error(err)

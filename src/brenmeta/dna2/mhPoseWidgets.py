@@ -9,6 +9,7 @@ from Qt import QtGui
 from maya import cmds
 
 from brenmeta.core import mhCore
+from brenmeta.core import mhWidgets
 from brenmeta.maya import mhBlendshape
 
 LOG = mhCore.get_basic_logger(__name__)
@@ -575,9 +576,96 @@ class PoseMenu(QtWidgets.QMenu):
 
         self.addSection("blendshapes")
 
-        self.test_action = QtWidgets.QAction(empty_icon, 'test', self)
-        # self.test_action.triggered.connect(self._import)
-        self.addAction(self.test_action)
+        self.extract_action = QtWidgets.QAction(empty_icon, 'extract shape', self)
+        self.addAction(self.extract_action)
+
+        self.extract_combined_action = QtWidgets.QAction(empty_icon, 'extract combined shape', self)
+        self.addAction(self.extract_combined_action)
+
+        self.ingest_action = QtWidgets.QAction(empty_icon, 'ingest shape', self)
+        self.addAction(self.ingest_action)
+
+
+class ExtractShapeDialog(mhWidgets.Dialog):
+    def __init__(self, project, parent=None):
+        super().__init__(project, parent=parent)
+
+        self.setWindowTitle("Extract shape")
+
+        self.create_widgets()
+
+        # self.resize(600, 100)
+
+    def create_widgets(self):
+        self.blendshape_group_box = QtWidgets.QGroupBox("blendshape")
+        self.blendshape_group_box.setCheckable(True)
+
+        self.blendshape_lyt = QtWidgets.QVBoxLayout()
+        self.blendshape_group_box.setLayout(self.blendshape_lyt)
+
+        self.sculpt_target_checkbox = QtWidgets.QCheckBox("sculpt target")
+        self.sum_targets_checkbox = QtWidgets.QCheckBox("sum targets")
+
+        for checkbox in [
+            self.sculpt_target_checkbox,
+            self.sum_targets_checkbox,
+        ]:
+            checkbox.setChecked(True)
+            self.blendshape_lyt.addWidget(checkbox)
+
+        lyt = QtWidgets.QVBoxLayout()
+        lyt.addWidget(self.blendshape_group_box)
+        self.setLayout(lyt)
+
+        self.add_accept_reject_buttons(accept="extract")
+
+    @property
+    def blendshape(self):
+        return self.blendshape_group_box.isChecked()
+
+    @property
+    def sculpt_target(self):
+        return self.sculpt_target_checkbox.isChecked()
+
+    @property
+    def sum_targets(self):
+        return self.sum_targets_checkbox.isChecked()
+
+
+
+class IngestShapeDialog(mhWidgets.Dialog):
+    def __init__(self, project, parent=None):
+        super().__init__(project, parent=parent)
+
+        self.setWindowTitle("Ingest shape")
+
+        self.create_widgets()
+
+        # self.resize(600, 100)
+
+    def create_widgets(self):
+        self.setLayout(QtWidgets.QVBoxLayout())
+
+        self.blendshape_checkbox = QtWidgets.QCheckBox("blendshape")
+        self.validate_checkbox = QtWidgets.QCheckBox("validate")
+
+        for checkbox in [
+            self.blendshape_checkbox,
+            self.validate_checkbox,
+        ]:
+            checkbox.setChecked(True)
+            self.layout().addWidget(checkbox)
+
+
+        self.add_accept_reject_buttons(accept="ingest")
+
+    @property
+    def blendshape(self):
+        return self.blendshape_checkbox.isChecked()
+
+    @property
+    def validate(self):
+        return self.validate_checkbox.isChecked()
 
 
 class PoseEditorWidget(QtWidgets.QFrame):
@@ -745,6 +833,9 @@ class PoseEditorWidget(QtWidgets.QFrame):
         self.view_menu.scale_ipv_attr_deltas.triggered.connect(self.scale_pose_ipv)
 
         # blendshapes
+        self.view_menu.extract_action.triggered.connect(self.extract_shape)
+        self.view_menu.extract_combined_action.triggered.connect(self.extract_combined_shape)
+        self.view_menu.ingest_action.triggered.connect(self.ingest_shape)
 
     def context_menu_handler(self, position):
         self.view_menu.exec_(self.pose_widget.view.mapToGlobal(position))
@@ -905,6 +996,119 @@ class PoseEditorWidget(QtWidgets.QFrame):
     def refresh(self):
         self.pose_widget.refresh()
 
+    def extract_shape(self):
+        """
+        TODO dialog
+            drive multiple meshes with move/blend control
+            in betweens
+        """
+
+        poses = self.get_selected_poses(warn=True)
+
+        if not poses:
+            return
+
+        dialog = ExtractShapeDialog(None, parent=self)
+        dialog.exec_()
+
+        if dialog.result() == QtWidgets.QDialog.Rejected:
+            return
+
+        for pose in poses:
+            if isinstance(pose, mhCore.ComboPose):
+                pose_name = pose.pose.name
+            else:
+                pose_name = pose.name
+
+            group = "{}_extract_GRP".format(pose_name)
+
+            if cmds.objExists(group):
+                self.error("Extracted shape already exists: {}".format(group))
+                return
+
+            cmds.createNode("transform", name=group)
+
+            for mesh, bs_node in self.pose_manager.mesh_blendshapes:
+                if bs_node:
+                    name = "{}_{}_extracted".format(mesh, pose_name)
+
+                    existing_targets = mhBlendshape.get_blendshape_weight_aliases(bs_node)
+
+                    if isinstance(pose, mhCore.ComboPose):
+                        targets = []
+
+                        for p in pose.get_all_poses():
+                            if p.name in existing_targets:
+                                targets.append(p.name)
+                            else:
+                                LOG.warning(
+                                    "contributing target not found: {}.{}".format(bs_node, p.name)
+                                )
+
+                        extracted = mhBlendshape.create_proxy_combo(
+                            bs_node,
+                            targets,
+                            name=name,
+                            create_sculpt_target=dialog.blendshape,
+                            sculpt=None,
+                            ref_targets=None,
+                            find_ref_targets=False,
+                            sum_combos=False,
+                            weight_overrides=None,
+                            use_activated_weights=False,
+                            verbose=True
+                        )
+
+                        cmds.parent(extracted, group)
+
+                    else:
+                        extracted = mhBlendshape.rebuild_target(
+                            bs_node, pose_name, parent=group, create_blendshape=False, inbetween_value=None
+                        )
+
+    def extract_combined_shape(self):
+        # TODO
+        pass
+
+    def ingest_shape(self):
+        """
+        """
+        poses = self.get_selected_poses(warn=True)
+
+        if not poses:
+            return
+
+        dialog = IngestShapeDialog(None, parent=self)
+        dialog.exec_()
+
+        if dialog.result() == QtWidgets.QDialog.Rejected:
+            return
+
+        for pose in poses:
+            if isinstance(pose, mhCore.ComboPose):
+                pose_name = pose.pose.name
+            else:
+                pose_name = pose.name
+
+            for mesh, bs_node in self.pose_manager.mesh_blendshapes:
+                if not bs_node:
+                    continue
+
+                proxy_combo = "{}_{}_extracted".format(mesh, pose_name)
+
+                if not cmds.objExists(proxy_combo):
+                    LOG.warning("Extracted shape not found: {}".format(proxy_combo))
+                    continue
+
+                mhBlendshape.apply_proxy_combo(
+                    proxy_combo,
+                    rebuild=dialog.blendshape,
+                    verbose=True,
+                    sum_combo_targets=True,
+                    validate_result=dialog.validate,
+                    match_threshold=0.001
+                )
+
 
 class MeshBlendshapesModel(QtCore.QAbstractItemModel):
     HEADERS = ["mesh", "blendshape"]
@@ -957,7 +1161,9 @@ class MeshBlendshapesModel(QtCore.QAbstractItemModel):
             return None
 
         if role in [QtCore.Qt.DisplayRole, QtCore.Qt.EditRole]:
-            return self.pose_manager.mesh_blendshapes[index.row()][index.column()]
+            value = self.pose_manager.mesh_blendshapes[index.row()][index.column()]
+
+            return value
 
         return None
 
@@ -968,6 +1174,9 @@ class MeshBlendshapesModel(QtCore.QAbstractItemModel):
         pose = index.internalPointer()
 
         if role == QtCore.Qt.EditRole:
+            if not value:
+                value = None
+
             self.pose_manager.mesh_blendshapes[index.row()][index.column()] = value
 
         return False
@@ -987,3 +1196,74 @@ class MeshBlendshapesModel(QtCore.QAbstractItemModel):
         flags = flags | QtCore.Qt.ItemIsEditable
 
         return flags
+
+
+class MeshBlendshapesWidget(QtWidgets.QWidget):
+
+    def __init__(self, project, parent=None):
+        super().__init__(parent)
+
+        self._project = project
+
+        self.model = MeshBlendshapesModel()
+        self.model.set_pose_manager(self.project.pose_manager)
+
+        self.view = QtWidgets.QTreeView()
+        self.view.setModel(self.model)
+        self.view.header().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
+
+        self.add_btn = QtWidgets.QPushButton("+")
+        self.add_btn.clicked.connect(self._add_clicked)
+
+        self.rem_btn = QtWidgets.QPushButton("-")
+        self.rem_btn.clicked.connect(self._remove_clicked)
+
+        self.btn_lyt = QtWidgets.QHBoxLayout()
+        self.btn_lyt.addWidget(self.add_btn)
+        self.btn_lyt.addWidget(self.rem_btn)
+        self.btn_lyt.addStretch()
+
+        self.setLayout(QtWidgets.QVBoxLayout())
+        self.layout().addWidget(self.view)
+        self.layout().addLayout(self.btn_lyt)
+
+    @property
+    def project(self) -> mhCore.Project:
+        return self._project
+
+    def _add_clicked(self):
+        if not self.view.model():
+            return
+
+        sl_meshes = cmds.ls(sl=True, type="transform")
+
+        self.model.beginResetModel()
+
+        if sl_meshes:
+            for mesh in sl_meshes:
+                bs_nodes = mhBlendshape.find_mesh_blendshape_nodes(mesh)
+
+                if bs_nodes:
+                    bs_node = bs_nodes[0]
+                else:
+                    bs_node = None
+
+                self.project.pose_manager.mesh_blendshapes.append([mesh, bs_node])
+        else:
+            self.project.pose_manager.mesh_blendshapes.append(["mesh", "mesh_blendshape"])
+
+        self.model.endResetModel()
+
+    def _remove_clicked(self):
+        if not self.view.model():
+            return
+
+        self.model.beginResetModel()
+
+        self.project.pose_manager.mesh_blendshapes.pop(self.view.currentIndex().row())
+
+        self.model.endResetModel()
+
+    def refresh(self):
+        self.model.beginResetModel()
+        self.model.endResetModel()

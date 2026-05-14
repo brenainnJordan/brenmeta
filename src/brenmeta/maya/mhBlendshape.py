@@ -125,6 +125,12 @@ def get_m_mesh(bs_node, index=0):
     return mesh_object
 
 
+def get_point_count(bs_node):
+    m_mesh = get_m_mesh(bs_node)
+    mesh_fn = OpenMaya.MFnMesh(m_mesh)
+    return mesh_fn.numVertices
+
+
 def get_blendshape_weight_aliases(bs_node, as_dict=False):
     weight_indices = cmds.getAttr("{}.weight".format(bs_node), multiIndices=True)
 
@@ -181,6 +187,27 @@ def parse_target_arg(bs_node, target):
         mhCore.MHError("target not recognised: {} {}".format(bs_node, target))
 
     return target_name, target_index
+
+
+def parse_targets_and_weights(bs_node, targets, use_activated_weights=False):
+    indices = []
+    names = []
+    weights = []
+
+    for target in targets:
+        target_name, target_index = parse_target_arg(bs_node, target)
+
+        indices.append(target_index)
+        names.append(target_name)
+
+        if use_activated_weights:
+            weights.append(
+                cmds.getAttr("{}.{}".format(bs_node, target_name))
+            )
+        else:
+            weights.append(1.0)
+
+    return indices, names, weights
 
 
 def is_combo(bs_node, target):
@@ -332,31 +359,30 @@ def create_empty_target(base_mesh, bs_node, name, default=0.0):
     return index
 
 
-def rebuild_target(bs_node, target, parent=None, create_blendshape=False, inbetween_value=None):
+def rebuild_target(bs_node, target, parent=None, create_blendshape=False, inbetween_value=None, name=None):
     target_name, target_index = parse_target_arg(bs_node, target)
+
+    if name is None:
+        name = "{}_{}".format(bs_node, target_name)
+
+        if inbetween_value:
+            name = "{}_{}".format(name, str(inbetween_value).replace(".", "_"))
 
     if inbetween_value is None:
         # rebuild target
         rebuild_result = cmds.sculptTarget(bs_node, edit=True, regenerate=True, target=target_index)
-
-        if rebuild_result:
-            target_mesh = rebuild_result[0]
-        else:
-            # target already rebuilt
-            target_mesh = target_name
     else:
         # rebuild inbetween target
         rebuild_result = cmds.sculptTarget(
             bs_node, edit=True, regenerate=True, target=target_index, inbetweenWeight=inbetween_value
         )
 
-        target_mesh = "{}_{}".format(target_name, str(inbetween_value).replace(".", "_"))
-
-        if rebuild_result:
-            target_mesh = cmds.rename(rebuild_result[0], target_mesh)
-        else:
-            # TODOcheck name matches
-            pass
+    if rebuild_result:
+        target_mesh = cmds.rename(rebuild_result[0], name)
+    else:
+        # target already rebuilt
+        # TODO validate name
+        target_mesh = name
 
     if parent:
         cmds.parent(target_mesh, parent)
@@ -570,7 +596,7 @@ def get_target_delta(bs_node, target, in_between=None, as_numpy=False):
         return delta
 
 
-def get_summed_deltas(blendshape_targets, use_target_weight=False):
+def get_summed_editor_deltas(blendshape_targets, use_target_weight=False):
     """
     TODO in-betweens
     """
@@ -615,6 +641,30 @@ def get_summed_deltas(blendshape_targets, use_target_weight=False):
         return deltas[0]
     else:
         return numpy.sum(deltas, axis=0)
+
+
+def get_summed_deltas(bs_node, targets, use_activated_weights=False, sum_combos=True, target_weights=None):
+    target_indices, target_names, weights = parse_targets_and_weights(
+        bs_node, targets, use_activated_weights=use_activated_weights
+    )
+
+    if target_weights is None:
+        target_weights = weights
+
+    point_count = get_point_count(bs_node)
+
+    summed_delta = numpy.array([[0.0, 0.0, 0.0] for _ in range(point_count)])
+
+    for target_index, target_weight in zip(target_indices, target_weights):
+        if is_combo(bs_node, target_index) and sum_combos:
+            delta = get_summed_combo_delta(bs_node, target_index)
+        else:
+            delta = get_target_delta(bs_node, target_index, as_numpy=True)
+
+        if delta is not None:
+            summed_delta += delta * target_weight
+
+    return summed_delta
 
 
 def get_summed_combo_delta(bs_node, target):
@@ -963,30 +1013,17 @@ def create_proxy_combo(
         find_ref_targets=False,
         sum_combos=False,
         weight_overrides=None,
+        use_activated_weights=True,
         verbose=True
 ):
     """Create a mesh that combines the given targets.
     Optionally with a sculpt target blendshape.
+    TODO option to add each target to proxy blendshape instead of combining
     """
-    # get target indices
-    target_indices = []
-    target_names = []
-    target_weights = []
-
-    for target in targets:
-        if isinstance(target, str):
-            logical_index, target_index = get_blendshape_target_index(bs_node, target)
-            target_name = target
-        else:
-            target_index = target
-            target_name = get_blendshape_weight_alias(bs_node, target)
-
-        target_indices.append(target_index)
-        target_names.append(target_name)
-
-        target_weights.append(
-            cmds.getAttr("{}.{}".format(bs_node, target_name))
-        )
+    # get target data
+    target_indices, target_names, target_weights = parse_targets_and_weights(
+        bs_node, targets, use_activated_weights=use_activated_weights
+    )
 
     if name:
         proxy_combo = name
@@ -995,6 +1032,7 @@ def create_proxy_combo(
 
     if verbose:
         LOG.info("Creating proxy combo: {}".format(name))
+        LOG.info("   {}".format(target_names))
 
     # find other targets that are currently active
     if find_ref_targets:
@@ -1016,20 +1054,9 @@ def create_proxy_combo(
     ref_weights = []
 
     if ref_targets:
-        for target in ref_targets:
-            if isinstance(target, str):
-                logical_index, target_index = get_blendshape_target_index(bs_node, target)
-                target_name = target
-            else:
-                target_index = target
-                target_name = get_blendshape_weight_alias(bs_node, target)
-
-            ref_indices.append(target_index)
-            ref_names.append(target_name)
-
-            ref_weights.append(
-                cmds.getAttr("{}.{}".format(bs_node, target_name))
-            )
+        ref_indices, ref_names, ref_weights = parse_targets_and_weights(
+            bs_node, ref_targets, use_activated_weights=use_activated_weights
+        )
 
     # create mesh
     m_transform, m_shape = mhMayaUtils.duplicate_orig_mesh(bs_node, proxy_combo, parent=None)
@@ -1042,16 +1069,20 @@ def create_proxy_combo(
     neutral_points = mhMayaUtils.get_points(proxy_combo, as_numpy=True)
 
     # sum target deltas
-    summed_delta = numpy.array([[0.0, 0.0, 0.0] for _ in range(point_count)])
+    summed_delta = get_summed_deltas(
+        bs_node, targets, use_activated_weights=use_activated_weights, sum_combos=sum_combos
+    )
 
-    for target_index, target_weight in zip(target_indices, target_weights):
-        if is_combo(bs_node, target_index) and sum_combos:
-            delta = get_summed_combo_delta(bs_node, target_index)
-        else:
-            delta = get_target_delta(bs_node, target_index, as_numpy=True)
-
-        if delta is not None:
-            summed_delta += delta * target_weight
+    # summed_delta = numpy.array([[0.0, 0.0, 0.0] for _ in range(point_count)])
+    #
+    # for target_index, target_weight in zip(target_indices, target_weights):
+    #     if is_combo(bs_node, target_index) and sum_combos:
+    #         delta = get_summed_combo_delta(bs_node, target_index)
+    #     else:
+    #         delta = get_target_delta(bs_node, target_index, as_numpy=True)
+    #
+    #     if delta is not None:
+    #         summed_delta += delta * target_weight
 
     # sum ref target deltas
     if ref_indices:
@@ -1234,7 +1265,6 @@ class ProxyComboConfig(object):
 
 
 def batch_create_proxy_combos(batch_config_file):
-
     configs = ProxyComboConfig.load(batch_config_file)
     proxy_combos = []
 
@@ -1287,7 +1317,6 @@ def batch_create_proxy_combos(batch_config_file):
 
 
 def batch_apply_proxy_combos(batch_config_file, match_threshold=0.001):
-
     configs = ProxyComboConfig.load(batch_config_file)
 
     # start progress bar
@@ -1337,7 +1366,9 @@ def batch_apply_proxy_combos(batch_config_file, match_threshold=0.001):
     return True
 
 
-def apply_proxy_combo(proxy_combo, rebuild=True, verbose=True, sum_combo_targets=True, validate_result=False, match_threshold=0.001):
+def apply_proxy_combo(
+        proxy_combo, rebuild=True, verbose=True, sum_combo_targets=True, validate_result=False,
+                      match_threshold=0.001):
     """Distributes the combo sculpt deltas across the original targets.
 
     Deltas are automatically weighted per target
@@ -1374,15 +1405,29 @@ def apply_proxy_combo(proxy_combo, rebuild=True, verbose=True, sum_combo_targets
     # get sculpt delta
     sculpt_bs_node = "{}_blendShape".format(proxy_combo)
 
-    sculpt_delta = get_target_delta(sculpt_bs_node, 0, as_numpy=True)
+    if cmds.objExists(sculpt_bs_node):
+        sculpt_delta = get_target_delta(sculpt_bs_node, 0, as_numpy=True)
 
-    sculpt_weights = get_blendshape_target_weights(sculpt_bs_node, 0)
-    sculpt_weights = numpy.reshape(numpy.repeat(sculpt_weights, 3), [len(sculpt_weights), 3])
+        sculpt_weights = get_blendshape_target_weights(sculpt_bs_node, 0)
+        sculpt_weights = numpy.reshape(numpy.repeat(sculpt_weights, 3), [len(sculpt_weights), 3])
 
-    sculpt_delta *= sculpt_weights
+        sculpt_delta *= sculpt_weights
 
-    if sculpt_delta is None:
-        return None
+        if sculpt_delta is None:
+            return None
+    else:
+        base_mesh = mhMayaUtils.get_orig_mesh(bs_node)
+        base_points = mhMayaUtils.get_points(base_mesh, as_numpy=True)
+        sculpt_points = mhMayaUtils.get_points(proxy_combo, as_numpy=True)
+
+        summed_delta = get_summed_deltas(
+            bs_node, target_names,
+            use_activated_weights=False,
+            sum_combos=False,
+            target_weights=target_weights
+        )
+
+        sculpt_delta = sculpt_points - base_points - summed_delta
 
     # get delta weights per target
     targets_delta_weights = []
@@ -1446,16 +1491,10 @@ def apply_proxy_combo(proxy_combo, rebuild=True, verbose=True, sum_combo_targets
 
         if rebuild:
             # rebuild target and apply split sculpt as a blendshape
-            rebuild_result = cmds.sculptTarget(bs_node, edit=True, regenerate=True, target=target_index)
-
-            if rebuild_result:
-                target_mesh = rebuild_result[0]
-
-                cmds.parent(target_mesh, group)
-
-            else:
-                # target already rebuilt
-                target_mesh = get_blendshape_weight_alias(bs_node, target_index)
+            target_mesh = rebuild_target(
+                bs_node, target_index, parent=group,
+                create_blendshape=False, inbetween_value=None, name=None
+            )
 
             # create blendshape node if it doesn't already exist
             target_bs_nodes = find_mesh_blendshape_nodes(target_mesh)
@@ -1553,7 +1592,7 @@ def add_deltas_sl(use_target_weight=True):
     """
     blendshape_targets, in_betweens = get_selected_shape_editor_targets(force_single_bs_node=False)
 
-    deltas = get_summed_deltas(blendshape_targets, use_target_weight=use_target_weight)
+    deltas = get_summed_editor_deltas(blendshape_targets, use_target_weight=use_target_weight)
 
     bs_node, target_index = blendshape_targets[-1]
 
@@ -1567,7 +1606,7 @@ def subtract_deltas_sl(use_target_weight=True):
     """
     blendshape_targets, in_betweens = get_selected_shape_editor_targets(force_single_bs_node=False)
 
-    summed_deltas = get_summed_deltas(blendshape_targets[:-1], use_target_weight=use_target_weight)
+    summed_deltas = get_summed_editor_deltas(blendshape_targets[:-1], use_target_weight=use_target_weight)
 
     bs_node, target_index = blendshape_targets[-1]
 
@@ -1776,4 +1815,3 @@ def print_selected_shape_editor_targets(target_weights=True, as_list=True):
     print(data)
 
     return True
-

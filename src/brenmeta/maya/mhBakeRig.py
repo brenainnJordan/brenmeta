@@ -1433,8 +1433,8 @@ def extract_pose_correctives(
         if isinstance(pose, mhCore.ComboPose):
             pose_name = pose.pose.name
 
-            relevant_shapes = [pose_name] + [
-                input_pose.name for input_pose in pose.get_all_input_poses(include_combos=True)
+            relevant_shapes = [
+                input_pose.name for input_pose in pose.get_all_poses()
                 if input_pose.name in targets
             ]
 

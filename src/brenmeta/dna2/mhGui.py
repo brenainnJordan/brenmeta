@@ -64,66 +64,7 @@ LOG = mhCore.get_basic_logger(__name__)
 DEFAULT_DNA_DATA_DIR = mhSrc.get_dna_data_dir()
 
 
-class Tab(QtWidgets.QMainWindow):
-
-    def __init__(self, project, parent=None):
-        super().__init__(parent=parent)
-        self._project = project
-        self.setCentralWidget(QtWidgets.QWidget())
-
-    @property
-    def project(self) -> mhCore.Project:
-        return self._project
-
-    def error(self, err):
-        mhWidgets.error(self, err)
-
-    def refresh(self):
-        pass
-
-
-class Dialog(QtWidgets.QDialog):
-    def __init__(self, project, parent=None):
-        super().__init__(parent=parent)
-
-        self._project = project
-
-    @property
-    def project(self) -> mhCore.Project:
-        return self._project
-
-    def error(self, err):
-        mhWidgets.error(self, err)
-
-    def add_accept_reject_buttons(self, accept="OK", reject="Cancel"):
-        self.btn_lyt = QtWidgets.QHBoxLayout()
-
-        self.accept_btn = QtWidgets.QPushButton(accept)
-        self.accept_btn.clicked.connect(self.accept)
-
-        self.cancel_btn = QtWidgets.QPushButton(reject)
-        self.cancel_btn.clicked.connect(self.reject)
-
-        self.btn_lyt.addWidget(self.accept_btn)
-        self.btn_lyt.addWidget(self.cancel_btn)
-
-        self.layout().addLayout(self.btn_lyt)
-
-    def do_action(self):
-        return True
-
-    def accept(self):
-        try:
-            result = self.do_action()
-
-            if result:
-                super().accept()
-
-        except Exception as err:
-            self.error(err)
-
-
-class ProjectWidget(Tab):
+class ProjectWidget(mhWidgets.Tab):
     PATHS_CHANGED = QtCore.Signal()
 
     def __init__(self, project, parent=None):
@@ -180,7 +121,7 @@ class ProjectWidget(Tab):
         self.is_refreshing = False
 
 
-class DnaTransferWidget(Tab):
+class DnaTransferWidget(mhWidgets.Tab):
     class UtilsMenu(QtWidgets.QMenu):
         def __init__(self, parent=None):
             super().__init__(parent=parent)
@@ -706,7 +647,7 @@ Mesh count: {mesh_count}
         self.centralWidget().setLayout(self.lyt)
 
 
-class DnaBuildWidget(Tab):
+class DnaBuildWidget(mhWidgets.Tab):
     class DnaMenu(QtWidgets.QMenu):
         def __init__(self, parent=None):
             super().__init__(parent=parent)
@@ -1057,7 +998,7 @@ class DnaBuildWidget(Tab):
         return True
 
 
-class PosesTab(Tab):
+class PosesTab(mhWidgets.Tab):
     class UtilsMenu(QtWidgets.QMenu):
         def __init__(self, parent=None):
             super().__init__(parent=parent)
@@ -1095,10 +1036,9 @@ class PosesTab(Tab):
             self.refresh_action.triggered.connect(self._refresh)
             self.addAction(self.refresh_action)
 
-            # TODO!
             self.reset_action = QtWidgets.QAction(empty_icon, 'reset', self)
             self.reset_action.setStatusTip('reset data')
-            # self.reset_action.triggered.connect(self._reset)
+            self.reset_action.triggered.connect(self._reset)
             self.addAction(self.reset_action)
 
         def _import(self):
@@ -1129,7 +1069,21 @@ class PosesTab(Tab):
         def _refresh(self):
             self.parent().refresh()
 
-    class ImportDialog(Dialog):
+        def _reset(self):
+            confirm = QtWidgets.QMessageBox.warning(
+                self.parent(),
+                "confirm",
+                "Reset all pose manager data?",
+                QtWidgets.QMessageBox.Ok | QtWidgets.QMessageBox.Cancel
+            )
+
+            if confirm is QtWidgets.QMessageBox.Cancel:
+                return
+
+            self.parent().project.pose_manager.reset()
+            self.parent().refresh()
+
+    class ImportDialog(mhWidgets.Dialog):
         def __init__(self, project, parent=None):
             super().__init__(project, parent=parent)
 
@@ -1166,22 +1120,6 @@ class PosesTab(Tab):
                 if not self.project.bake_config_path:
                     self.error("No bake config path given")
 
-            # confirm
-            msg = "Load all poses?\n{}".format(dna_path)
-
-            if use_bake_config:
-                msg += "\n{}".format(self.project.bake_config_path)
-
-            confirm = QtWidgets.QMessageBox.warning(
-                self,
-                "confirm",
-                msg,
-                QtWidgets.QMessageBox.Ok | QtWidgets.QMessageBox.Cancel
-            )
-
-            if confirm is QtWidgets.QMessageBox.Cancel:
-                return False
-
             # load dna and get poses
             mhBehaviour.load_poses_from_dna(dna_path, pose_manager=self.project.pose_manager)
 
@@ -1190,18 +1128,11 @@ class PosesTab(Tab):
 
                 bake_config.update_pose_manager(self.project.pose_manager)
 
-            QtWidgets.QMessageBox.information(
-                self,
-                "Complete",
-                "All poses loaded: {}".format(dna_path),
-                QtWidgets.QMessageBox.Ok
-            )
-
             self.parent().refresh()
 
             return True
 
-    class ExportDialog(Dialog):
+    class ExportDialog(mhWidgets.Dialog):
         def __init__(self, project, parent=None):
             super().__init__(project, parent=parent)
 
@@ -1319,28 +1250,19 @@ class PosesTab(Tab):
         # tabs
         self.tabs = QtWidgets.QTabWidget()
 
-        # configure
+        # mesh blendshapes
+        self.mesh_blendshapes_widget = mhPoseWidgets.MeshBlendshapesWidget(
+            self.project
+        )
+
+        self.tabs.addTab(self.mesh_blendshapes_widget, "meshes")
+
+        # configure poses
         self.configure_widget = QtWidgets.QWidget()
         self.configure_lyt = QtWidgets.QVBoxLayout()
 
         self.configure_widget.setLayout(self.configure_lyt)
 
-        # mesh blendshapes
-        self.mesh_bs_group_box = QtWidgets.QGroupBox("Meshes and Blendshapes")
-
-        self.mesh_bs_model = mhPoseWidgets.MeshBlendshapesModel()
-        self.mesh_bs_model.set_pose_manager(self.project.pose_manager)
-
-        self.mesh_bs_lyt = QtWidgets.QVBoxLayout()
-        self.mesh_bs_group_box.setLayout(self.mesh_bs_lyt)
-
-        self.mesh_bs_view = QtWidgets.QTreeView()
-        self.mesh_bs_view.setModel(self.mesh_bs_model)
-        self.mesh_bs_view.header().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
-
-        self.mesh_bs_lyt.addWidget(self.mesh_bs_view)
-
-        # poses
         self.pose_widget = mhPoseWidgets.PoseWidget(
             self.project.pose_config_view_settings
         )
@@ -1348,14 +1270,9 @@ class PosesTab(Tab):
         self.pose_widget.add_pose_mode_combo()
         self.pose_widget.set_pose_model(self.pose_model)
 
-        # layout
-        self.configure_lyt.addWidget(self.mesh_bs_group_box)
         self.configure_lyt.addWidget(self.pose_widget)
-        # self.configure_lyt.addStretch()
 
         self.tabs.addTab(self.configure_widget, "configure")
-
-        # pose widgets
 
         # edit
         self.splitter = QtWidgets.QSplitter()
@@ -1393,7 +1310,7 @@ class PosesTab(Tab):
         self.core_poses_widget.set_ref_poses(poses)
 
     def refresh(self):
-        self.mesh_bs_model.refresh()
+        self.mesh_blendshapes_widget.refresh()
         self.pose_model.refresh()
         self.core_poses_widget.refresh()
         self.combo_poses_widget.refresh()
@@ -1433,11 +1350,12 @@ class PosesTab(Tab):
         return True
 
     def find_opposites(self):
+        # TODO dialog or settings
         self.project.pose_manager.find_opposites("L", "R", ends_with=True)
         self.refresh()
 
 
-class ConnectControlBoardsDialog(Dialog):
+class ConnectControlBoardsDialog(mhWidgets.Dialog):
     def __init__(self, project, parent=None):
         super().__init__(project, parent=parent)
 
@@ -1467,7 +1385,7 @@ class ConnectControlBoardsDialog(Dialog):
         return mhAnimUtils.connect_control_boards(src_namespace, dst_namespace)
 
 
-class DisconnectControlBoardsDialog(Dialog):
+class DisconnectControlBoardsDialog(mhWidgets.Dialog):
     def __init__(self, project, parent=None):
         super().__init__(project, parent=parent)
 
@@ -1497,7 +1415,7 @@ class DisconnectControlBoardsDialog(Dialog):
         return mhAnimUtils.disconnect_control_boards(src_namespace, dst_namespace)
 
 
-class TechRomDialog(Dialog):
+class TechRomDialog(mhWidgets.Dialog):
     def __init__(self, project, parent=None):
         super().__init__(project, parent=parent)
 
@@ -1646,7 +1564,7 @@ class TechRomDialog(Dialog):
         return True
 
 
-class DnaMergeDialog(Dialog):
+class DnaMergeDialog(mhWidgets.Dialog):
     def __init__(self, project, parent=None):
         super().__init__(project, parent=parent)
 
@@ -1800,7 +1718,7 @@ class DnaMergeDialog(Dialog):
         return True
 
 
-class DnaBakeRigWidget(Tab):
+class DnaBakeRigWidget(mhWidgets.Tab):
     class UtilsMenu(QtWidgets.QMenu):
         def __init__(self, parent=None):
             super().__init__(parent=parent)
@@ -2296,7 +2214,7 @@ class DnaBakeRigWidget(Tab):
         return True
 
 
-class DnaSculptWidget(Tab):
+class DnaSculptWidget(mhWidgets.Tab):
     def __init__(self, project, parent=None):
         super(DnaSculptWidget, self).__init__(project, parent=parent)
 

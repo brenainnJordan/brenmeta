@@ -151,7 +151,7 @@ def get_mesh_blendshapes(dna_obj, reader, lod=0):
 
         mesh = meshes[mesh_index].name
         bs_node = "{}_blendShapes".format(mesh)
-        mesh_blendshapes.append((mesh, bs_node))
+        mesh_blendshapes.append([mesh, bs_node])
 
     return mesh_blendshapes
 

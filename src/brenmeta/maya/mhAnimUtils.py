@@ -295,7 +295,7 @@ def map_psds_to_controls(expression_mapping, combo_poses):
     psd_mapping = []
 
     for combo_pose in combo_poses:
-        poses = combo_pose.get_all_input_poses()
+        poses = combo_pose.get_all_poses()
 
         drivers = []
 
