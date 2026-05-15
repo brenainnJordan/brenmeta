@@ -1078,7 +1078,7 @@ class Tab(QtWidgets.QMainWindow):
         return self._project
 
     def error(self, err):
-        mhWidgets.error(self, err)
+        error(self, err)
 
     def refresh(self):
         pass
@@ -1095,7 +1095,7 @@ class Dialog(QtWidgets.QDialog):
         return self._project
 
     def error(self, err):
-        mhWidgets.error(self, err)
+        error(self, err)
 
     def add_accept_reject_buttons(self, accept="OK", reject="Cancel"):
         self.btn_lyt = QtWidgets.QHBoxLayout()

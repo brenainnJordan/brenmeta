@@ -119,8 +119,8 @@ def get_all_poses(reader, pose_manager, verbose=False):
 
     # get pose values for each joint group
     poses = [
-        mhProject.Pose(pose_manager, name=name, index=i, shape_name=shape_name)
-        for i, (name, shape_name) in enumerate(zip(pose_names, blendshape_names))
+        mhProject.Pose(pose_manager, name=name, shape_name=shape_name)
+        for name, shape_name in zip(pose_names, blendshape_names)
     ]
 
     for group_index in range(reader.getJointGroupCount()):

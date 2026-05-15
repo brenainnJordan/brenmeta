@@ -2672,6 +2672,16 @@ class DnaModWidget(QtWidgets.QMainWindow):
         return True
 
     def new(self):
+        confirm = QtWidgets.QMessageBox.warning(
+            self,
+            "confirm",
+            "Reset all project data?",
+            QtWidgets.QMessageBox.Ok | QtWidgets.QMessageBox.Cancel
+        )
+
+        if confirm is QtWidgets.QMessageBox.Cancel:
+            return
+
         self.project.reset(DEFAULT_DNA_DATA_DIR)
         self.update_title()
         self.refresh()

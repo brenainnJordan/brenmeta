@@ -104,9 +104,6 @@ class PosesModel(QtCore.QAbstractItemModel):
         if role is self.POSE_ROLE:
             return pose
 
-        if isinstance(pose, mhProject.ComboPose):
-            pose = pose.pose
-
         if role in [QtCore.Qt.DisplayRole, QtCore.Qt.EditRole]:
             if index.column() == 0:
                 return pose.index
@@ -1017,11 +1014,15 @@ class PoseEditorWidget(QtWidgets.QFrame):
 
         for pose in poses:
             if isinstance(pose, mhProject.ComboPose):
-                pose_name = pose.pose.name
+                shape_name = pose.pose.shape_name
             else:
-                pose_name = pose.name
+                shape_name = pose.shape_name
 
-            group = "{}_extract_GRP".format(pose_name)
+            if not shape_name:
+                self.error("Pose has no shape name: {}".format(pose))
+                return
+
+            group = "{}_extract_GRP".format(shape_name)
 
             if cmds.objExists(group):
                 self.error("Extracted shape already exists: {}".format(group))
@@ -1031,7 +1032,7 @@ class PoseEditorWidget(QtWidgets.QFrame):
 
             for mesh, bs_node in self.pose_manager.mesh_blendshapes:
                 if bs_node:
-                    name = "{}_{}_extracted".format(mesh, pose_name)
+                    name = "{}_{}_extracted".format(mesh, shape_name)
 
                     existing_targets = mhBlendshape.get_blendshape_weight_aliases(bs_node)
 
@@ -1064,8 +1065,17 @@ class PoseEditorWidget(QtWidgets.QFrame):
 
                     else:
                         extracted = mhBlendshape.rebuild_target(
-                            bs_node, pose_name, parent=group, create_blendshape=False, inbetween_value=None
+                            bs_node, shape_name, parent=group, create_blendshape=False, inbetween_value=None
                         )
+                else:
+                    # create posed reference mesh
+                    pose.pose_joints()
+
+                    ref_mesh = cmds.duplicate(mesh, name="{}_{}_ref".format(mesh, shape_name))
+                    cmds.parent(ref_mesh, group)
+
+                    self.pose_manager.reset_joints()
+                    self.pose_manager.reset_blendshape_targets()
 
     def extract_combined_shape(self):
         # TODO

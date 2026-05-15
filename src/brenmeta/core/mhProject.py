@@ -16,6 +16,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 import os
+import json
 
 from brenmeta.core import mhCore
 from brenmeta.maya import mhBlendshape
@@ -40,7 +41,7 @@ class PoseManager(object):
 
     @property
     def blendshape_nodes(self):
-        return [b for a, b in self.mesh_blendshapes]
+        return [b for a, b in self.mesh_blendshapes if b]
 
     @property
     def poses(self):
@@ -112,7 +113,7 @@ class PoseManager(object):
             pose = Pose(
                 self,
                 name=pose_name,
-                index=pose_count + i,
+                # index=pose_count + i,
             )
 
             # pose.defaults = self.attr_defaults
@@ -143,7 +144,7 @@ class PoseManager(object):
             combo.pose = Pose(
                 self,
                 name="_".join(pose_names),
-                index=pose_count + i,
+                # index=pose_count + i,
             )
 
             # combo.pose.defaults = self.attr_defaults
@@ -224,19 +225,12 @@ class PoseManager(object):
 
     def find_pose(self, pose_name):
         for pose in self.poses:
-            if isinstance(pose, Pose):
-                if pose.name == pose_name:
-                    return pose
-            elif isinstance(pose, ComboPose):
-                if pose.pose.name == pose_name:
-                    return pose
+            if pose.name == pose_name:
+                return pose
 
         return None
 
     def find_opposite(self, pose, find, replace, ends_with=True):
-        if isinstance(pose, ComboPose):
-            pose = pose.pose
-
         if ends_with:
             if not pose.name.endswith(find):
                 raise mhCore.MHError("Pose does not end with '{}': {}".format(find, pose.name))
@@ -250,10 +244,7 @@ class PoseManager(object):
         if not opposite:
             return None
 
-        if isinstance(opposite, ComboPose):
-            pose.opposite = opposite.pose
-        else:
-            pose.opposite = opposite
+        pose.opposite = opposite
 
         return pose.opposite
 
@@ -265,8 +256,8 @@ class PoseManager(object):
         """
         for find, replace in [(search_str_a, search_str_b), (search_str_b, search_str_a)]:
             for pose in self.poses:
-                if isinstance(pose, ComboPose):
-                    pose = pose.pose
+                # if isinstance(pose, ComboPose):
+                #     pose = pose.pose
 
                 if not pose.name:
                     continue
@@ -276,7 +267,7 @@ class PoseManager(object):
                 elif find not in pose.name:
                     continue
 
-                opposite = self.find_opposite(pose, find, replace, ends_with=ends_with)
+                self.find_opposite(pose, find, replace, ends_with=ends_with)
 
         return True
 
@@ -312,17 +303,24 @@ class PoseManager(object):
 class Pose(object):
     # TODO use attr index instead of attr name to be more data efficient
 
-    def __init__(self, pose_manager, name=None, index=None, shape_name=None):
+    def __init__(self, pose_manager, name=None, shape_name=None):
         mhCore.validate_arg("pose_manager", pose_manager, PoseManager)
 
         self._pose_manager = pose_manager
 
-        self.index = index
+        # self.index = index
         self.name = name
         self.shape_name = shape_name
         self.shape_in_betweens = None
         self.deltas = {}
         self.opposite = None
+
+    @property
+    def index(self):
+        if self in self.pose_manager.poses:
+            return self.pose_manager.poses.index(self)
+        else:
+            return None
 
     def __add__(self, other):
         """Returned summed Pose
@@ -483,7 +481,7 @@ class Pose(object):
         return data
 
     def deserialize(self, data):
-        self.index = data["index"]
+        # self.index = data["index"]
         self.name = data["name"]
         self.shape_name = data["shape_name"]
         self.deltas = data["deltas"]
@@ -502,13 +500,35 @@ class ComboPose(object):
 
         self._pose_manager = pose_manager
         self.pose = None
+        self.opposite = None
         self.input_poses = []
         self.input_weights = []  # TODO deprecate?
         self.input_combos = []
 
+    @property
+    def index(self):
+        if self in self.pose_manager.poses:
+            return self.pose_manager.poses.index(self)
+        else:
+            return None
+
+    @property
+    def name(self):
+        if self.pose:
+            return self.pose.name
+        else:
+            return None
+
+    @property
+    def shape_name(self):
+        if self.pose:
+            return self.pose.shape_name
+        else:
+            return None
+
     def __repr__(self):
         return "{}({}: {}) <- [{}]".format(
-            self.__class__.__name__, self.pose.index, self.pose.name,
+            self.__class__.__name__, self.index, self.pose.name,
             [pose.name or pose.index for pose in self.input_poses]
         )
 
@@ -639,6 +659,7 @@ class ComboPose(object):
     def serialize(self):
         data = {
             "pose": None,
+
             "input_poses": None,
             "input_weights": None,
             "input_combos": None
@@ -654,7 +675,12 @@ class ComboPose(object):
             data["input_weights"] = self.input_weights
 
         if self.input_combos:
-            data["input_combos"] = [combo.pose.index for combo in self.input_combos]
+            data["input_combos"] = [combo.index for combo in self.input_combos]
+
+        if self.opposite:
+            data["opposite"] = self.opposite.index
+        else:
+            data["opposite"] = None
 
         return data
 
@@ -670,6 +696,9 @@ class ComboPose(object):
         if data["pose"]:
             self.pose = Pose(self.pose_manager)
             self.pose.deserialize(data["pose"])
+
+        if data["opposite"] is not None:
+            self.opposite = self.pose_manager.poses[data["opposite"]]
 
         if data["input_poses"]:
             self.input_poses = []
@@ -687,6 +716,9 @@ class ComboPose(object):
             self.input_combos = []
 
             for pose_index in data["input_combos"]:
+                if pose_index >= len(self.pose_manager.poses):
+                    raise mhCore.MHError("input combo index out of range: {}".format(pose_index))
+
                 # TODO check is actually combo?
                 self.input_combos.append(self.pose_manager.poses[pose_index])
 
